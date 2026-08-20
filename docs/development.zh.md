@@ -112,6 +112,8 @@ lefthook 在 `lefthook.yml` 中配置，作为快速的本地检查点：
 - `pre-merge-commit` 在 Git 创建自动合并提交前执行同样以索引为准的配对检查；
 - `pre-push` 运行 `pnpm run typecheck`；该命令会先完成包含 Typert 约定生成的完整 Host lib 阶段，再运行 Client TypeScript 检查。
 
+`pre-push` 钩子需要 Node 处于引擎支持范围内（`^22.19 || >=24`）；在更旧的 Node 上，`tsdown` 无法加载 `unrun`。执行 `git push` 前请先运行 `nvm use 22.21.1`（或 `nvm alias default 22.21.1`）。
+
 vendor manifest 守卫检查 `vendor/*/src` 下的改动是否连同对应的 `vendor/README.md` manifest 更新一起暂存。请在编辑 vendor 代码前先阅读 `vendor/README.md`。
 
 除限定范围的暂存记录校验外，这些钩子有意不运行测试、快照、文档检查、构建或 `hygiene`。贡献者只运行一次[与改动行为相关的检查](../AGENTS.md#run-relevant-checks-locally)；CI 负责全量覆盖率门禁、构建产物冒烟测试，以及 Node 22.19、24 和 26 兼容性矩阵。

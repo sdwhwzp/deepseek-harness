@@ -91,7 +91,7 @@ Run checks before pushes via [dsh-pre-push-checks](.agents/skills/dsh-pre-push-c
 - Match evidence to the surface: focused tests for behavior, snapshots for model or user output, `doc-sync` for docs, build/hygiene and built smokes for published paths, and real-API e2e for provider behavior.
 - Never default to the full suite or repeat a passing check for commit or push. CI owns exhaustive coverage and the platform matrix; rehearse all locally only by explicit request, for CI diagnosis, or for an irreducibly repository-wide change.
 - `test:coverage`, not `test`, is the CI coverage gate ([why](docs/testing.md)).
-- The lefthook `pre-push` hook runs `typecheck` and needs Node in the engine range (`^22.19 || >=24`); `tsdown` fails on older Node. Run `nvm use 22.21.1` (or `nvm alias default 22.21.1`) before `git push`.
+- `pre-push` needs Node in range; run `nvm use 22.21.1` before `git push` ([why](docs/development.md#git-integrations)).
 
 ## Secrets / .env
 
