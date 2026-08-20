@@ -112,6 +112,8 @@ lefthook is configured in `lefthook.yml` as a fast local checkpoint:
 - `pre-merge-commit` performs the same index-backed pairing check before Git creates an automatic merge commit.
 - `pre-push` runs `pnpm run typecheck`, which completes the Host lib phase, including generated Typert contracts, before the Client TypeScript check.
 
+The `pre-push` hook needs Node in the engine range (`^22.19 || >=24`); `tsdown` fails to load `unrun` on older Node. Run `nvm use 22.21.1` (or `nvm alias default 22.21.1`) before `git push`.
+
 The vendor manifest guard checks that changes under `vendor/*/src` are staged with the matching `vendor/README.md` manifest update. See `vendor/README.md` before editing vendored code.
 
 Apart from the scoped staged-record verification, the hooks intentionally do not run tests, snapshots, documentation checks, builds, or hygiene. Contributors run the [checks relevant to the changed behavior](../AGENTS.md#run-relevant-checks-locally) once; CI owns exhaustive coverage, built-artifact smokes, and the Node 22.19, 24, and 26 compatibility matrix.
