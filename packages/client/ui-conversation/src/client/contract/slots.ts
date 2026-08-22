@@ -183,10 +183,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     // ui-input-trigger, so the type arrives transitively). The runtime declaration
     // (children table in apply.ts) stays here with the other input slots.
     /**
-     * Root-scoped rows immediately above the composer, including the
-     * no-session Hero. Use this seat for an action that can establish the
-     * Workspace or another prerequisite before a Session exists. Ordinary
-     * session data belongs in `conversation.input.dock` instead.
+     * Compact root-scoped actions after the Workspace and agent-preset chips
+     * in the new-session Hero control row. Use this seat for an action that
+     * can establish a Workspace or another prerequisite before a Session
+     * exists. Each entry owns its one-row chip chrome; ordinary session data
+     * belongs in `conversation.input.dock` instead.
      */
     'conversation.input.bootstrap': { kind: 'list'; scope: 'root' }
     /**

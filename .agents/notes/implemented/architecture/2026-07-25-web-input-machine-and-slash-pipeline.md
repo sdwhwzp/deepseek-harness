@@ -103,6 +103,7 @@ skill/@subagent references skip the placeholder + occurrence identity chain — 
 - `conversation.composer.dock` — the stats band on the composer's top edge.
 - `conversation.input.left` / `conversation.input.right` — the tool-row left and right regions.
 - `conversation.input.plan` / `conversation.input.model` (single) — the tool row's two named control seats; the bar passes only `locked` (owner props), each stays empty until its owning plugin registers, no placeholder fallback. The plan seat stays empty while inactive because the shared Command source owns entry; an effective plan target renders the warn-state `Plan ×` status button, whose only action is `/plan off`.
+- `conversation.input.bootstrap` (root scope) — compact prerequisite actions after the Workspace and agent-preset controls in the new-session Hero row. Registrants own one-row chip chrome and any popover; the seat is absent from an active-session composer.
 - `conversation.hero.workspace` (root scope) — the Workspace picker shared by the no-session and blank Hero; a pick reuses or creates the target blank session through `connectWorkspace`, moving the draft where necessary before switching current.
 
 ### Testing discipline

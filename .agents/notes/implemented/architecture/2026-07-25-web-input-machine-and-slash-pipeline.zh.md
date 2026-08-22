@@ -103,6 +103,7 @@ skill/@subagent 引用不走占位符 + occurrence 身份链——纯文本引�
 - `conversation.composer.dock`——composer 上沿统计带。
 - `conversation.input.left` / `conversation.input.right`——工具行左右区。
 - `conversation.input.plan` / `conversation.input.model`（single）——工具行两具名控制位；bar 只传 `locked`（owner props），空到 owning 插件注册为止，无占位 fallback。plan seat 未激活时保持为空，因为入口归共享 Command source 所有；有效 plan 目标会渲染 warn 状态的 `Plan ×` 状态按钮，其唯一动作是 `/plan off`。
+- `conversation.input.bootstrap`（root scope）——新会话 Hero 控制行内位于 Workspace 与 agent-preset 控件之后的紧凑前置动作。注册者自带单行 chip 样式和所需 popover；活跃会话的 composer 不渲染此槽。
 - `conversation.hero.workspace`（root scope）——无会话 / blank Hero 共用的 Workspace picker；pick 经 `connectWorkspace` 复用或创建目标 blank 会话，必要时搬运 draft 后切 current。
 
 ### 测试纪律

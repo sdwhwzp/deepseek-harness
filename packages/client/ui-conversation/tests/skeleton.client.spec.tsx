@@ -277,13 +277,14 @@ describe('Hero chrome', () => {
 })
 
 describe('ConversationRoot resident composer', () => {
-  it('renders the bootstrap row above the composer without a current session', () => {
+  it('renders bootstrap actions in the Hero control row without a current session', () => {
     const sessions = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'ready',
       subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     })
     const workspaces = createSnapshotStore<WorkspaceListState>(workspaceState([]))
     const renderSlot = vi.fn(((key: string) => {
+      if (key === 'conversation.hero.agentPreset') return <div data-testid="preset-seat" />
       if (key === 'conversation.input.bootstrap') return <div data-testid="bootstrap-row" />
       if (key === 'conversation.composer.bar') return <div data-testid="composer-bar" />
       return null
@@ -291,11 +292,11 @@ describe('ConversationRoot resident composer', () => {
     const props: ConversationRootProps = {
       sessionId: undefined,
       SessionProvider: (() => null) as ConversationRootProps['SessionProvider'],
-      useSession: (() => undefined) as ConversationRootProps['useSession'],
+      useSession: () => undefined,
       useSessions: bindSnapshotSelector(sessions),
       useWorkspaces: bindSnapshotSelector(workspaces),
       useProjection: (() => undefined),
-      useInput: (() => undefined) as ConversationRootProps['useInput'],
+      useInput: () => undefined,
       inputActions: undefined,
       useComposerBlock: (() => undefined) as ConversationRootProps['useComposerBlock'],
       renderSlot,
@@ -306,10 +307,18 @@ describe('ConversationRoot resident composer', () => {
 
     const view = render(<ConversationRoot {...props} />)
     const bootstrap = view.getByTestId('bootstrap-row')
+    const preset = view.getByTestId('preset-seat')
     const composer = view.getByTestId('composer-bar')
+    expect(bootstrap.parentElement).toBe(preset.parentElement)
+    expect(preset.compareDocumentPosition(bootstrap) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
     expect(bootstrap.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
     expect(renderSlot).toHaveBeenCalledWith('conversation.input.bootstrap', {})
     expect(renderSlot.mock.calls.some(([key]) => key === 'conversation.input.dock')).toBe(false)
+  })
+
+  it('omits root bootstrap actions from an active-session composer', () => {
+    const b = mount(conversationSnapshot())
+    expect(b.slotCalls.some(key => key === 'conversation.input.bootstrap')).toBe(false)
   })
 
   it('renders the composer inert with the blocker\u2019s own reason', () => {
