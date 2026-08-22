@@ -123,6 +123,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
     /** Agent-preset control staged for a New Session. */
     'conversation.hero.agentPreset': { kind: 'single'; scope: 'root'; owner: HeroAgentPresetOwnerProps }
+    /**
+     * Compact root-scoped actions after the Workspace and agent-preset chips
+     * in the new-session Hero control row. Use this seat for an action that
+     * can establish a Workspace or another prerequisite before a Session
+     * exists. Each entry owns its one-row chip chrome; ordinary session data
+     * belongs in `conversation.input.dock` instead.
+     */
+    'conversation.input.bootstrap': { kind: 'list'; scope: 'root' }
     /** Full-width entries above the composer card. */
     'conversation.input.dock': { kind: 'list'; scope: 'session'; owner: InputZone }
     /** Floating entries rendered inside the resident composer card. */
