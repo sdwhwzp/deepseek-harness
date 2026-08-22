@@ -9,6 +9,7 @@ import type { z as zCore } from 'zod'
 type ZodIssue = zCore.core.$ZodIssue
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /**
@@ -131,6 +132,8 @@ export function transportError<T>(error: unknown): RpcResult<T> {
 export interface RpcRequest<P> {
   rpcId: RpcId
   payload: P
+  /** Host-only identity; carriers construct it after authentication. */
+  principal?: AuthenticatedPrincipal
 }
 
 /** Signature-layer narrow form, response side: rpcId always echoes the matching request. */

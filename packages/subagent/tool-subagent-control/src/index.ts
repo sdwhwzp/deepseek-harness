@@ -70,6 +70,7 @@ export function apply(ctx: Context): void {
         {
           source: { kind: 'coordinator', form: 'relay', senderSessionId: parent.id },
           signal: exec.signal,
+          ...exec.principal === undefined ? {} : { principal: exec.principal },
         },
       )
       return { messageId }

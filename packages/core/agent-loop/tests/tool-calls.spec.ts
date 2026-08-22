@@ -367,6 +367,45 @@ describe('tool-call scheduler: rolling pool honors maxParallelToolCalls', () => 
 })
 
 describe('tool-call scheduler: ordered middleware and additional contexts', () => {
+  it('keeps each shared-session message principal on its model steps and tool executions', async () => {
+    const adapter = new MockAdapter([
+      multiCall([{ id: 'alice-call', name: 'owned', args: { id: 'alice' } }]),
+      textResponse('alice done'),
+      multiCall([{ id: 'bob-call', name: 'owned', args: { id: 'bob' } }]),
+      textResponse('bob done'),
+    ])
+    const ctx = await harness(adapter)
+    ctx.tools.register(defineContentToolFixture({
+      name: 'owned',
+      description: 'principal observation fixture',
+      parameters: { id: { type: 'string', required: true } },
+      async execute(args) { return [{ type: 'text', text: args.id }] },
+    }))
+    const observed: unknown[] = []
+    ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
+      observed.push(exec.principal)
+      return next()
+    })
+    const agent = ctx.agentLoop.create(SessionId('shared-principals'), { provider: 'mock', model: 'mock' })
+    const alice = { source: 'gateway', id: 'alice', username: 'alice', role: 'user' as const }
+    const bob = { source: 'gateway', id: 'bob', username: 'bob', role: 'user' as const }
+    for (const principal of [alice, bob]) {
+      const idle = waitForIdle(ctx, agent)
+      agent.followup(createUserMessage({
+        content: [{ type: 'text', text: `request from ${principal.username}` }],
+        source: { kind: 'user' },
+        principal,
+      }))
+      await idle
+    }
+
+    expect(observed).toEqual([alice, bob])
+    expect(events(agent).filter(event => event.type === 'turn/start').map(event => event.data.principal))
+      .toEqual([alice, bob])
+    expect(events(agent).filter(event => event.type === 'step/start').map(event => event.data.principal))
+      .toEqual([alice, alice, bob, bob])
+  })
+
   it('tools/pre-execute and tools/post-execute observe model call order', async () => {
     const adapter = new MockAdapter([
       multiCall([{ id: 'c1', name: 'p', args: { id: '1' } }, { id: 'c2', name: 'p', args: { id: '2' } }, { id: 'c3', name: 'p', args: { id: '3' } }]),

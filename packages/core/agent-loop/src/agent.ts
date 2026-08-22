@@ -16,7 +16,7 @@ import type {
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   BlockAssembler,
   LlmError,
@@ -49,7 +49,17 @@ type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }
 
 type PreparedStep =
   | { kind: 'reject' }
-  | { kind: 'enter'; messages: UserMessage[]; assembly: PromptAssembly }
+  | { kind: 'enter'; messages: UserMessage[]; principal?: AuthenticatedPrincipal; assembly: PromptAssembly }
+
+/** Resolve one authenticated owner without falling back to display fields. */
+function principalOf(messages: readonly UserMessage[]): AuthenticatedPrincipal | undefined {
+  return messages.find(message => message.principal !== undefined)?.principal
+}
+
+/** Resolve the owner of the next durable turn before its inbox claim. */
+function nextTurnPrincipal(inbox: Inbox): AuthenticatedPrincipal | undefined {
+  return principalOf([...inbox.nextStep, ...inbox.nextTurn.slice(0, 1)])
+}
 
 /** Remove adapter-derived values before plugins propose the next request config. */
 function requestProposal(header: EpochHeader): LlmCallConfig {
@@ -227,19 +237,22 @@ export class ReactLoopAgent implements Agent {
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
     const signal = this.phase.abort.signal
     const claimed = this.inbox.claim(target, position.turn)
+    const principal = principalOf(claimed)
     const assembly = await this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal))
     signal.throwIfAborted()
     const sections = renderContextSections(assembly)
     const context = this.runtimeContext.project(joinContextSections(sections), sections)
     const decision = await this.dispatch.waterfall(
-      'agent/pre-step', { messages: claimed, ...position, signal },
+      'agent/pre-step', { messages: claimed, ...principal === undefined ? {} : { principal }, ...position, signal },
       (): Promise<PreStepDecision> => Promise.resolve<PreStepDecision>({
         kind: 'enter',
         messages: context === undefined ? claimed : [...claimed, context],
       }),
     )
     signal.throwIfAborted()
-    return decision.kind === 'reject' ? decision : { ...decision, assembly }
+    if (decision.kind === 'reject') return decision
+    const decidedPrincipal = principalOf(decision.messages) ?? principal
+    return { ...decision, ...decidedPrincipal === undefined ? {} : { principal: decidedPrincipal }, assembly }
   }
 
   /** Open one turn before claiming its first proposed step. */
@@ -252,12 +265,14 @@ export class ReactLoopAgent implements Agent {
     signal.throwIfAborted()
     const turn = phase.turn + 1
     try {
-      this.session.append('turn/start', { turn })
+      const principal = nextTurnPrincipal(this.inbox)
+      this.session.append('turn/start', { turn, ...principal === undefined ? {} : { principal } })
     } catch (error: unknown) {
       this.throwError(error)
     }
     phase.turn = turn
     let turnEnds: TurnEndReason | null = null
+    let activePrincipal: AuthenticatedPrincipal | undefined
     let target: InboxTarget = 'next-turn'
     try {
       while (true) {
@@ -275,8 +290,13 @@ export class ReactLoopAgent implements Agent {
           turnEnds = { kind: 'completed' }
           return false
         }
+        activePrincipal = decision.principal ?? activePrincipal
         signal.throwIfAborted()
-        this.session.append('step/start', { turn, step })
+        this.session.append('step/start', {
+          turn,
+          step,
+          ...activePrincipal === undefined ? {} : { principal: activePrincipal },
+        })
         phase.step = step
         try {
           for (const message of decision.messages) {
@@ -284,7 +304,7 @@ export class ReactLoopAgent implements Agent {
           }
           // max-tokens is sticky: once any step hits the ceiling, later steps
           // that complete normally must not downgrade the turn outcome.
-          const stepEnd = await this.step(decision.assembly)
+          const stepEnd = await this.step(decision.assembly, activePrincipal)
           // max-tokens stays sticky: a later completed step must not
           // downgrade the turn outcome.
           if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
@@ -329,7 +349,10 @@ export class ReactLoopAgent implements Agent {
     return true
   }
 
-  private async step(assembly: PromptAssembly): Promise<StepEndReason | null> {
+  private async step(
+    assembly: PromptAssembly,
+    principal: AuthenticatedPrincipal | undefined,
+  ): Promise<StepEndReason | null> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
     const { turn, step, abort: { signal } } = this.phase
@@ -338,7 +361,7 @@ export class ReactLoopAgent implements Agent {
 
     while (true) {
       const { request, preparedCall } = await this.buildRequest(
-        turn, step, assembly.tools, system, this.session.deriveMessages(), signal,
+        turn, step, assembly.tools, system, this.session.deriveMessages(), principal, signal,
       )
       const assembler = new BlockAssembler()
       const chunkSeqs: number[] = []
@@ -412,7 +435,7 @@ export class ReactLoopAgent implements Agent {
       const toolCalls = message.content.filter(block => block.type === 'tool-call')
       if (toolCalls.length === 0) return { kind: 'completed' }
       const { concluded } = await executeToolCalls(
-        this.loopCtx, turn, step, toolCalls, signal,
+        this.loopCtx, turn, step, toolCalls, principal, signal,
         context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
       )
       return concluded ? { kind: 'completed' } : null
@@ -429,6 +452,7 @@ export class ReactLoopAgent implements Agent {
     tools: GenerateOptions['tools'] & object,
     system: string,
     boundaryMessages: Message[],
+    principal: AuthenticatedPrincipal | undefined,
     signal: AbortSignal,
   ): Promise<{ request: GenerateOptions; preparedCall?: PreparedLlmCall }> {
     const { session } = this
@@ -455,7 +479,7 @@ export class ReactLoopAgent implements Agent {
         },
     ))
     const proposedConfig = await this.dispatch.waterfall(
-      'agent/request', { turn, step, signal },
+      'agent/request', { turn, step, ...principal === undefined ? {} : { principal }, signal },
       () => Promise.resolve(seedConfig),
     )
     signal.throwIfAborted()

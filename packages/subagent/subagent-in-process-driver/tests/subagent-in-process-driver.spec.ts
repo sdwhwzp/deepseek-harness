@@ -67,6 +67,18 @@ describe('startInProcessRun', () => {
     expect(ctx.agents.get(run.id)).toBeUndefined()
   })
 
+  it('persists the delegating principal on the child prompt and model step', async () => {
+    const { ctx, parent } = await setup([textResponse('owned answer')])
+    const principal = { source: 'gateway', id: 'alice', username: 'alice', role: 'user' as const }
+    const run = await startInProcessRun({ ...request(parent), principal }, {})
+    await run.result
+    const events = ctx.agents.get(run.id)!.session.events
+    expect(events.find(event => event.type === 'user/message')).toMatchObject({ data: { principal } })
+    expect(events.find(event => event.type === 'turn/start')).toMatchObject({ data: { principal } })
+    expect(events.find(event => event.type === 'step/start')).toMatchObject({ data: { principal } })
+    await run.dispose()
+  })
+
   it('uses explicit child model selectors when the parent has none and preserves its cwd', async () => {
     const { ctx } = await setup([textResponse('driver answer')])
     const parent = ctx.agentLoop.create(SessionId('bare-parent'), {}, { cwd: '/workspace' })

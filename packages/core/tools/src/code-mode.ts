@@ -476,6 +476,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
           name,
           arguments: normalized.dispatched,
           ...exec.agent ? { agent: exec.agent } : {},
+          ...exec.principal === undefined ? {} : { principal: exec.principal },
           parent: exec.token,
           signal: runController.signal,
         }

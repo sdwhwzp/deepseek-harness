@@ -12,6 +12,8 @@
 
 Connection 可用时，Host 入口会在 Connection 共享的 `/api` FetchHandler 上注册 trusted-host interceptor。Connection 把这个复合 handler 交给 HTTP bridge；handler 将已认领 endpoint 分发给 Gateway，未认领 endpoint 则交给 API Proxy。直接调用 `invoke()` 会保留业务错误；`TypertGatewayError` 可区分分发、绑定、提供方、查找、Context、参数和编解码器各自负责的故障。resolver 可以用 `TypertLookupFailure` 携带既有 RPC error，使冷恢复失败或 ownership fence 等策略拒绝保持原错误码。
 
+Connection 把其传输层已验证的 `AuthenticatedPrincipal` 作为仅 Host 可写的调用字段传入。Gateway 用 `AsyncLocalStorage` 将它限定在一条 Remote 调用内；已组合的业务服务通过 `ctx.typertGateway.currentPrincipal()` 读取，分发外返回 undefined。浏览器具名参数不能填充或保留该上下文，并发 Remote 调用也不会共享它。
+
 支持取消的 Remote 方法会把 `signal: AbortSignal` 声明为最后一个 Host 参数。signal 是 descriptor 元数据，而不是 wire 参数：Connection 将它提供给 Gateway，Gateway 则在已解码的业务参数之后注入它。SRC 识别这个保留的末位参数名，严格生成还要求它具有全局 `AbortSignal` 类型。
 
 ## Client 服务：`ClientRemote`（ctx key：`remote`）

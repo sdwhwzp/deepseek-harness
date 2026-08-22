@@ -4,7 +4,8 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-attachment'
 // Activates the webServer Context merge used below.
 import type { WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
-import { toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
+import { bindAuthenticatedPrincipal, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
 import { bridge, DEFAULT_MAX_REQUEST_BODY_BYTES } from './http-bridge.ts'
 import { assertTrustedAuthority, isTrustedApiRequest } from './api-request-trust.ts'
@@ -22,6 +23,18 @@ export type {
 export { HostConnectionService } from './rpc-host.ts'
 
 export { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
+
+/** Optional Host authentication provider used before browser RPC dispatch. */
+export interface RequestPrincipalProvider {
+  /** Verify transport-owned authentication data and return its caller identity. */
+  authenticate(request: Request): AuthenticatedPrincipal | undefined | Promise<AuthenticatedPrincipal | undefined>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    requestPrincipal: RequestPrincipalProvider
+  }
+}
 
 /** Stable Cordis plugin name. */
 export const name = 'client-connection'
@@ -136,7 +149,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
   if (ctx.get('apiProxy') !== undefined) assertImageBodyCapacity(ctx, maxRequestBodyBytes)
   const connection = new HostConnectionService(ctx, trustedHosts)
-  const fetchHandler = connection.createSharedFetchHandler(API_PATH, {
+  const sharedFetchHandler = connection.createSharedFetchHandler(API_PATH, {
     async fetch(request) {
       const pathname = new URL(request.url).pathname
       const method = pathname.startsWith(`${API_PATH}/`)
@@ -158,6 +171,23 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
       return toFetchHandler(apiProxy).fetch(request)
     },
   })
+  // Authentication must wrap shared-route selection. Typert Remote endpoints
+  // are intercepted before the ApiProxy fallback, so authenticating inside
+  // that fallback would leave plugin RPCs outside the trusted identity chain.
+  const fetchHandler = {
+    async fetch(request: Request): Promise<Response> {
+      const principalProvider = ctx.get('requestPrincipal')
+      if (principalProvider !== undefined) {
+        try {
+          const principal = await principalProvider.authenticate(request)
+          if (principal !== undefined) bindAuthenticatedPrincipal(request, principal)
+        } catch {
+          return new Response('unauthorized', { status: 401 })
+        }
+      }
+      return sharedFetchHandler.fetch(request)
+    },
+  }
   const route: WebRoute = {
     kind: 'prefix',
     path: API_PATH,

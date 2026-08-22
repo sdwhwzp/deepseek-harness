@@ -49,6 +49,8 @@ interface SubagentStartRequest {
   readonly label?: string
   /** Content delivered as the child's user message. */
   readonly prompt: ContentBlock[]
+  /** Authenticated owner of the delegating model step, persisted on the child's prompt. */
+  readonly principal?: AuthenticatedPrincipal
   /**
    * The spawning agent. In-process providers derive workspace, lineage, and
    * delegation depth from its durable session state. ACP reads only its cwd,
@@ -176,6 +178,8 @@ interface SubagentFollowupOptions {
   readonly source: MessageSource
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
+  /** Authenticated owner of the follow-up tool or browser request. */
+  readonly principal?: AuthenticatedPrincipal
 }
 ```
 
@@ -237,6 +241,8 @@ interface SubagentReportOptions {
   readonly delivery: SubagentReportDelivery
   /** Caller cancellation, owning authorization and admission until acceptance. */
   readonly signal: AbortSignal
+  /** Authenticated owner of the reporting tool step. */
+  readonly principal?: AuthenticatedPrincipal
 }
 ```
 

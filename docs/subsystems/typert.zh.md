@@ -150,6 +150,8 @@ interface InvokeRemoteRequest {
   readonly args: Readonly<Record<string, unknown>>
   /** Carrier or direct-caller cancellation injected only into cancellation-aware methods. */
   readonly signal?: AbortSignal
+  /** Host-only verified identity; browser payloads never populate this field. */
+  readonly principal?: AuthenticatedPrincipal
 }
 ```
 
@@ -178,6 +180,9 @@ type TypertGatewayErrorCode =
 ```ts type-equiv
 /** Host dispatcher consumed by Connection adapters. */
 interface TypertGateway {
+  /** Transport-verified caller for the currently executing Remote method. */
+  currentPrincipal(): AuthenticatedPrincipal | undefined
+
   /**
    * Invoke one live Remote method without assuming a carrier or response envelope.
    * @param request - decoded endpoint and named wire arguments.
@@ -324,6 +329,12 @@ Resolve strict generated definitions or conservative SRC markers against current
 
 ```ts cordis-catalog
 /**
+ * Return the transport-verified principal for the active Remote call.
+ * @returns The scoped caller, or undefined outside carrier dispatch.
+ */
+currentPrincipal(): AuthenticatedPrincipal | undefined
+
+/**
  * Invoke one live Remote method through strict generated reflection or SRC markers.
  * @param request - decoded endpoint and exact named wire arguments.
  * @returns the validated business result.
@@ -332,5 +343,7 @@ Resolve strict generated definitions or conservative SRC markers against current
 async invoke(request: InvokeRemoteRequest): Promise<unknown>
 ```
 
-Source: [`packages/api/gateway/src/index.ts:90`](../../packages/api/gateway/src/index.ts)
+Types: [AuthenticatedPrincipal](core.md)
+
+Source: [`packages/api/gateway/src/index.ts:92`](../../packages/api/gateway/src/index.ts)
 <!-- END GENERATED cordis-surface -->

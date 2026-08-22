@@ -13,6 +13,8 @@ import { sessionLogQuerySchema } from '../api/downloads.schema.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '../api/rpc-map.ts'
 import type { ClientRequest, RpcError, RpcRequest, RpcResponse, ServerRequest, ServerResponse } from '../api/rpc.ts'
 import { RpcId } from '../api/rpc.ts'
+import { authenticatedPrincipalOf } from '../authenticated-request.ts'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import type { Wire } from '../api/rpc.schema.ts'
 import { clientRequestSchema, clientResponseSchema } from '../api/rpc.schema.ts'
 import {
@@ -176,7 +178,11 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
 // schema/invoke pairing; a union parameter degrades the row to an uninvokable intersection.
 // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
 async function handleUnary<K extends keyof RpcMethodMap>(
-  api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
+  api: ApiProxy,
+  method: K,
+  message: ClientRequest,
+  signal: AbortSignal,
+  principal: AuthenticatedPrincipal | undefined,
 ): Promise<Response> {
   const route = UNARY_ROUTES[method]
   const payload = route.schema.safeParse(message.payload)
@@ -184,7 +190,11 @@ async function handleUnary<K extends keyof RpcMethodMap>(
     return errorResponse(message.rpcId, { code: 'bad-request', message: `invalid payload for ${method}`, details: { issues: payload.error.issues } })
   }
   try {
-    return fullResponse(await route.invoke(api, { rpcId: message.rpcId, payload: payload.data }, signal))
+    return fullResponse(await route.invoke(api, {
+      rpcId: message.rpcId,
+      payload: payload.data,
+      ...principal === undefined ? {} : { principal },
+    }, signal))
   } catch (error: unknown) {
     // The impl never throws business errors; reaching here means the implementation itself crashed — 500, carrier layer.
     return new Response(`handler failure: ${String(error)}`, { status: 500 })
@@ -246,6 +256,7 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
     // Clients call in (url, init) form — normalize to Request before handling.
     async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
       const req = input instanceof Request ? input : new Request(input, init)
+      const principal = authenticatedPrincipalOf(req)
       const url = new URL(req.url)
       const path = url.pathname
 
@@ -314,7 +325,7 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
       if (message.method !== method) {
         return errorResponse(message.rpcId, { code: 'bad-request', message: `method "${message.method}" does not match path "${method}"`, details: { issues: [] } })
       }
-      return handleUnary(api, method, message, req.signal)
+      return handleUnary(api, method, message, req.signal, principal)
     },
   }
 }

@@ -31,7 +31,7 @@ import type {
   CreateAgentOptions,
 } from '@deepseek-ai/dsh-agent'
 import { boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
@@ -106,6 +106,8 @@ export interface SubagentReportOptions {
   readonly delivery: SubagentReportDelivery
   /** Caller cancellation, owning authorization and admission until acceptance. */
   readonly signal: AbortSignal
+  /** Authenticated owner of the reporting tool step. */
+  readonly principal?: AuthenticatedPrincipal
 }
 
 /** What a caller asks for when starting a continuable background child. */
@@ -152,6 +154,8 @@ export interface SubagentFollowupOptions {
   readonly source: MessageSource
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
+  /** Authenticated owner of the follow-up tool or browser request. */
+  readonly principal?: AuthenticatedPrincipal
 }
 
 /**
@@ -241,6 +245,8 @@ interface Activation {
    * not exist, so its teardown owes the parent no settlement account.
    */
   announced: boolean
+  /** Owner of the latest accepted child turn, used for child-generated parent notices. */
+  principal: AuthenticatedPrincipal | undefined
   /** Renewed whenever a settlement watcher must re-observe quiescence. */
   poke: PromiseWithResolvers<void>
 }
@@ -470,6 +476,7 @@ export class SubagentContinuationManager {
         { kind: 'user' },
         parent,
         spec.signal,
+        request.principal,
       )
     })
     return { childId, messageId }
@@ -519,7 +526,7 @@ export class SubagentContinuationManager {
         if (activation.disposal !== undefined) {
           return activation.disposal.then(() => undefined, () => undefined)
         }
-        return this.submitAdmitted(activation, content, options.source, parent, options.signal)
+        return this.submitAdmitted(activation, content, options.source, parent, options.signal, options.principal)
       })
       /* v8 ignore start -- only the lost-cutoff arm above returns undefined, so only that
        * race reaches the retry below, which then cold-resumes a new Activation. */
@@ -615,7 +622,7 @@ export class SubagentContinuationManager {
     this.assertAdmitting(child)
     const activation = this.authorizeReporter(child)
     const parent = this.resolveReportParent(child)
-    return this.deliverReport(activation, parent, content, options.delivery)
+    return this.deliverReport(activation, parent, content, options.delivery, options.principal)
   }
 
   /** Authorize only the exact Agent of one resident Activation. */
@@ -658,6 +665,7 @@ export class SubagentContinuationManager {
     parent: Agent,
     content: ContentBlock[],
     delivery: SubagentReportDelivery,
+    principal: AuthenticatedPrincipal | undefined,
   ): MessageId {
     const message = createUserMessage({
       content: [
@@ -669,6 +677,7 @@ export class SubagentContinuationManager {
         form: 'relay' as const,
         senderSessionId: activation.childId,
       },
+      ...principal === undefined ? {} : { principal },
     })
     if (delivery === 'next-step') {
       this.sendWaking(parent, message, () => { this.sendReport(parent, message, delivery) })
@@ -990,7 +999,7 @@ export class SubagentContinuationManager {
       if (error instanceof SubagentError) throw error
       throw new SubagentError(`subagent "${childId}" is unavailable`, 'NOT_RESUMABLE', { cause: error })
     }
-    return this.submitMaterialized(activation, content, options.source, parent, options.signal)
+    return this.submitMaterialized(activation, content, options.source, parent, options.signal, options.principal)
   }
 
   /**
@@ -1008,9 +1017,10 @@ export class SubagentContinuationManager {
     source: MessageSource,
     parent: Agent,
     signal: AbortSignal,
+    principal: AuthenticatedPrincipal | undefined,
   ): Promise<MessageId> {
     try {
-      return this.submitAdmitted(activation, content, source, parent, signal)
+      return this.submitAdmitted(activation, content, source, parent, signal, principal)
     } catch (error: unknown) {
       /* v8 ignore next -- rollback disposal failures must not mask the
        * pre-acceptance signal, drain, or lifecycle failure. */
@@ -1098,6 +1108,7 @@ export class SubagentContinuationManager {
       disposal: undefined,
       accepted: new Set(),
       announced: false,
+      principal: undefined,
       poke: Promise.withResolvers<void>(),
     }
     // After transfer, any failure must dispose the created handle, remove the
@@ -1194,11 +1205,13 @@ export class SubagentContinuationManager {
     content: ContentBlock[],
     source: MessageSource,
     parent: Agent,
+    principal: AuthenticatedPrincipal | undefined,
   ): MessageId {
     // Parent-originated delivery keeps the parent live through ownership, so
     // establish it before the message can enter the child's inbox.
     this.acquireOwnership(parent, activation.childId)
-    const message = createUserMessage({ content, source })
+    activation.principal = principal
+    const message = createUserMessage({ content, source, ...principal === undefined ? {} : { principal } })
     const accepted = this.admitWaking(activation, message.id, () => {
       activation.handle.agent.followup(message)
     })
@@ -1246,6 +1259,7 @@ export class SubagentContinuationManager {
     source: MessageSource,
     parent: Agent,
     signal: AbortSignal,
+    principal: AuthenticatedPrincipal | undefined,
   ): MessageId {
     signal.throwIfAborted()
     this.assertAdmitting(parent)
@@ -1262,7 +1276,7 @@ export class SubagentContinuationManager {
       activation.childId,
       activation.handle.agent.session.header.parentSession,
     )
-    return this.submit(activation, content, source, parent)
+    return this.submit(activation, content, source, parent, principal)
   }
 
   /**
@@ -1478,6 +1492,7 @@ export class SubagentContinuationManager {
           summary: boundContextSummary(summary),
           senderSessionId: activation.childId,
         },
+        ...activation.principal === undefined ? {} : { principal: activation.principal },
       })
       // A parent whose own teardown already began must not be woken. Waking is
       // not a queue operation: `followup()` on a quiescent Agent starts a turn,

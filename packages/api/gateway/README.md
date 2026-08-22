@@ -12,6 +12,8 @@ Strict mode reads generated invocation descriptors from `ctx.typert.local`. Look
 
 The Host entry registers a trusted-host interceptor on Connection's shared `/api` FetchHandler. Connection passes this composite handler through its HTTP bridge; the handler dispatches claimed endpoints to Gateway and unclaimed endpoints to API Proxy. Direct `invoke()` calls preserve business errors; `TypertGatewayError` distinguishes failures owned by dispatch, binding, providers, lookup, Context, arguments, and codecs. A resolver may use `TypertLookupFailure` to carry an existing RPC error, preserving its original error code for policy rejections such as cold-resume failures or ownership fences.
 
+Connection passes its transport-verified `AuthenticatedPrincipal` as a host-only invocation field. Gateway scopes it with `AsyncLocalStorage` for exactly one Remote call; a composed business service reads it through `ctx.typertGateway.currentPrincipal()`, which returns undefined outside dispatch. Named browser arguments cannot populate or retain this context, and concurrent Remote calls do not share it.
+
 A cancellation-aware Remote method declares `signal: AbortSignal` as its final Host parameter. The signal is descriptor metadata rather than a wire argument: Connection supplies it to the Gateway, and the Gateway injects it after decoded business parameters. SRC recognizes the reserved final name, while strict generation additionally requires the global `AbortSignal` type.
 
 ## Client service: `ClientRemote` (ctx key: `remote`)

@@ -2410,7 +2410,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               }
             }
             const durable = await durablePromptContent(ctx, content)
-            const message: UserMessage = createUserMessage({ content: durable, source })
+            const message: UserMessage = createUserMessage({
+              content: durable,
+              source,
+              ...request.principal === undefined ? {} : { principal: request.principal },
+            })
             if (mode === 'steer') agent.steer(message)
             else agent.followup(message)
           } catch (error: unknown) {
@@ -2682,6 +2686,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
             },
             signal,
+            ...request.principal === undefined ? {} : { principal: request.principal },
           })
           return ok(request, { messageId })
         } catch (error: unknown) {

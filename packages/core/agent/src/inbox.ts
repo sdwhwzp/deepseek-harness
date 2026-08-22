@@ -69,9 +69,23 @@ export class Inbox {
    * @internal - The agent loop's step-boundary operation, not a plugin extension point.
    */
   claim(target: InboxTarget, turn: number): UserMessage[] {
-    const claimed = this.mutate('next-step', 0, this.nextStep.length, [], false)
+    const selectedPrincipal = this.nextStep.find(message => message.principal !== undefined)?.principal
+      ?? (target === 'next-turn' ? this.nextTurn[0]?.principal : undefined)
+    let nextStepCount = 0
+    for (const message of this.nextStep) {
+      if (message.principal !== undefined
+        && selectedPrincipal !== undefined
+        && !samePrincipal(message.principal, selectedPrincipal)) break
+      nextStepCount++
+    }
+    const claimed = this.mutate('next-step', 0, nextStepCount, [], false)
     if (target === 'next-turn') {
-      claimed.push(...this.mutate('next-turn', 0, 1, [], false))
+      const queued = this.nextTurn[0]
+      if (queued !== undefined && (selectedPrincipal === undefined
+        || queued.principal === undefined
+        || samePrincipal(queued.principal, selectedPrincipal))) {
+        claimed.push(...this.mutate('next-turn', 0, 1, [], false))
+      }
     }
     for (const message of claimed) this.notifications.claimed(message, turn)
     return claimed
@@ -217,4 +231,12 @@ export class Inbox {
       ids.add(message.id)
     }
   }
+}
+
+/** Compare namespaced stable identities; usernames and roles may change. */
+function samePrincipal(
+  left: NonNullable<UserMessage['principal']>,
+  right: NonNullable<UserMessage['principal']>,
+): boolean {
+  return left.source === right.source && left.id === right.id
 }

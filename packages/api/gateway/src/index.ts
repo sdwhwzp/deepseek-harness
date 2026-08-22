@@ -5,7 +5,9 @@
  */
 
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import {
   remoteMethods,
   TypertLookupFailure,
@@ -91,6 +93,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
   static inject = ['typert']
 
   private srcClaims: ReadonlySet<string> | undefined
+  private readonly requestPrincipal = new AsyncLocalStorage<AuthenticatedPrincipal | undefined>()
 
   /**
    * Register the Gateway against the active Typert registry.
@@ -105,10 +108,18 @@ export class TypertGatewayService extends Service implements TypertGateway {
       connectionCtx.connection.rpc.intercept(
         '/api',
         endpoint => this.claimsEndpoint(endpoint),
-        (endpoint, payload, signal) => this.dispatchRpc(endpoint, payload, signal),
+        (endpoint, payload, signal, principal) => this.dispatchRpc(endpoint, payload, signal, principal),
         { authority: 'trusted-host' },
       )
     })
+  }
+
+  /**
+   * Return the transport-verified principal for the active Remote call.
+   * @returns The scoped caller, or undefined outside carrier dispatch.
+   */
+  currentPrincipal(): AuthenticatedPrincipal | undefined {
+    return this.requestPrincipal.getStore()
   }
 
   private claimsEndpoint(endpoint: string): boolean {
@@ -143,6 +154,10 @@ export class TypertGatewayService extends Service implements TypertGateway {
    * @throws {@link TypertGatewayError} for dispatch, provider, or boundary failures; lookup-policy and business errors retain identity.
    */
   async invoke(request: InvokeRemoteRequest): Promise<unknown> {
+    if (request.principal !== undefined && this.requestPrincipal.getStore() === undefined) {
+      const { principal, ...scopedRequest } = request
+      return this.requestPrincipal.run(principal, () => this.invoke(scopedRequest))
+    }
     const endpoint = endpointOf(request.namespace, request.method)
     const descriptor = this.resolveDescriptor(request.namespace, request.method, endpoint)
     assertExactArguments(request.args, descriptor, endpoint)
@@ -187,11 +202,17 @@ export class TypertGatewayService extends Service implements TypertGateway {
     endpoint: string,
     payload: unknown,
     signal: AbortSignal,
+    principal: AuthenticatedPrincipal | undefined,
   ): Promise<ConnectionRpcResult> {
-    return this.invokeRpc(endpoint, payload, signal)
+    return this.invokeRpc(endpoint, payload, signal, principal)
   }
 
-  private async invokeRpc(endpoint: string, payload: unknown, signal: AbortSignal): Promise<ConnectionRpcResult> {
+  private async invokeRpc(
+    endpoint: string,
+    payload: unknown,
+    signal: AbortSignal,
+    principal?: AuthenticatedPrincipal,
+  ): Promise<ConnectionRpcResult> {
     try {
       const segments = endpoint.split('/')
       if (segments.length !== 2 || segments[0] === '' || segments[1] === '') {
@@ -211,6 +232,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
         method,
         args: payload.args,
         signal,
+        ...principal === undefined ? {} : { principal },
       })
       // A void or explicitly absent business result carries no `value` field;
       // JSON has no `undefined`, and the envelope's optional slot is the one

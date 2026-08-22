@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { describe, expect, it } from 'vitest'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import { z } from 'zod'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
 import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
@@ -44,11 +45,13 @@ const emptyModel: TypertContribution['model'] = {
 }
 
 class GoalService extends Service {
+  static inject = ['typertGateway']
   readonly typertRemote = bindTypertRemote(this, 'goals')
   readonly calls: string[] = []
   lastSignal: AbortSignal | undefined
   nextResult: unknown = undefined
   businessError: Error | undefined
+  lastPrincipal: AuthenticatedPrincipal | undefined
 
   constructor(ctx: Context) {
     super(ctx, 'goals')
@@ -58,6 +61,7 @@ class GoalService extends Service {
   create(agent: FixtureAgent, request: { readonly title: string }, signal: AbortSignal): unknown {
     this.calls.push('create')
     this.lastSignal = signal
+    this.lastPrincipal = this.ctx.typertGateway.currentPrincipal()
     return {
       agentId: agent.id,
       title: request.title,
@@ -369,6 +373,23 @@ class InheritedMethodBase extends Service {
 class InheritedMethodService extends InheritedMethodBase {}
 
 describe('TypertGatewayService', () => {
+  it('scopes a host-verified principal to one Remote invocation', async () => {
+    const { ctx, service } = await setup()
+    registerAgentLookup(ctx, { id: 'agent-1' })
+    const principal: AuthenticatedPrincipal = {
+      source: 'gateway', id: '42', username: 'alice', role: 'user',
+    }
+
+    await ctx.typertGateway.invoke({
+      namespace: 'goals', method: 'create',
+      args: { agentId: 'agent-1', request: { title: 'ship' } },
+      principal,
+    })
+
+    expect(service.lastPrincipal).toEqual(principal)
+    expect(ctx.typertGateway.currentPrincipal()).toBeUndefined()
+  })
+
   it('invokes a strict direct method with schema decoding and a live lookup', async () => {
     const { ctx, service } = await setup()
     const agent = { id: 'agent-1' }

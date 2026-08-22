@@ -3,6 +3,8 @@
  * @module @deepseek-ai/dsh-api-gateway/types
  */
 
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
+
 /** One Remote method request after a carrier has decoded its envelope. */
 export interface InvokeRemoteRequest {
   /** Remote namespace selected by the generated descriptor. */
@@ -13,6 +15,8 @@ export interface InvokeRemoteRequest {
   readonly args: Readonly<Record<string, unknown>>
   /** Carrier or direct-caller cancellation injected only into cancellation-aware methods. */
   readonly signal?: AbortSignal
+  /** Host-only verified identity; browser payloads never populate this field. */
+  readonly principal?: AuthenticatedPrincipal
 }
 
 /** Stable infrastructure and boundary failures emitted before or after business execution. */
@@ -37,6 +41,9 @@ export type TypertGatewayErrorCode =
 
 /** Host dispatcher consumed by Connection adapters. */
 export interface TypertGateway {
+  /** Transport-verified caller for the currently executing Remote method. */
+  currentPrincipal(): AuthenticatedPrincipal | undefined
+
   /**
    * Invoke one live Remote method without assuming a carrier or response envelope.
    * @param request - decoded endpoint and named wire arguments.

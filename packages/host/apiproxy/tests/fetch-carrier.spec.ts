@@ -3,6 +3,7 @@ import type { ApiProxy, HostFrame, MuxFrame } from '../src/api/index.ts'
 import type { ClientResponse, RpcMessage, RpcReceipt, RpcRequest } from '../src/api/rpc.ts'
 import { RpcId } from '../src/api/rpc.ts'
 import { toFetchHandler } from '../src/fetch/handler.ts'
+import { authenticatedPrincipalOf, bindAuthenticatedPrincipal } from '../src/authenticated-request.ts'
 import { AbstractApiClient, InProcessApiClient } from '../src/fetch/client.ts'
 
 /** Minimal in-memory ApiProxy: echoes rpcIds, scripts one frame per stream. */
@@ -643,6 +644,32 @@ describe('handler carrier-layer statuses', () => {
     const body = JSON.stringify({ type: 'client-request', rpcId: 'r-12', method: 'session.list', payload: {} })
     const response = await handler.fetch('http://x/api/session.list', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
     expect(response.status).toBe(200)
+  })
+
+  it('passes only the Host-bound principal to a prompt invocation', async () => {
+    const api = fakeApi()
+    let observed: unknown
+    api.sessions.prompt = async (request) => {
+      observed = request.principal
+      return { rpcId: request.rpcId, result: { ok: true, value: { accepted: true } } }
+    }
+    const handler = toFetchHandler(api)
+    const request = new Request('http://x/api/session.prompt', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'client-request',
+        rpcId: 'principal-prompt',
+        method: 'session.prompt',
+        principal: { source: 'browser', id: 'forged', username: 'forged', role: 'admin' },
+        payload: { sessionId: 's1', mode: 'queue', content: [{ type: 'text', text: 'hi' }] },
+      }),
+    })
+    bindAuthenticatedPrincipal(request, { source: 'gateway', id: '42', username: 'alice', role: 'user' })
+
+    expect(authenticatedPrincipalOf(request)).toEqual({ source: 'gateway', id: '42', username: 'alice', role: 'user' })
+    expect((await handler.fetch(request)).status).toBe(200)
+    expect(observed).toEqual({ source: 'gateway', id: '42', username: 'alice', role: 'user' })
   })
 })
 

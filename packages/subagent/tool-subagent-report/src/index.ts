@@ -98,6 +98,7 @@ export function installReportTool(
         const messageId = await ctx.subagents.reportFrom(exec.agent as Agent, content, {
           delivery,
           signal: exec.signal,
+          ...exec.principal === undefined ? {} : { principal: exec.principal },
         })
         return { messageId }
       },

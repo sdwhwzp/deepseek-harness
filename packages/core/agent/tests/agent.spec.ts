@@ -39,6 +39,27 @@ function stubAgent(rawId: string, overrides: Partial<Agent> = {}): Agent {
 }
 
 describe('Inbox', () => {
+  it('claims one authenticated principal at a time and preserves queued identity on replay', () => {
+    const session = Session.create(SessionId('principal-inbox'))
+    const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+    const message = (username: string) => createUserMessage({
+      content: [{ type: 'text' as const, text: username }],
+      source: { kind: 'user' as const },
+      principal: { source: 'gateway', id: username, username, role: 'user' as const },
+    })
+    const a = message('a')
+    const b = message('b')
+    inbox.append('next-step', a)
+    inbox.append('next-step', b)
+
+    expect(inbox.claim('next-step', 1)).toEqual([a])
+    expect(inbox.nextStep).toEqual([b])
+
+    const restored = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+    expect(restored.nextStep).toEqual([b])
+    expect(restored.claim('next-step', 1)).toEqual([b])
+  })
+
   it('rejects an invalid durable splice during reconstruction', () => {
     const session = Session.create(SessionId('invalid-inbox-replay'))
     session.append('agent/inbox/spliced', {

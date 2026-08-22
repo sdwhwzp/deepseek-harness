@@ -1,6 +1,7 @@
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type {
   AssistantMessage,
+  AuthenticatedPrincipal,
   CallId,
   LlmCallConfig,
   LlmCallConfigAdapterDefaults,
@@ -240,7 +241,7 @@ export interface SessionEventMap {
    * step; otherwise the following identified `user/message` event or batch
    * records the messages entering the step.
    */
-  'turn/start': { turn: number }
+  'turn/start': { turn: number; principal?: AuthenticatedPrincipal }
   /**
    * Closes turn `turn` with the {@link TurnEndReason} that ended it. A turn
    * with no entered step has no `step/start` or `step/end`. The loop does not await a
@@ -251,7 +252,7 @@ export interface SessionEventMap {
    */
   'turn/end': { turn: number; reason: TurnEndReason }
   /** Opens step `step` of turn `turn` — one model call plus the tool executions it requested. */
-  'step/start': { turn: number; step: number }
+  'step/start': { turn: number; step: number; principal?: AuthenticatedPrincipal }
   /** Closes step `step` of turn `turn`. */
   'step/end': { turn: number; step: number }
   /**

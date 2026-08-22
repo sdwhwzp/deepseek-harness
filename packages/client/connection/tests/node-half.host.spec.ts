@@ -6,6 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import type { ApiProxy } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { RpcId, type ClientRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -264,6 +265,10 @@ describe('connection node half', () => {
     const routes: WebRoute[] = []
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     ctx.provide('apiProxy', {} as unknown as ApiProxy)
+    const alice: AuthenticatedPrincipal = {
+      source: 'gateway', id: '42', username: 'alice', role: 'user',
+    }
+    ctx.provide('requestPrincipal', { authenticate: () => alice })
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })
     await fiber.await()
     const connection = ctx.get('connection') as HostConnectionHandle
@@ -271,8 +276,8 @@ describe('connection node half', () => {
     const remove = connection.rpc.intercept(
       '/api',
       endpoint => endpoint === 'goals/create',
-      async (endpoint, payload) => {
-        calls.push({ endpoint, payload })
+      async (endpoint, payload, _signal, principal) => {
+        calls.push({ endpoint, payload, principal })
         return { ok: true, value: { accepted: true } }
       },
       { authority: 'trusted-host' },
@@ -307,6 +312,7 @@ describe('connection node half', () => {
     expect(calls).toEqual([{
       endpoint: 'goals/create',
       payload: { args: { agentId: 'agent-1' } },
+      principal: alice,
     }])
 
     const denied = fakeResponse()

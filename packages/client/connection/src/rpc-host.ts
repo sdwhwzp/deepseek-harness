@@ -2,6 +2,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import { authenticatedPrincipalOf } from '@deepseek-ai/dsh-host-apiproxy'
 import {
   clientRequestSchema,
   RpcId,
@@ -178,7 +179,12 @@ function rpcFetchHandler(
       }
 
       try {
-        const result = await handler(endpoint, message.payload, request.signal)
+        const result = await handler(
+          endpoint,
+          message.payload,
+          request.signal,
+          authenticatedPrincipalOf(request),
+        )
         return fullResponse(message.rpcId, result)
       } catch (error) {
         return new Response(`handler failure: ${String(error)}`, { status: 500 })
