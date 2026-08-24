@@ -40,11 +40,12 @@ export interface HostConnectionRpc {
 
   /**
    * Intercept owned endpoints on the shared `/api` channel before its fallback.
+   * Disjoint interceptors may coexist; overlapping endpoint claims fail before either handler runs.
    * @param channel - reserved shared channel; currently `/api`.
    * @param matches - synchronous endpoint ownership test.
    * @param handler - decoded endpoint handler returning the existing RPC result shape.
    * @param options - trust policy for every endpoint claimed by this interceptor.
-   * @returns asynchronous disposer removing the interceptor.
+   * @returns asynchronous disposer removing only this interceptor.
    */
   intercept(
     channel: '/api',

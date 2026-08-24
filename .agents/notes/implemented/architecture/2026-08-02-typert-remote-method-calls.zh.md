@@ -32,7 +32,7 @@ Remote 消费端投影同时包含 `.d.ts`、`.d.ts.map` 和 `.js`。`.d.ts` 只
 | Typert registry | `ctx.typert` | 分开保存当前环境 reflection、导入的 Remote contribution、lookup provider 和 Context provider |
 | Typert generator/loader | 无新增业务服务 | 从 Host/Client Program 生成三类 `lib` 产物，并把当前环境产物注册到 `ctx.typert` |
 | API Gateway 的 Host face | `ctx.typertGateway` | 关联 Host definition 与活 Service，解码参数、解析 receiver、调用方法和编码结果 |
-| Connection | `ctx.connection` | 独占 HTTP Server/未来 WebSocket、共享 `/api` route、RPC envelope、rpcId、序列化、trust、错误传输、Typert 拦截和旧 API Proxy 回退 |
+| Connection | `ctx.connection` | 独占 HTTP Server/未来 WebSocket、共享 `/api` route、RPC envelope、rpcId、序列化、trust、错误传输、跨 interceptor 的 endpoint 认领选择和旧 API Proxy 回退 |
 | API Gateway 的 Client face | `ctx.remote`、`ctx.remote.<namespace>` | mount Remote contribution，把每个 namespace 实体化为可追踪的 `remote.<namespace>` 子 Service，并把规范调用交给 `ctx.connection.rpc` |
 | API Remotes | 无新增服务 | 负责 Host Agent/Session lookup 策略，并作为 Client 业务的唯一 facade，选择并挂载 `/remote` contribution，同时暴露所选 API 声明 |
 | Agent/Session owning 包 | 既有领域服务 | 同时提供静态 interface merge 与运行时 lookup/Context provider |
@@ -361,7 +361,7 @@ CI 和发布运行 LIB。全仓 coverage 全部切换到 LIB 是独立后续工�
 
 ## Host Gateway 解析
 
-Host Gateway 向 Connection 注册一个 `/api` interceptor，不维护第二份 endpoint 注册表。ownership matcher 会先检查当前 Typert local 注册表，再查询一份可失效的集合；该集合通过扫描当前 Cordis Service 中的 `typertGateway` binding 与 SRC Remote 标记生成。Cordis Service 发生变化时会整体丢弃该集合，因此 Typert definition 与业务 Service 可以按任意顺序到达，同时既不会让旧 API Proxy 的 `/api` 流量在每次请求时重新扫描所有 Service，也不会因任意请求路径而扩大缓存。
+Host Gateway 向 Connection 注册一个 `/api` interceptor，不维护第二份 endpoint 注册表。Connection 允许可独立撤销且 endpoint 认领互不重叠的 interceptor；多个 matcher 认领同一请求时，会在调用其中任何一个之前返回 500。Gateway ownership matcher 会先检查当前 Typert local 注册表，再查询一份可失效的集合；该集合通过扫描当前 Cordis Service 中的 `typertGateway` binding 与 SRC Remote 标记生成。Cordis Service 发生变化时会整体丢弃该集合，因此 Typert definition 与业务 Service 可以按任意顺序到达，同时既不会让旧 API Proxy 的 `/api` 流量在每次请求时重新扫描所有 Service，也不会因任意请求路径而扩大缓存。
 
 每次调用都会重新从当前状态解析 descriptor、receiver、lookup 提供方与 Context 提供方。当前 strict descriptor 优先于 SRC。strict endpoint 一旦出现，即使随后撤回对应 descriptor，`TypertLocalRegistry.hasSeen()` 仍会在注册表剩余生命周期内保持对它的认领并禁止回退 SRC；重新注册 strict descriptor 即可恢复调用。移除 Service 或提供方会让调用明确失败；Gateway 既不保留失效对象，也不会以原始 lookup ID 调用方法。
 
@@ -446,7 +446,7 @@ Gateway 不处理逐方法权限、调用者身份、幂等或长连接状态。
 
 Client Remote Service 负责 Remote contribution、namespace Service 实体化、Scope 绑定以及位置参数与 descriptor 的对应。Gateway 负责 Host descriptor、endpoint ownership、lookup、Context 和业务调用。Connection 把 `/api`、endpoint 和 `{ args }` 作为一个 RPC 调用发送到目标并返回既有 RPC result；它不理解 Goal、Agent、lookup、descriptor 或 Client Remote 类型。
 
-Gateway 只向 Connection 注册 ownership matcher 和 RPC handler，不注册 HTTP route。Connection 把共享 `/api` route 挂到 HTTP Server，并把一个复合 FetchHandler 交给 bridge；该 handler 将已认领 endpoint 分发给 Gateway，未认领 endpoint 则交给 API Proxy。未来 Connection transport 可以保留相同顺序，而不改变 Remote payload、业务 decorator、生成的 DTS、Remote API 类型或 Agent Scope 编程界面。
+Gateway 只向 Connection 注册 ownership matcher 和 RPC handler，不注册 HTTP route。Connection 把共享 `/api` route 挂到 HTTP Server，并把一个复合 FetchHandler 交给 bridge；该 handler 选择唯一匹配的 interceptor，没有匹配时回退 API Proxy，并拒绝重叠认领。未来 Connection transport 可以保留相同选择语义，而不改变 Remote payload、业务 decorator、生成的 DTS、Remote API 类型或 Agent Scope 编程界面。
 
 ## 包边界
 
@@ -455,7 +455,7 @@ Gateway 只向 Connection 注册 ownership matcher 和 RPC handler，不注册 H
 - Typert runtime：分别保存当前环境的 local reflection 与导入的 Remote contribution。
 - `@deepseek-ai/dsh-api-gateway`：默认入口关联 Host definition 与 Service，认领 Remote endpoint，执行 lookup、Context receiver 解析、调用和结果编码，并向 Connection 注册 `/api` interceptor；`/client` 入口挂载 Remote contribution，创建严格 Remote namespace Service 和方法，并把调用交给 `ctx.connection.rpc`。两个入口共享 Remote 协议，但不互相导入各自的 Cordis interface merge。
 - `@deepseek-ai/dsh-api-remotes`：BFF 层；负责 Host Agent/Session resolver，选择 Client `/remote` contribution，并通过共享的 `TypertClientRemote` 约定向业务包暴露合并后的 Remote 类型。
-- Connection：拥有唯一 HTTP Server/未来 WebSocket carrier、共享 `/api` route 与复合 FetchHandler、API Proxy 回退、RPC envelope、rpcId、序列化、trust 和错误传输。
+- Connection：拥有唯一 HTTP Server/未来 WebSocket carrier、共享 `/api` route 与复合 FetchHandler、互不重叠的 endpoint 认领注册表、重叠拒绝、API Proxy 回退、RPC envelope、rpcId、序列化、trust 和错误传输。
 - Agent/Session 等业务对象包：拥有 lookup、Context provider、唯一 ID 类型和纯类型公共出口。
 - API Proxy Host 组合：向 API Remotes 提供 Web Agent 默认值和 scope 设置，并让旧方法使用同一个 `agentFor()`。
 - 业务 Service 包：声明 binding、Remote 方法及其 request/result 类型，并导出生成的 `/remote` 子路径。
@@ -464,7 +464,7 @@ Gateway 只向 Connection 注册 ownership matcher 和 RPC handler，不注册 H
 
 已交付的纵向链路是 `@deepseek-ai/dsh-goal/remote → Browser Client Remote → Connection RPC /api → Host Gateway → GoalService.remoteExportCreate()`。同一个带 Agent lookup 的 direct descriptor 同时支持 `ctx.remote.goals.create(agentId, request)` 与 `agentCtx.remote.goals.create(request)`。普通冷会话在 lookup 时通过 `agentFor()` 恢复，subagent-owned identity 保持既有 `agent-busy` fence；`@RemoteScope('agent')` 仍是独立的 scoped receiver 模式。
 
-Connection 提供共享 channel interceptor 与当前 HTTP carrier 映射。WebSocket 迁移、TUI runtime 与 carrier、TUI Agent Scope 接线、Permission/Approval 状态机、Session 事件流、调用授权、重试、幂等及跨版本协议兼容均不属于本决策。
+Connection 提供共享 channel interceptor 注册表与当前 HTTP carrier 映射。WebSocket 迁移、TUI runtime 与 carrier、TUI Agent Scope 接线、Permission/Approval 状态机、Session 事件流、调用授权、重试、幂等及跨版本协议兼容均不属于本决策。
 
 包拓扑为 `api/remotes → api/gateway → client/connection → host/webserver`。Connection 与 WebServer 在本次变更中保留既有路径；后续将它们移到 `api/connection` 和 `api/webserver` 只会改变包位置，不会改变这些服务边界。旧 API Proxy 同样保留在 `host/apiproxy` 下，作为尚未迁移到 Remote 的方法的回退路径。
 
@@ -500,6 +500,7 @@ Connection 提供共享 channel interceptor 与当前 HTTP carrier 映射。WebS
 - Remote 产物与 map 仅包含已标记的方法，不依赖 Browser，从而为未来 TUI 保留相同的消费方边界。
 - 生命周期测试会撤回并重新挂载 descriptor、Service、lookup、Context 提供方和 Client namespace；依赖不可用时，调用会失败，且不会使用陈旧调用或回退原始 ID。
 - 取消测试覆盖严格生成、SRC 末位参数名识别、Client signal 合并、Connection 到 Gateway 的传播，以及 Host 在 wire `args` 之外的注入。
+- Connection 测试会注册多个认领互不重叠的 `/api` interceptor，分别撤回，并证明重叠认领不会调用任一 handler。
 - 未认领 endpoint 继续使用既有 API Proxy 路径，其 trust、privileged-method、Permission/Approval 与 Session 事件流行为保持不变。
 
 ## 后果

@@ -42,7 +42,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
-  private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
+  private readonly interceptors = new Map<string, Set<ConnectionRpcInterceptor>>()
 
   /**
    * Provide the Host half over the active HTTP server.
@@ -64,10 +64,10 @@ export class HostConnectionService extends Service implements HostConnectionHand
   }
 
   /**
-   * Compose one shared-channel Fetch handler from its interceptor and fallback.
+   * Compose one shared-channel Fetch handler from its interceptors and fallback.
    * @param channel - shared channel mounted by Connection.
-   * @param fallback - handler for endpoints not claimed by the interceptor.
-   * @returns Fetch handler that selects exactly one target for each request.
+   * @param fallback - handler for endpoints not claimed by any interceptor.
+   * @returns Fetch handler that rejects overlapping claims and otherwise selects one target.
    */
   createSharedFetchHandler(
     channel: '/api',
@@ -76,10 +76,22 @@ export class HostConnectionService extends Service implements HostConnectionHand
     return {
       fetch: (request) => {
         const endpoint = endpointFromPath(channel, new URL(request.url).pathname)
-        const interceptor = this.interceptors.get(channel)
-        if (endpoint === undefined || interceptor === undefined || !interceptor.matches(endpoint)) {
+        const registered = this.interceptors.get(channel)
+        if (endpoint === undefined || registered === undefined) {
           return fallback.fetch(request)
         }
+        let interceptor: ConnectionRpcInterceptor | undefined
+        for (const candidate of registered) {
+          if (!candidate.matches(endpoint)) continue
+          if (interceptor !== undefined) {
+            return Promise.resolve(new Response(
+              `connection: shared RPC endpoint ${JSON.stringify(endpoint)} has multiple interceptors`,
+              { status: 500 },
+            ))
+          }
+          interceptor = candidate
+        }
+        if (interceptor === undefined) return fallback.fetch(request)
         if (interceptor.options.authority === 'loopback' && !isTrustedApiRequest(request, [])) {
           return Promise.resolve(new Response('forbidden', { status: 403 }))
         }
@@ -131,12 +143,12 @@ export class HostConnectionService extends Service implements HostConnectionHand
       options,
     }
     return owner.effect(() => {
-      if (this.interceptors.has(channel)) {
-        throw new Error(`connection: shared RPC channel ${JSON.stringify(channel)} already has an interceptor`)
-      }
-      this.interceptors.set(channel, interceptor)
+      const registered = this.interceptors.get(channel) ?? new Set<ConnectionRpcInterceptor>()
+      registered.add(interceptor)
+      this.interceptors.set(channel, registered)
       return () => {
-        this.interceptors.delete(channel)
+        registered.delete(interceptor)
+        if (registered.size === 0) this.interceptors.delete(channel)
       }
     }, `client-connection: ${channel} rpc interceptor`)
   }

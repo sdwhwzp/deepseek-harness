@@ -120,7 +120,7 @@ Remote Client 声明中的参数名来自 wire 字段，参数和返回类型则
 
 Remote 与 API Proxy 共用 Connection 的 `/api` 路由。Client Remote 调用 `connection.rpc.call('/api', '<namespace>/<method>', { args }, signal)`；HTTP carrier 对应 `POST /api/<namespace>/<method>`，payload 只包含一个具名 `args` 对象。
 
-Connection 在 HTTP bridge 之前执行 `/api` 的统一信任检查，再在共享 FetchHandler 内按 interceptor 顺序分发。Typert Gateway 只认领存在严格描述符或活跃 SRC marker 的两段式 endpoint；未认领的请求回退到既有 API Proxy。Connection 拥有传输、RPC id、响应 envelope 和请求取消，Gateway 只拥有 Remote 数据协议和业务分发。未来替换 Connection carrier 不要求改变 Remote 描述符或 Client 编程接口。
+Connection 在 HTTP bridge 之前执行 `/api` 的统一信任检查，再在共享 FetchHandler 内检查每个已注册 interceptor 对 endpoint 的认领。恰好一项认领时由该 interceptor 接收请求，没有认领时回退既有 API Proxy，重叠认领则在任何 interceptor 运行前返回 500。Typert Gateway 只认领存在严格描述符或活跃 SRC marker 的两段式 endpoint。Connection 拥有传输、RPC id、响应 envelope、请求取消和共享 endpoint 选择，Gateway 只拥有 Remote 数据协议和业务分发。未来替换 Connection carrier 不要求改变 Remote 描述符或 Client 编程接口。
 
 Gateway 每次调用都从当前注册表解析描述符和实时服务，不缓存业务对象。它要求 `args` 的字段集合与描述符完全一致，先用 codec 校验 wire 值，再通过注册的 lookup 或 Context 提供方解析对象或接收者，最后调用 binding 指向的服务方法并校验返回值。缺少提供方、identity 未命中、binding 不一致、参数缺失或多余、schema 失败和方法不存在都会在进入业务代码前或离开业务代码后失败。
 

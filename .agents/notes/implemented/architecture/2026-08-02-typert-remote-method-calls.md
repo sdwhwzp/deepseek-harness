@@ -32,7 +32,7 @@ The Remote consumer projection contains `.d.ts`, `.d.ts.map`, and `.js` files. T
 | Typert registry | `ctx.typert` | Separately stores reflection for the current environment, imported Remote contributions, lookup providers, and Context providers |
 | Typert generator/loader | No new business service | Generates three kinds of `lib` artifacts from the Host/Client Programs and registers the current environment's artifacts with `ctx.typert` |
 | API Gateway's Host face | `ctx.typertGateway` | Associates Host definitions with live Services, decodes parameters, resolves receivers, invokes methods, and encodes results |
-| Connection | `ctx.connection` | Exclusively owns the HTTP Server/future WebSocket, the shared `/api` route, RPC envelope, rpcId, serialization, trust, error transport, Typert interception, and legacy API Proxy fallback |
+| Connection | `ctx.connection` | Exclusively owns the HTTP Server/future WebSocket, the shared `/api` route, RPC envelope, rpcId, serialization, trust, error transport, endpoint-claim selection across interceptors, and legacy API Proxy fallback |
 | API Gateway's Client face | `ctx.remote`, `ctx.remote.<namespace>` | Mounts Remote contributions, materializes each namespace as a traced `remote.<namespace>` child Service, and delegates canonical calls to `ctx.connection.rpc` |
 | API Remotes | No new service | Owns Host Agent/Session lookup policy and serves as the only Client business facade, selecting and mounting `/remote` contributions while exposing the selected API declarations |
 | Agent/Session owning packages | Existing domain services | Provide both static interface merges and runtime lookup/Context providers |
@@ -361,7 +361,7 @@ CI and releases use LIB. Moving all repository coverage to LIB is separate follo
 
 ## Host Gateway resolution
 
-The Host Gateway registers one `/api` interceptor with Connection and does not maintain a second endpoint registry. Its ownership matcher checks the current Typert local registry first, then consults an invalidation-aware set populated by scanning current Cordis Services for `typertGateway` bindings and SRC Remote markers. A Cordis Service change discards the set, so Typert definitions and business Services may arrive in either order without making legacy `/api` traffic rescan every Service on each request or letting arbitrary request paths grow the cache.
+The Host Gateway registers one `/api` interceptor with Connection and does not maintain a second endpoint registry. Connection permits independently disposable interceptors with disjoint endpoint claims; if multiple matchers claim the same request, it returns 500 before invoking any of them. The Gateway ownership matcher checks the current Typert local registry first, then consults an invalidation-aware set populated by scanning current Cordis Services for `typertGateway` bindings and SRC Remote markers. A Cordis Service change discards the set, so Typert definitions and business Services may arrive in either order without making legacy `/api` traffic rescan every Service on each request or letting arbitrary request paths grow the cache.
 
 Invocation resolves the descriptor, receiver, lookup providers, and Context provider again from current state. A current strict descriptor takes precedence over SRC. After a strict endpoint has appeared, `TypertLocalRegistry.hasSeen()` keeps it owned when that descriptor is withdrawn and forbids SRC fallback for the remainder of the registry lifetime; re-registering the strict descriptor restores calls. Removing a Service or provider makes invocation fail explicitly, and the Gateway neither retains invalid objects nor invokes a method with a raw lookup ID.
 
@@ -446,7 +446,7 @@ The Gateway does not handle per-method permissions, caller identity, idempotency
 
 The Client Remote Service owns Remote contributions, namespace Service materialization, Scope binding, and the correspondence between positional parameters and descriptors. The Gateway owns Host descriptors, endpoint ownership, lookup, Context, and business invocation. Connection sends `/api`, the endpoint, and `{ args }` as one RPC call to the target and returns the existing RPC result; it does not understand Goal, Agent, lookup, descriptors, or Client Remote types.
 
-The Gateway registers only its ownership matcher and RPC handler with Connection; it does not register an HTTP route. Connection mounts the shared `/api` route into the HTTP Server and gives the bridge one composite FetchHandler; that handler dispatches claimed endpoints to Gateway and unclaimed endpoints to API Proxy. A future Connection transport can preserve this order without changing the Remote payload, business decorators, generated DTS, Remote API types, or Agent Scope programming interface.
+The Gateway registers only its ownership matcher and RPC handler with Connection; it does not register an HTTP route. Connection mounts the shared `/api` route into the HTTP Server and gives the bridge one composite FetchHandler; that handler selects the only matching interceptor, falls back to API Proxy when none matches, and rejects overlapping claims. A future Connection transport can preserve this selection without changing the Remote payload, business decorators, generated DTS, Remote API types, or Agent Scope programming interface.
 
 ## Package boundaries
 
@@ -455,7 +455,7 @@ The Gateway registers only its ownership matcher and RPC handler with Connection
 - Typert runtime: separately stores the current environment's local reflection and imported Remote contributions.
 - `@deepseek-ai/dsh-api-gateway`: its default entry associates Host definitions with Services, claims Remote endpoints, performs lookup, resolves Context receivers, invokes methods, encodes results, and registers an `/api` interceptor with Connection; its `/client` entry mounts Remote contributions, creates strict Remote namespace Services and methods, and delegates calls to `ctx.connection.rpc`. The entries share the Remote protocol but do not import each other's Cordis interface merges.
 - `@deepseek-ai/dsh-api-remotes`: the BFF layer; owns the Host Agent/Session resolver, selects Client `/remote` contributions, and exposes the merged Remote types to business packages through the shared `TypertClientRemote` contract.
-- Connection: owns the single HTTP Server/future WebSocket carrier, shared `/api` route and composite FetchHandler, API Proxy fallback, RPC envelope, rpcId, serialization, trust, and error transport.
+- Connection: owns the single HTTP Server/future WebSocket carrier, shared `/api` route and composite FetchHandler, disjoint endpoint-claim registry, overlap rejection, API Proxy fallback, RPC envelope, rpcId, serialization, trust, and error transport.
 - Business-object packages such as Agent/Session: own lookup, Context providers, canonical ID types, and public type-only entries.
 - API Proxy Host composition: supplies Web Agent defaults and scope setup to API Remotes and consumes the same `agentFor()` for legacy methods.
 - Business Service packages: declare bindings, Remote methods, and their request/result types, and export the generated `/remote` subpath.
@@ -464,7 +464,7 @@ The Gateway registers only its ownership matcher and RPC handler with Connection
 
 The shipped vertical path is `@deepseek-ai/dsh-goal/remote → Browser Client Remote → Connection RPC /api → Host Gateway → GoalService.remoteExportCreate()`. The same direct descriptor with an Agent lookup supports both `ctx.remote.goals.create(agentId, request)` and `agentCtx.remote.goals.create(request)`. Ordinary cold sessions are resumed through `agentFor()` during lookup, while subagent-owned identities retain the existing `agent-busy` fence; `@RemoteScope('agent')` remains the distinct scoped-receiver mode.
 
-Connection supplies the shared-channel interceptor and current HTTP carrier mapping. WebSocket migration, the TUI runtime and carrier, TUI Agent Scope wiring, Permission/Approval state machines, Session event streams, call authorization, retries, idempotency, and cross-version protocol compatibility remain outside this decision.
+Connection supplies the shared-channel interceptor registry and current HTTP carrier mapping. WebSocket migration, the TUI runtime and carrier, TUI Agent Scope wiring, Permission/Approval state machines, Session event streams, call authorization, retries, idempotency, and cross-version protocol compatibility remain outside this decision.
 
 The package topology is `api/remotes → api/gateway → client/connection → host/webserver`. Connection and WebServer retain their existing paths in this change; moving them later to `api/connection` and `api/webserver` changes package placement rather than these service boundaries. The legacy API Proxy likewise remains under `host/apiproxy` as the fallback for methods not yet migrated to Remote.
 
@@ -500,6 +500,7 @@ The package topology is `api/remotes → api/gateway → client/connection → h
 - The Remote artifacts and maps contain only marked methods and no Browser dependency, preserving the same consumer boundary for a future TUI.
 - Lifecycle tests withdraw and remount descriptors, Services, lookups, Context providers, and Client namespaces; unavailable dependencies fail without stale calls or raw-ID fallback.
 - Cancellation tests cover strict generation, SRC final-name recognition, Client signal fusion, Connection-to-Gateway propagation, and Host injection outside wire `args`.
+- Connection tests register multiple disjoint `/api` interceptors, withdraw them independently, and prove an overlapping claim invokes neither handler.
 - Unclaimed endpoints continue through the existing API Proxy path with its trust, privileged-method, Permission/Approval, and Session event-stream behavior unchanged.
 
 ## Consequences
