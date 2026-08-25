@@ -8,7 +8,7 @@ The [Conversation Node assembly decision](../../.agents/notes/implemented/archit
 
 ## 1. Design a replayable event family
 
-Choose one stable business id before writing the Definition. Every event that contributes to the same Node must carry that id or derive it independently from its own payload; the client must never assign an update to “the latest unfinished” Context.
+Choose one stable business id before writing the Definition. Every event that contributes to the same Node must carry that id or derive it independently from its own payload. If an external producer may reuse the id, return a `lifecycle` value as well: the start can use its event seq while each update carries or cites that same seq. The client must never assign an update to “the latest unfinished” Context.
 
 For a review job, the event contract could be:
 
@@ -224,7 +224,7 @@ With `D` registered Definitions, one incoming event performs `D` current-event m
 Add focused tests that establish these outcomes:
 
 1. A complete window passed through replace produces the expected final State, Location data, Node payload, and `anchorSeq`.
-2. An update-only tail stays pending; prepending the unique start produces the same result as a complete replace.
+2. An update-only tail stays pending; prepending the lifecycle's unique start produces the same result as a complete replace.
 3. Initial history followed by live append produces the same result as replaying the combined window.
 4. Prepending an older page adds earlier rows without replacing existing keyed Node values whose data did not change.
 5. Repeated visible deltas preserve `context.key` and publish at most once per animation frame when requested.

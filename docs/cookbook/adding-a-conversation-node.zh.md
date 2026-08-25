@@ -8,7 +8,7 @@
 
 ## 1. 设计可回放的事件族
 
-编写 Definition 前先选定稳定的业务 id。构成同一个 Node 的每条事件都必须携带该 id，或只凭自身 payload 独立推导出该 id；Client 绝不能把 update 猜测为属于“最近一个未完成”的 Context。
+编写 Definition 前先选定稳定的业务 id。构成同一个 Node 的每条事件都必须携带该 id，或只凭自身 payload 独立推导出该 id。如果外部提供方可能复用该 id，还要返回 `lifecycle` 值：start 可以使用自身事件 seq，而每条 update 必须携带或引用同一 seq。Client 绝不能把 update 猜测为属于“最近一个未完成”的 Context。
 
 以一个 review job 为例，事件约定可以是：
 
@@ -224,7 +224,7 @@ Assembler 会记录这项依赖。如果后续 older prepend 带来了更近的�
 添加聚焦测试，证明以下结果：
 
 1. 完整窗口通过 replace 后产生预期的最终 State、Location data、Node payload 与 `anchorSeq`。
-2. 只有 update 的尾部窗口保持 pending；prepend 唯一 start 后，结果与完整 replace 相同。
+2. 只有 update 的尾部窗口保持 pending；prepend 该 lifecycle 的唯一 start 后，结果与完整 replace 相同。
 3. 初始历史后继续实时 append，与回放合并后的完整窗口得到相同结果。
 4. prepend 更早分页只增加更早的行；数据未变化的既有 keyed Node value 不被替换。
 5. 重复的可见 delta 保持 `context.key`，并在请求 `animation-frame` 时每帧最多发布一次。

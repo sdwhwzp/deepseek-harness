@@ -26,7 +26,7 @@ interface SessionTrace {
   openStep: number | null
   nextTurn: number
   nextStep: number
-  pendingCalls: Set<CallId>
+  pendingCalls: Map<number, CallId>
 }
 
 /** One accepted event's deferred mutation of a committed session trace. */
@@ -34,7 +34,8 @@ interface SessionTraceTransition {
   scalars: Pick<SessionTrace, 'lastSeq' | 'openTurn' | 'openStep' | 'nextTurn' | 'nextStep'>
   pendingCalls:
     | { kind: 'none' }
-    | { kind: 'add' | 'delete'; callId: CallId }
+    | { kind: 'add'; callSeq: number; callId: CallId }
+    | { kind: 'delete'; callSeq: number }
     | { kind: 'clear' }
 }
 
@@ -121,7 +122,7 @@ function validateEvent(
     }
     case 'tool/call': {
       requireOpenStep(trace, 'tool/call', event.data.turn, event.data.step, fail)
-      pendingCalls = { kind: 'add', callId: event.data.callId }
+      pendingCalls = { kind: 'add', callSeq: event.seq, callId: event.data.callId }
       break
     }
     case 'tool/result': {
@@ -136,10 +137,15 @@ function validateEvent(
       requireOpenStep(trace, 'tool/result', event.data.turn, event.data.step, fail)
       const callId = event.data.message.source.callId
       const syntheticNotStarted = event.data.message.content[0].isError === true && event.data.error?.code === TOOL_NOT_STARTED
-      if (!trace.pendingCalls.has(callId) && !syntheticNotStarted) {
+      const citedCallSeq = event.sourceEventSeqs?.[0]
+      const fallbackCallSeq = citedCallSeq === undefined
+        ? [...trace.pendingCalls].find(([, pendingCallId]) => pendingCallId === callId)?.[0]
+        : undefined
+      const callSeq = citedCallSeq ?? fallbackCallSeq
+      if ((callSeq === undefined || trace.pendingCalls.get(callSeq) !== callId) && !syntheticNotStarted) {
         fail(`tool/result for ${callId} with no prior tool/call in this step`)
       }
-      pendingCalls = { kind: 'delete', callId }
+      if (callSeq !== undefined) pendingCalls = { kind: 'delete', callSeq }
       break
     }
     case 'user/message':
@@ -172,10 +178,10 @@ function applyTransition(trace: SessionTrace, transition: SessionTraceTransition
     case 'none':
       break
     case 'add':
-      trace.pendingCalls.add(transition.pendingCalls.callId)
+      trace.pendingCalls.set(transition.pendingCalls.callSeq, transition.pendingCalls.callId)
       break
     case 'delete':
-      trace.pendingCalls.delete(transition.pendingCalls.callId)
+      trace.pendingCalls.delete(transition.pendingCalls.callSeq)
       break
     case 'clear':
       trace.pendingCalls.clear()
@@ -201,7 +207,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
     openStep: null,
     nextTurn: 1,
     nextStep: 1,
-    pendingCalls: new Set(),
+    pendingCalls: new Map(),
   })
 
   const seedSession = (session: Session): SessionTrace => {

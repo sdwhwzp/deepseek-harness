@@ -260,6 +260,45 @@ describe('interruptedTurnClosers', () => {
     expect(result.data.message.content[0].content[0].text).toContain('first verify external state or ask the user')
   })
 
+  it('repairs the unanswered occurrence when a provider repeats one call id', () => {
+    const duplicate = CallId('provider-duplicate')
+    const events: SessionEvent[] = [
+      userTurnStart(1, 0),
+      { type: 'step/start', seq: 1, time: 1, data: { turn: 1, step: 1 } },
+      { type: 'assistant/message', seq: 2, time: 2, data: {
+        turn: 1,
+        step: 1,
+        message: createMessage({
+          role: 'assistant',
+          content: [
+            { type: 'tool-call', id: duplicate, name: 'bash', arguments: '{"command":"first"}' },
+            { type: 'tool-call', id: duplicate, name: 'bash', arguments: '{"command":"second"}' },
+          ],
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+        }),
+      } },
+      { type: 'tool/call', seq: 3, time: 3, data: {
+        turn: 1, step: 1, callId: duplicate, name: 'bash', arguments: '{"command":"first"}',
+      } },
+      { type: 'tool/result', seq: 4, time: 4, data: {
+        turn: 1,
+        step: 1,
+        message: createToolResultMessage({ callId: duplicate, content: [], isError: false }),
+      }, surfaceOp: 'append', sourceEventSeqs: [3] },
+      { type: 'tool/call', seq: 5, time: 5, data: {
+        turn: 1, step: 1, callId: duplicate, name: 'bash', arguments: '{"command":"second"}',
+      } },
+    ]
+
+    const closers = interruptedTurnClosers(events)
+    expect(closers.map(event => event.type)).toEqual(['tool/result', 'step/end', 'turn/end'])
+    expect(closers[0]).toMatchObject({
+      type: 'tool/result',
+      sourceEventSeqs: [5],
+      data: { message: { source: { callId: duplicate } } },
+    })
+  })
+
   it('handles tool/call without a matching assistant/message entry gracefully', () => {
     // A raw tool/call with no assistant-registered pending call has nothing to
     // answer; repair still closes the step and turn without synthesizing a result.

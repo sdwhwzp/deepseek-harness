@@ -39,21 +39,21 @@ Registry 注册是 Cordis effect，Definition 卸载会触发现有 Session 的�
 
 Definition 不持有跨 Session 的可变业务数据。每个 Session 的 Context、State、依赖和 View Builder 都由该 Session 的 Assembler 隔离持有。
 
-#### `kind`、业务 ID 与 Context key
+#### `kind`、业务 ID、lifecycle 与 Context key
 
-`match()` 返回的 `id` 只要求在当前 Definition 内稳定。Tool 的 ID 可以是 call ID，Assistant 的 ID 可以是 `turn:step`，Inbox 的 ID 可以是 splice Event seq。
+`match()` 返回的 `id` 只要求在当前 Definition 内稳定。Tool 的 ID 可以是 call ID，Assistant 的 ID 可以是 `turn:step`，Inbox 的 ID 可以是 splice Event seq。可能复用同一个业务 ID 的生产方还要提供 `lifecycle`；该 lifecycle 中的每条 Event 都必须在本地推导出相同值。
 
-Assembler 使用 `conversationContextKey(kind, id)` 组合无碰撞 key；不同 Definition 即使返回相同 `id` 也不会共享 Context。最终 view Node 必须沿用这个 engine-owned key，不能把 `seq` 或渲染位置当 identity。
+Assembler 使用 `conversationContextKey(kind, id, lifecycle?)` 组合无碰撞 key；不同 Definition 即使返回相同 `id` 也不会共享 Context，同一个 ID 下重复出现的 lifecycle 也彼此独立。最终 view Node 必须沿用这个 engine-owned key，不能把渲染位置当 identity。
 
-每个 `(kind, id)` 最多存在一个 start Match。第二个 start 会立即报错；Definition 需要表达新生命周期时必须返回新 ID。
+每个 `(kind, id, lifecycle?)` 最多存在一个 start Match。第二个 start 会立即报错；Definition 需要表达另一个 lifecycle 时必须返回新 ID 或新的 lifecycle identity。
 
 #### `match(event)`
 
-`match(event)` 只读取当前原始 `SessionEvent`，返回 `{ id, role: 'start' | 'update' }` 或 `null`。它拿不到 Context、历史、Reader、Location 或 view envelope。
+`match(event)` 只读取当前原始 `SessionEvent`，返回 `{ id, lifecycle?, role: 'start' | 'update' }` 或 `null`。它拿不到 Context、历史、Reader、Location 或 view envelope。
 
 这项限制使单条 Event 的路由成本只随已注册 Definition 数量增长。Assembler 不会为了判断一条 update 属于谁而遍历该 Definition 的历史 Context。
 
-start、result、resource、checkpoint 及业务自有终止 Event 必须携带或可直接推导同一 ID。若单个 Event 不能算出 ID，生产 Event 的协议负责补足关联字段，Client 不通过“最近一个未完成对象”猜测。
+start、result、resource、checkpoint 及业务自有终止 Event 必须携带或可直接推导同一 ID 与 lifecycle identity。若单个 Event 不能算出这些值，生产 Event 的协议负责补足关联字段，Client 不通过“最近一个未完成对象”猜测。
 
 `role` 描述 State 生命周期，不描述可见性。start 可以立即生成 terminal Node；update 也可以在 start 尚未加载时先进入 pending Context。
 
@@ -69,8 +69,9 @@ Location 可以随 prepend 补齐边界或 append 关闭边界而改变。Assemb
 
 | 字段 | 所有者 | Definition 可见语义 |
 |---|---|---|
-| `key` | Assembler | `kind + id` 的稳定最终 identity |
+| `key` | Assembler | `kind + id + lifecycle?` 的稳定最终 identity |
 | `kind` / `id` | Definition + Assembler | 当前业务命名空间和业务 ID |
+| `lifecycle` | Definition + Assembler | 复用业务 ID 时的 lifecycle identity；ID 本身完整时为 `undefined` |
 | `matches` | Assembler | 当前窗口已收集且按 `seq` 排序的完整业务证据 |
 | `start` | Assembler | 唯一 start Match；尚未加载时为 `undefined` |
 | `state` | Definition 返回、Assembler 持有 | 最近一次 `start`/`update` 返回值；未初始化时为 `undefined` |
@@ -156,7 +157,7 @@ Assembler 校验 Node `key === context.key` 且 Node `target === target`。业�
 
 Step/Turn 关闭属于外部 Location 事实，不替业务修改 State。边界变化会 replay 并 build 受影响 Context；业务结合“自己的 State 是否完成”和“Location 是否 closed”生成正常、running 或 interrupted 表现。
 
-ID 不复用，完成的 Context 继续存在于当前窗口，既提供稳定渲染 identity，也可以作为后续 Reader 的前序证据。
+只有提供不同 lifecycle identity 时才能复用 ID。完成的 Context 继续存在于当前窗口，既提供稳定渲染 identity，也可以作为后续 Reader 的前序证据。
 
 ### Location 是一级引擎事实
 
@@ -245,7 +246,7 @@ Chat `order` 的结构性变化仍可能重排当前可见 key；纯 data 更新
 
 ### Replace、prepend 与 append 的一致性
 
-三条链路最终都遵守同一不变量：Context Matches 按 seq 排序，State 从唯一 start 正序 fold，Reader 只看严格前序 active Context，Location data 按 Step→Turn 发布，Node key 只由 kind 和 ID 决定。
+三条链路最终都遵守同一不变量：Context Matches 按 seq 排序，State 从唯一 start 正序 fold，Reader 只看严格前序 active Context，Location data 按 Step→Turn 发布，Node key 只由 kind、ID 与可选 lifecycle identity 决定。
 
 `replaceWindow` 是初始打开、resync、gap repair 和 registry 变化的低频完整替换，不用于实现普通 load older。`prepend` 与 `append` 都保留现有 Builder 和 Context identity。
 
@@ -261,7 +262,7 @@ Chat `order` 的结构性变化仍可能重排当前可见 key；纯 data 更新
 | Next-step Inbox / `inbox-next-step` | splice Event seq | 每条目标为 next-step 的 `agent/inbox/spliced` | 无 | 同样形成逐指令瞬间态，claimed 集合供 Message 读取 |
 | Message / `input-message` | message ID | append-surface `user/message` | 无 | 根据 source 生成 context message，或读取最近 next-step Inbox 判断 user/steering |
 | Assistant / `assistant-step` | `turn:step` | `step/start` | `assistant/chunk`、final `assistant/message`、同 step Retry | 聚合 blocks、usage、首 token 时间、final 和 retry 隐藏状态，并发布同 key Step data |
-| Tool / `tool-call` | root call ID | root `tool/call` | root result、Code Dispatch start/result | 聚合 root、children 和 parent Map；Dispatch Event 用 `rootCallId` 精确路由 |
+| Tool / `tool-call` | root call ID 加 root `tool/call` seq lifecycle | root `tool/call` | root result、Code Dispatch start/result | 聚合 root、children 和 parent Map；result 引用 call seq，Dispatch Event 携带 `rootCallSeq` |
 | Command / `command` | command ID | `command/run` | `command/done`、带 source command ID 的 compact lifecycle/checkpoint | 聚合 command outcome 和手动压缩证据 |
 | Automatic Compaction / `compaction` | compaction ID | 无 source command ID 的 `compaction/start` | summary、end、replacement checkpoint | 聚合 summary/checkpoint；checkpoint 足够时可在缺 start 下 fallback |
 | Retry / `model-retry` | retry ID | attempt 1 的 `llm/retry` | 后续 `llm/retry` 与 `llm/retry-started` | 聚合同一 RetryId 的 attempts 与 scheduled/started 状态 |

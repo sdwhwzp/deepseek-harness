@@ -318,6 +318,11 @@ export interface ToolExecutionInput {
    * a root execution; nested dispatchers propagate the enclosing value.
    */
   readonly rootCallId?: CallId
+  /**
+   * Session seq of the root model-requested `tool/call`. Agent-owned root
+   * executions provide it so nested durable events retain occurrence identity.
+   */
+  readonly rootCallSeq?: number
   readonly name: string
   /** Losslessly JSON-serializable parsed arguments (tools validate their own schema). */
   readonly arguments: unknown
@@ -1368,6 +1373,7 @@ export class ToolRuntime extends Service {
     const token = createExecutionToken()
     const callId = exec.callId
     const rootCallId = exec.rootCallId ?? callId
+    const rootCallSeq = exec.rootCallSeq
     const name = exec.name
     const agent = exec.agent
     const principal = exec.principal
@@ -1387,6 +1393,7 @@ export class ToolRuntime extends Service {
       token,
       callId,
       rootCallId,
+      ...rootCallSeq === undefined ? {} : { rootCallSeq },
       name,
       signal,
       ...agent !== undefined ? { agent } : {},

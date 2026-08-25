@@ -278,8 +278,9 @@ export interface SessionEventMap {
   'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
   /**
    * The model requested one tool invocation: `name` with the raw `arguments`
-   * JSON string exactly as the model produced it (unparsed). `callId` pairs the
-   * call with its `tool/result`.
+   * JSON string exactly as the model produced it (unparsed). `callId` retains
+   * the provider value; the `tool/result` cites this event seq because a
+   * provider may reuse that value for another invocation.
    */
   'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string }
   /**

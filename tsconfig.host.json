@@ -39,6 +39,7 @@
     "apps/web/tests/seeded-history.e2e.ts",
     "apps/web/tests/cold-blank-session.e2e.ts",
     "apps/web/tests/stats-paged-history.e2e.ts",
+    "apps/web/tests/repeated-tool-call-id.e2e.ts",
     "apps/web/tests/sidebar-scrollbar.e2e.ts",
     "apps/web/tests/rail-search-expand.e2e.ts",
     "apps/web/tests/conversation-column-overflow.e2e.ts",

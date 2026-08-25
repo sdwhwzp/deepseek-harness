@@ -685,7 +685,7 @@ function matchesQuestions(payload: QuestionResponsePayload, pending: PendingQues
 function viewFor(
   ctx: Context,
   event: SessionEvent,
-  argsFor: (callId: string) => unknown,
+  argsFor: (callId: string, callSeq: number | undefined) => unknown,
   // Presenters live with the definitions, and definitions live in the scope
   // chain: a preset registers its tools into its standing layer. A live agent
   // is a scope whose chain passes through its preset; a cold read passes the
@@ -703,7 +703,7 @@ function viewFor(
       const { message, meta } = event.data
       const [result] = message.content
       const callId = message.source.callId
-      const call = argsFor(callId) as { name: string; args: unknown } | undefined
+      const call = argsFor(callId, event.sourceEventSeqs?.[0]) as { name: string; args: unknown } | undefined
       if (call === undefined) return undefined
       const view = ctx.tools.get(call.name, scope)?.presentResult?.(call.args, {
         content: result.content,
@@ -726,9 +726,14 @@ function viewFor(
  * window — a cross-page pairing soft-falls to no view) and by live-path table
  * misses after a reconnect-eviction.
  */
-function backscanArgs(events: readonly SessionEvent[], callId: string): { name: string; args: unknown } | undefined {
+function backscanArgs(
+  events: readonly SessionEvent[],
+  callId: string,
+  callSeq?: number,
+): { name: string; args: unknown } | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i] as SessionEvent
+    if (callSeq !== undefined && event.seq !== callSeq) continue
     if (event.type !== 'tool/call') continue
     const data = event.data as ToolCallData
     if (data.callId !== callId) continue
@@ -753,7 +758,7 @@ function historyPage(
   const page = paginate(events, beforeSeq, maxMessages ?? DEFAULT_MAX_MESSAGES)
   return {
     events: page.events.map((event) => {
-      const view = viewFor(ctx, event, callId => backscanArgs(page.events, callId), scope)
+      const view = viewFor(ctx, event, (callId, callSeq) => backscanArgs(page.events, callId, callSeq), scope)
       return { event, ...view === undefined ? {} : { view } }
     }),
     hasMore: page.hasMore,
@@ -3390,7 +3395,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }
             const view = viewFor(
               ctx, event,
-              callId => openCalls.get(session.id)?.get(callId) ?? backscanArgs(session.events, callId),
+              (callId, callSeq) => callSeq === undefined
+                ? openCalls.get(session.id)?.get(callId) ?? backscanArgs(session.events, callId)
+                : backscanArgs(session.events, callId, callSeq),
               ctx.agents.get(session.id),
             )
             queue.push(frame({ type: 'session/event', sessionId: session.id, event, ...view === undefined ? {} : { view } }))

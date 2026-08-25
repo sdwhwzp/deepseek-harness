@@ -92,7 +92,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-来源：[`packages/core/session/src/types.ts:341`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:348`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:377`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:409`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:342`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:349`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:378`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:410`](../packages/core/session/src/types.ts)
 
 ## 事件
 
@@ -549,7 +549,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'request/context': RequestContext
 ```
 
-来源：[`packages/core/session/src/types.ts:314`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:315`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -563,7 +563,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-来源：[`packages/core/session/src/types.ts:309`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:310`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -638,7 +638,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'session/end-seed': Record<string, never>
 ```
 
-来源：[`packages/core/session/src/types.ts:337`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:338`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -784,7 +784,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TodoItem](subsystems/session.zh.md)
 
-来源：[`packages/core/session/src/types.ts:304`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:305`](../packages/core/session/src/types.ts)
 
 ### `tool/*`
 
@@ -795,15 +795,16 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```ts persistence-catalog
 /**
  * The model requested one tool invocation: `name` with the raw `arguments`
- * JSON string exactly as the model produced it (unparsed). `callId` pairs the
- * call with its `tool/result`.
+ * JSON string exactly as the model produced it (unparsed). `callId` retains
+ * the provider value; the `tool/result` cites this event seq because a
+ * provider may reuse that value for another invocation.
  */
 'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string }
 ```
 
 类型：[CallId](subsystems/core.zh.md)
 
-来源：[`packages/core/session/src/types.ts:284`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:285`](../packages/core/session/src/types.ts)
 
 <a id="toolcode-dispatch--log-only"></a>
 
@@ -811,7 +812,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ```ts persistence-catalog
 /**
- * One bridged sub-dispatch SETTLING: the pairing ids (matching the
+ * One bridged sub-dispatch SETTLING: the pairing ids and optional durable root call seq (matching the
  * `tool/code-dispatch-start` with the same `subCallId`), the tool `name`
  * with the same JSON-normalized `arguments`, and the sub-call's complete
  * model-facing outcome in `tool/result`'s own vocabulary
@@ -828,7 +829,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'tool/code-dispatch': CodeDispatchEventData
 ```
 
-来源：[`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types.ts)
+来源：[`packages/core/tools/src/types.ts:58`](../packages/core/tools/src/types.ts)
 
 <a id="toolcode-dispatch-start--log-only"></a>
 
@@ -837,7 +838,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```ts persistence-catalog
 /**
  * One sub-dispatch STARTING inside a `run_code` program: the parent
- * `run_code` call id, the deterministic sub-call id (`<parent>:code:<n>`,
+ * `run_code` call id, the agent loop's root call seq when durable, the deterministic sub-call id (`<parent>:code:<n>`,
  * numbered in submission order), and the tool `name` with its
  * JSON-normalized `arguments` — the exact value dispatched, normalized
  * BEFORE dispatch, so this append can never fail on payload shape.
@@ -851,7 +852,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'tool/code-dispatch-start': CodeDispatchStartEventData
 ```
 
-来源：[`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types.ts)
+来源：[`packages/core/tools/src/types.ts:42`](../packages/core/tools/src/types.ts)
 
 <a id="toolresult--surface"></a>
 
@@ -878,7 +879,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:296`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:297`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 

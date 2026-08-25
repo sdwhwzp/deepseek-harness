@@ -137,7 +137,7 @@ describe('built-in conversation node Definitions', () => {
       turn: 1,
       step: 1,
       message: assistantMessage('assistant-1', 'settled'),
-    }, { surfaceOp: 'append' }))
+    }, { surfaceOp: 'append', sourceEventSeqs: [3] }))
     value.flush()
 
     const settledSnapshot = snapshot(value)
@@ -289,7 +289,7 @@ describe('built-in conversation node Definitions', () => {
       turn: 1,
       step: 1,
       message: toolResult('root', 'done'),
-    }, { surfaceOp: 'append' }))
+    }, { surfaceOp: 'append', sourceEventSeqs: [3] }))
     value.flush()
 
     const settledSnapshot = snapshot(value)
@@ -301,6 +301,7 @@ describe('built-in conversation node Definitions', () => {
     const history = assembler([
       at(14, 'tool/code-dispatch-start', {
         rootCallId: 'history-root',
+        rootCallSeq: 13,
         parentCallId: 'history-root',
         subCallId: 'child',
         name: 'read',
@@ -308,6 +309,7 @@ describe('built-in conversation node Definitions', () => {
       }),
       at(15, 'tool/code-dispatch', {
         rootCallId: 'history-root',
+        rootCallSeq: 13,
         parentCallId: 'history-root',
         subCallId: 'child',
         name: 'read',
@@ -319,7 +321,7 @@ describe('built-in conversation node Definitions', () => {
         turn: 2,
         step: 1,
         message: toolResult('history-root', 'root done'),
-      }, { surfaceOp: 'append' }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [13] }),
     ], true)
     const before = node(snapshot(history), 'tool-call')
     expect((before?.data as ToolChatData).root.subCalls).toMatchObject([
@@ -348,6 +350,7 @@ describe('built-in conversation node Definitions', () => {
     const firstChild = (after?.data as ToolChatData).root.subCalls[0]
     history.append(at(17, 'tool/code-dispatch-start', {
       rootCallId: 'history-root',
+      rootCallSeq: 13,
       parentCallId: 'history-root',
       subCallId: 'second-child',
       name: 'write',
@@ -356,6 +359,48 @@ describe('built-in conversation node Definitions', () => {
     history.flush()
     const withSecondChild = node(snapshot(history), 'tool-call')
     expect((withSecondChild?.data as ToolChatData).root.subCalls[0]).toBe(firstChild)
+  })
+
+  it('replays repeated provider tool-call ids as independent lifecycles', () => {
+    const current = snapshot(assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', {
+        turn: 1, step: 1, callId: 'provider-duplicate', name: 'bash', arguments: '{"command":"first"}',
+      }),
+      at(4, 'tool/result', {
+        turn: 1, step: 1, message: toolResult('provider-duplicate', 'first result'),
+      }, { surfaceOp: 'append', sourceEventSeqs: [3] }),
+      at(5, 'tool/call', {
+        turn: 1, step: 1, callId: 'provider-duplicate', name: 'bash', arguments: '{"command":"second"}',
+      }),
+      at(6, 'tool/result', {
+        turn: 1, step: 1, message: toolResult('provider-duplicate', 'second result'),
+      }, { surfaceOp: 'append', sourceEventSeqs: [5] }),
+      at(7, 'step/end', { turn: 1, step: 1 }),
+      at(8, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(9, 'turn/start', { turn: 2 }),
+      at(10, 'step/start', { turn: 2, step: 1 }),
+      at(11, 'assistant/message', {
+        turn: 2,
+        step: 1,
+        message: assistantMessage('answer-after-duplicate', 'still visible after reopen'),
+      }, { surfaceOp: 'append' }),
+      at(12, 'step/end', { turn: 2, step: 1 }),
+      at(13, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ]))
+
+    const tools = [...current.nodes.values()]
+      .filter(candidate => candidate.kind === 'tool-call')
+    expect(tools.map(candidate => candidate.anchorSeq)).toEqual([3, 5])
+    expect(new Set(tools.map(candidate => candidate.key)).size).toBe(2)
+    expect(tools.map(candidate => (candidate.data as ToolChatData).root)).toMatchObject([
+      { kind: 'tool-result', call: { argsRaw: '{"command":"first"}' } },
+      { kind: 'tool-result', call: { argsRaw: '{"command":"second"}' } },
+    ])
+    expect(node(current, 'assistant-step')?.data).toMatchObject({
+      blocks: [{ kind: 'text', text: 'still visible after reopen' }],
+    })
   })
 
   it('prepends an older turn without replacing already materialized nodes', () => {

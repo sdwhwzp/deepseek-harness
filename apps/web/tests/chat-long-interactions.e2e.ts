@@ -183,6 +183,8 @@ describe('web e2e: long Chat interaction contract', () => {
     const toolMarker2 = FIXTURE.markers.tool(TOOL_TURN, 2)
     const toolUserEvent = requiredEvent(source.session.events, 'user/message', toolUserMarker)
     const toolAssistantEvent = requiredEvent(source.session.events, 'assistant/message', toolAssistantMarker)
+    const toolCall1 = requiredEvent(source.session.events, 'tool/call', toolMarker1)
+    const toolCall2 = requiredEvent(source.session.events, 'tool/call', toolMarker2)
     const branchUserMarker = FIXTURE.markers.user(BRANCH_TURN)
     const branchAssistantMarker = FIXTURE.markers.assistant(BRANCH_TURN)
     const branchUserEvent = requiredEvent(source.session.events, 'user/message', branchUserMarker)
@@ -214,8 +216,8 @@ describe('web e2e: long Chat interaction contract', () => {
 
     const expectedOrder = [
       toolUserKey,
-      conversationContextKey('tool-call', TARGET_CALL_1),
-      conversationContextKey('tool-call', TARGET_CALL_2),
+      conversationContextKey('tool-call', TARGET_CALL_1, String(toolCall1.seq)),
+      conversationContextKey('tool-call', TARGET_CALL_2, String(toolCall2.seq)),
       toolAssistantKey,
     ]
     const actualOrder = await page.locator('[data-chat-anchor-key]').evaluateAll((rows, keys) => (

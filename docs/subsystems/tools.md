@@ -189,6 +189,11 @@ interface ToolExecutionInput {
    * a root execution; nested dispatchers propagate the enclosing value.
    */
   readonly rootCallId?: CallId
+  /**
+   * Session seq of the root model-requested `tool/call`. Agent-owned root
+   * executions provide it so nested durable events retain occurrence identity.
+   */
+  readonly rootCallSeq?: number
   readonly name: string
   /** Losslessly JSON-serializable parsed arguments (tools validate their own schema). */
   readonly arguments: unknown

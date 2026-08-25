@@ -169,7 +169,10 @@ async function runGroup(
     const call = group[index]!
     callSeqs[index] = appendToolCall(session, turn, step, call.block)
     started++
-    const prepared = await ctx.tools[TOOL_RUNTIME_SCHEDULER].prepare(call.exec)
+    const prepared = await ctx.tools[TOOL_RUNTIME_SCHEDULER].prepare({
+      ...call.exec,
+      rootCallSeq: callSeqs[index],
+    })
     throwSchedulerFailure()
     switch (prepared.kind) {
       case 'dispatch': {

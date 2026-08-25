@@ -67,6 +67,35 @@ describe('session-log invariants', () => {
     }).not.toThrow()
   })
 
+  it('tracks repeated provider call ids by their cited call event', async () => {
+    const { ctx } = await setup()
+    const session = ctx.sessions.create()
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    const first = session.append('tool/call', {
+      turn: 1, step: 1, callId: CallId('provider-duplicate'), name: 'echo', arguments: '{"value":1}',
+    })
+    const second = session.append('tool/call', {
+      turn: 1, step: 1, callId: CallId('provider-duplicate'), name: 'echo', arguments: '{"value":2}',
+    })
+    expect(() => {
+      session.append('tool/result', {
+        turn: 1,
+        step: 1,
+        message: createToolResultMessage({
+          callId: CallId('provider-duplicate'), content: [], isError: false,
+        }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [first.seq] })
+      session.append('tool/result', {
+        turn: 1,
+        step: 1,
+        message: createToolResultMessage({
+          callId: CallId('provider-duplicate'), content: [], isError: false,
+        }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [second.seq] })
+    }).not.toThrow()
+  })
+
   it('does not advance committed trace state when a later dispatch listener vetoes', async () => {
     const { ctx } = await setup()
     const session = ctx.sessions.create(SessionId('dispatch-veto-rollback'))

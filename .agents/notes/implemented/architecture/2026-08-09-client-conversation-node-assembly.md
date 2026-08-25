@@ -39,21 +39,21 @@ One Event may be claimed by several ordinary Definitions. For example, an Assist
 
 A Definition holds no mutable business data across Sessions. Each Session's Assembler isolates that Session's Contexts, State, dependencies, and View Builders.
 
-#### `kind`, business ID, and Context key
+#### `kind`, business ID, lifecycle, and Context key
 
-The `id` returned by `match()` only needs to be stable within its Definition. A Tool ID can be a call ID, an Assistant ID can be `turn:step`, and an Inbox ID can be the splice Event seq.
+The `id` returned by `match()` only needs to be stable within its Definition. A Tool ID can be a call ID, an Assistant ID can be `turn:step`, and an Inbox ID can be the splice Event seq. A producer that may reuse one business ID also supplies `lifecycle`; every Event in that lifecycle derives the same value locally.
 
-The Assembler uses `conversationContextKey(kind, id)` to make a collision-free key. Definitions that return the same `id` still do not share a Context. The final view Node must retain this engine-owned key and cannot use `seq` or render position as identity.
+The Assembler uses `conversationContextKey(kind, id, lifecycle?)` to make a collision-free key. Definitions that return the same `id` still do not share a Context, and repeated lifecycles under one ID remain independent. The final view Node must retain this engine-owned key and cannot use render position as identity.
 
-Each `(kind, id)` has at most one start Match. A second start fails immediately; a Definition must return a new ID to represent a new lifecycle.
+Each `(kind, id, lifecycle?)` has at most one start Match. A second start fails immediately; a Definition must return a new ID or lifecycle identity to represent another lifecycle.
 
 #### `match(event)`
 
-`match(event)` reads only the current raw `SessionEvent` and returns `{ id, role: 'start' | 'update' }` or `null`. It cannot access a Context, history, a Reader, a Location, or the view envelope.
+`match(event)` reads only the current raw `SessionEvent` and returns `{ id, lifecycle?, role: 'start' | 'update' }` or `null`. It cannot access a Context, history, a Reader, a Location, or the view envelope.
 
 This restriction makes one Event's routing cost depend only on the number of registered Definitions. The Assembler never scans a Definition's historical Contexts to decide which one owns an update.
 
-Start, result, resource, checkpoint, and business-owned terminal Events must carry or directly imply the same ID. If one Event cannot yield that ID, its producer extends the Event protocol; the Client does not guess from the "nearest unfinished object."
+Start, result, resource, checkpoint, and business-owned terminal Events must carry or directly imply the same ID and lifecycle identity. If one Event cannot yield them, its producer extends the Event protocol; the Client does not guess from the "nearest unfinished object."
 
 The `role` describes the State lifecycle, not visibility. A start may produce a terminal Node immediately, while an update may enter a pending Context before its start has loaded.
 
@@ -69,8 +69,9 @@ Location can change when prepend fills a boundary or append closes one. The Asse
 
 | Field | Owner | Semantics visible to the Definition |
 |---|---|---|
-| `key` | Assembler | Stable final identity derived from `kind + id` |
+| `key` | Assembler | Stable final identity derived from `kind + id + lifecycle?` |
 | `kind` / `id` | Definition + Assembler | Current business namespace and business ID |
+| `lifecycle` | Definition + Assembler | Reused business ID's lifecycle identity, or `undefined` when the ID is complete |
 | `matches` | Assembler | Complete business evidence loaded in the current window and sorted by `seq` |
 | `start` | Assembler | Unique start Match, or `undefined` before it loads |
 | `state` | Returned by Definition, held by Assembler | Most recent `start`/`update` return value, or `undefined` before initialization |
@@ -156,7 +157,7 @@ The engine exposes no fixed `end()` lifecycle. A single-Event business completes
 
 Step and Turn closure are external Location facts and do not mutate business State. A boundary change replays and builds affected Contexts; each business combines its own completion State with whether its Location is closed to produce normal, running, or interrupted presentation.
 
-IDs are never reused. Completed Contexts remain in the current window, providing stable render identity and possible predecessor evidence for later Readers.
+An ID may be reused only with a distinct lifecycle identity. Completed Contexts remain in the current window, providing stable render identity and possible predecessor evidence for later Readers.
 
 ### Location is a first-class engine fact
 
@@ -245,7 +246,7 @@ A structural Chat `order` change can still reorder the current visible keys. A d
 
 ### Consistency across replace, prepend, and append
 
-All three paths preserve the same invariants: Context Matches are seq-ordered, State folds forward from one unique start, Reader sees only strictly preceding active Contexts, Location data publishes in Step→Turn order, and Node key depends only on kind and ID.
+All three paths preserve the same invariants: Context Matches are seq-ordered, State folds forward from one unique start, Reader sees only strictly preceding active Contexts, Location data publishes in Step→Turn order, and Node key depends only on kind, ID, and optional lifecycle identity.
 
 `replaceWindow` is the low-frequency complete replacement for initial open, resync, gap repair, and registry changes; it does not implement ordinary load older. Both `prepend` and `append` retain existing Builder and Context identity.
 
@@ -261,7 +262,7 @@ Page size, the number of history loads, and RAF coalescing affect only when evid
 | Next-step Inbox / `inbox-next-step` | Splice Event seq | Each `agent/inbox/spliced` targeting next-step | None | Build the same per-instruction instantaneous state; Message reads its claimed set |
 | Message / `input-message` | Message ID | Append-surface `user/message` | None | Use source for a context message, or read the nearest next-step Inbox to distinguish user from steering |
 | Assistant / `assistant-step` | `turn:step` | `step/start` | `assistant/chunk`, final `assistant/message`, and same-step Retry | Aggregate blocks, usage, first-token time, final evidence, and retry-hidden state, then publish same-key Step data |
-| Tool / `tool-call` | Root call ID | Root `tool/call` | Root result and Code Dispatch start/result | Aggregate the root, children, and parent Map; Dispatch Events route exactly through `rootCallId` |
+| Tool / `tool-call` | Root call ID plus root `tool/call` seq lifecycle | Root `tool/call` | Root result and Code Dispatch start/result | Aggregate the root, children, and parent Map; results cite the call seq and Dispatch Events carry `rootCallSeq` |
 | Command / `command` | Command ID | `command/run` | `command/done` and compact lifecycle/checkpoint Events carrying a source command ID | Aggregate command outcome and manual-compaction evidence |
 | Automatic Compaction / `compaction` | Compaction ID | `compaction/start` without a source command ID | Summary, end, and replacement checkpoint | Aggregate summary/checkpoint; sufficient checkpoint evidence supports fallback without a start |
 | Retry / `model-retry` | Retry ID | Attempt 1 `llm/retry` | Later `llm/retry` and `llm/retry-started` | Aggregate one RetryId's attempts and scheduled/started state |

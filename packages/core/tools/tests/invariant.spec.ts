@@ -184,6 +184,36 @@ describe('tool-pipeline invariants', () => {
     })).toThrow(/changed rootCallId for subCallId child/)
   })
 
+  it('requires a supplied root call seq to identify the durable root call', async () => {
+    const ctx = await setup()
+    const session = ctx.sessions.create()
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    const rootCall = session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId: CallId('root'),
+      name: 'run_code',
+      arguments: '{}',
+    })
+    expect(() => session.append('tool/code-dispatch-start', {
+      rootCallId: CallId('root'),
+      rootCallSeq: rootCall.seq,
+      parentCallId: CallId('root'),
+      subCallId: CallId('child'),
+      name: 'echo',
+      arguments: {},
+    })).not.toThrow()
+    expect(() => session.append('tool/code-dispatch-start', {
+      rootCallId: CallId('root'),
+      rootCallSeq: rootCall.seq + 1,
+      parentCallId: CallId('root'),
+      subCallId: CallId('invalid-child'),
+      name: 'echo',
+      arguments: {},
+    })).toThrow(/rootCallSeq .* does not identify rootCallId root/)
+  })
+
   it('indexes dispatch records emitted for a bare session', async () => {
     const ctx = await setup()
     const session = Session.create(SessionId('bare-dispatch-session'))

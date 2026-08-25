@@ -29,44 +29,51 @@ export function interruptedTurnClosers(events: readonly SessionEvent[]): Session
   let openStep: number | null = null
   // Reset at each turn boundary so earlier calls cannot leak into tail repair.
   // Assistant blocks register calls; later `tool/call` events add their seqs to `sourceEventSeqs`.
-  const pendingCalls = new Map<CallId, { step: number; callSeq?: number }>()
+  const pendingCalls: { callId: CallId; step: number; callSeq?: number }[] = []
   for (const event of events) {
     switch (event.type) {
       case 'turn/start':
         openTurn = event.data.turn
         openStep = null
-        pendingCalls.clear()
+        pendingCalls.length = 0
         break
       case 'turn/end':
         openTurn = null
         openStep = null
-        pendingCalls.clear()
+        pendingCalls.length = 0
         break
       case 'step/start':
         openStep = event.data.step
         break
       case 'step/end':
-        pendingCalls.clear()
+        pendingCalls.length = 0
         openStep = null
         break
       case 'assistant/message':
         // The assistant message carries the tool-call blocks; each is pending
         // until a tool/result event with the same callId is logged.
         for (const block of event.data.message.content) {
-          if (block.type === 'tool-call') pendingCalls.set(block.id, { step: event.data.step })
+          if (block.type === 'tool-call') pendingCalls.push({ callId: block.id, step: event.data.step })
         }
         break
       case 'tool/call':
         // Cite the `tool/call` seq from the synthetic result.
         {
-          const entry = pendingCalls.get(event.data.callId)
+          const entry = pendingCalls.find(candidate =>
+            candidate.callId === event.data.callId && candidate.callSeq === undefined)
           if (entry) {
             entry.callSeq = event.seq
           }
         }
         break
       case 'tool/result':
-        pendingCalls.delete(event.data.message.source.callId)
+        {
+          const callId = event.data.message.source.callId
+          const callSeq = event.sourceEventSeqs?.[0]
+          const index = pendingCalls.findIndex(candidate =>
+            callSeq === undefined ? candidate.callId === callId : candidate.callSeq === callSeq)
+          if (index >= 0) pendingCalls.splice(index, 1)
+        }
         break
       // Other event types do not move the turn/step boundary cursor.
       default:
@@ -87,8 +94,8 @@ export function interruptedTurnClosers(events: readonly SessionEvent[]): Session
   const closers: SessionEvent[] = []
 
   // Close calls before their step: providers reject dangling assistant calls,
-  // and Map insertion order preserves their transcript order.
-  for (const [callId, { step, callSeq }] of pendingCalls) {
+  // and the pending list preserves their transcript order.
+  for (const { callId, step, callSeq } of pendingCalls) {
     const started = callSeq !== undefined
     const message: ToolResultMessage = freezeMessage({
       id: MessageId(`interrupted-tool-result-${callId}-${seq}`),

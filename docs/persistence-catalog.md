@@ -90,7 +90,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:341`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:348`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:377`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:409`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:342`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:349`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:378`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:410`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -547,7 +547,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:314`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:315`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -561,7 +561,7 @@ Source: [`packages/core/session/src/types.ts:314`](../packages/core/session/src/
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-Source: [`packages/core/session/src/types.ts:309`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:310`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -636,7 +636,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 'session/end-seed': Record<string, never>
 ```
 
-Source: [`packages/core/session/src/types.ts:337`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:338`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -782,7 +782,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:208`](../packages/experi
 
 Types: [TodoItem](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:304`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:305`](../packages/core/session/src/types.ts)
 
 ### `tool/*`
 
@@ -793,15 +793,16 @@ Source: [`packages/core/session/src/types.ts:304`](../packages/core/session/src/
 ```ts persistence-catalog
 /**
  * The model requested one tool invocation: `name` with the raw `arguments`
- * JSON string exactly as the model produced it (unparsed). `callId` pairs the
- * call with its `tool/result`.
+ * JSON string exactly as the model produced it (unparsed). `callId` retains
+ * the provider value; the `tool/result` cites this event seq because a
+ * provider may reuse that value for another invocation.
  */
 'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string }
 ```
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:284`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:285`](../packages/core/session/src/types.ts)
 
 <a id="toolcode-dispatch--log-only"></a>
 
@@ -809,7 +810,7 @@ Source: [`packages/core/session/src/types.ts:284`](../packages/core/session/src/
 
 ```ts persistence-catalog
 /**
- * One bridged sub-dispatch SETTLING: the pairing ids (matching the
+ * One bridged sub-dispatch SETTLING: the pairing ids and optional durable root call seq (matching the
  * `tool/code-dispatch-start` with the same `subCallId`), the tool `name`
  * with the same JSON-normalized `arguments`, and the sub-call's complete
  * model-facing outcome in `tool/result`'s own vocabulary
@@ -826,7 +827,7 @@ Source: [`packages/core/session/src/types.ts:284`](../packages/core/session/src/
 'tool/code-dispatch': CodeDispatchEventData
 ```
 
-Source: [`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types.ts)
+Source: [`packages/core/tools/src/types.ts:58`](../packages/core/tools/src/types.ts)
 
 <a id="toolcode-dispatch-start--log-only"></a>
 
@@ -835,7 +836,7 @@ Source: [`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types
 ```ts persistence-catalog
 /**
  * One sub-dispatch STARTING inside a `run_code` program: the parent
- * `run_code` call id, the deterministic sub-call id (`<parent>:code:<n>`,
+ * `run_code` call id, the agent loop's root call seq when durable, the deterministic sub-call id (`<parent>:code:<n>`,
  * numbered in submission order), and the tool `name` with its
  * JSON-normalized `arguments` — the exact value dispatched, normalized
  * BEFORE dispatch, so this append can never fail on payload shape.
@@ -849,7 +850,7 @@ Source: [`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types
 'tool/code-dispatch-start': CodeDispatchStartEventData
 ```
 
-Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types.ts)
+Source: [`packages/core/tools/src/types.ts:42`](../packages/core/tools/src/types.ts)
 
 <a id="toolresult--surface"></a>
 
@@ -876,7 +877,7 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:296`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:297`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 

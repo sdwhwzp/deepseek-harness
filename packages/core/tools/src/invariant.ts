@@ -43,6 +43,16 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
       fail(`${event.type} must carry non-empty rootCallId, parentCallId, and subCallId`)
       return
     }
+    if (event.data.rootCallSeq !== undefined) {
+      const rootCallSeq = event.data.rootCallSeq
+      const rootCall = session.events.find(candidate => candidate.seq === rootCallSeq)
+      if (!Number.isSafeInteger(rootCallSeq)
+        || rootCall?.type !== 'tool/call'
+        || rootCall.seq >= event.seq
+        || String(rootCall.data.callId) !== root) {
+        fail(`${event.type} rootCallSeq ${String(rootCallSeq)} does not identify rootCallId ${root}`)
+      }
+    }
     const roots = dispatchRoots.get(session)
     const known = roots?.get(child)
     if (known !== undefined && known !== root) fail(`${event.type} changed rootCallId for subCallId ${child}`)

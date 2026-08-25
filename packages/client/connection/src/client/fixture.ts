@@ -404,8 +404,8 @@ function buildAlphaLog(): SessionEvent[] {
       const callId = `fx-call-${turn}`
       blocks.push({ type: 'tool-call', id: callId, name: 'echo', arguments: `{"text":"turn ${turn}"}` } as ContentBlock)
       push({ type: 'assistant/message', surfaceOp: 'append', data: { turn, step: 0, message: assistantMessage(blocks) } })
-      push({ type: 'tool/call', data: { turn, step: 0, callId, name: 'echo', arguments: `{"text":"turn ${turn}"}` } })
-      push({ type: 'tool/result', surfaceOp: 'append', data: { turn, step: 0, message: toolResultMessage(callId, text(`ECHO: TURN ${turn}`), turn % 25 === 12) } })
+      const callSeq = push({ type: 'tool/call', data: { turn, step: 0, callId, name: 'echo', arguments: `{"text":"turn ${turn}"}` } })
+      push({ type: 'tool/result', sourceEventSeqs: [callSeq], surfaceOp: 'append', data: { turn, step: 0, message: toolResultMessage(callId, text(`ECHO: TURN ${turn}`), turn % 25 === 12) } })
       push({ type: 'step/end', data: { turn, step: 0 } })
       push({ type: 'step/start', data: { turn, step: 1 } })
       push({ type: 'assistant/message', surfaceOp: 'append', data: { turn, step: 1, message: assistantMessage(text(`工具结果已消化（turn ${turn}）。`)) } })
@@ -428,8 +428,8 @@ function buildAlphaLog(): SessionEvent[] {
       type: 'assistant/message', surfaceOp: 'append',
       data: { turn, step: 0, message: assistantMessage([{ type: 'tool-call', id: callId, name, arguments: args } as ContentBlock]) },
     })
-    push({ type: 'tool/call', data: { turn, step: 0, callId, name, arguments: args } })
-    push({ type: 'tool/result', surfaceOp: 'append', data: { turn, step: 0, message: toolResultMessage(callId, text(resultText), false) } })
+    const callSeq = push({ type: 'tool/call', data: { turn, step: 0, callId, name, arguments: args } })
+    push({ type: 'tool/result', sourceEventSeqs: [callSeq], surfaceOp: 'append', data: { turn, step: 0, message: toolResultMessage(callId, text(resultText), false) } })
     push({ type: 'step/end', data: { turn, step: 0 } })
     push({ type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
   }
@@ -465,16 +465,16 @@ function buildAlphaLog(): SessionEvent[] {
       type: 'assistant/message', surfaceOp: 'append',
       data: { turn, step: 0, message: assistantMessage([{ type: 'tool-call', id: callId, name: 'run_code', arguments: args } as ContentBlock]) },
     })
-    push({ type: 'tool/call', data: { turn, step: 0, callId, name: 'run_code', arguments: args } })
+    const callSeq = push({ type: 'tool/call', data: { turn, step: 0, callId, name: 'run_code', arguments: args } })
     const dispatchPair = (n: number, name: string, dispatchArgs: Record<string, unknown>, resultText: string, isError = false): void => {
       push({
         type: 'tool/code-dispatch-start',
-        data: { rootCallId: callId, parentCallId: callId, subCallId: `${callId}:code:${n}`, name, arguments: dispatchArgs },
+        data: { rootCallId: callId, rootCallSeq: callSeq, parentCallId: callId, subCallId: `${callId}:code:${n}`, name, arguments: dispatchArgs },
       })
       push({
         type: 'tool/code-dispatch',
         data: {
-          rootCallId: callId, parentCallId: callId, subCallId: `${callId}:code:${n}`, name,
+          rootCallId: callId, rootCallSeq: callSeq, parentCallId: callId, subCallId: `${callId}:code:${n}`, name,
           arguments: dispatchArgs, isError, content: [{ type: 'text', text: resultText }],
         },
       })
@@ -483,7 +483,7 @@ function buildAlphaLog(): SessionEvent[] {
     dispatchPair(2, 'read', { file_path: 'notes/demo.txt' }, 'hello fixture\n')
     dispatchPair(3, 'read', { file_path: 'notes/missing.txt' }, 'Error: ENOENT: notes/missing.txt not found', true)
     push({
-      type: 'tool/result', surfaceOp: 'append',
+      type: 'tool/result', sourceEventSeqs: [callSeq], surfaceOp: 'append',
       data: { turn, step: 0, message: toolResultMessage(callId, text('{"listing":"demo.txt\\nnew-demo.txt","demo":"hello fixture\\n"}'), false) },
     })
     push({ type: 'step/end', data: { turn, step: 0 } })
@@ -729,11 +729,15 @@ function viewFor(event: SessionEvent, log: readonly SessionEvent[]): ToolEventVi
   }
   if (event.type === 'tool/result') {
     const callId = String(event.data.message.source.callId)
+    const callSeq = event.sourceEventSeqs?.[0]
     for (let i = log.length - 1; i >= 0; i--) {
       const candidate = log[i]
       /* v8 ignore next -- dense-array guard: i stays within [0, log.length),
       so the undefined arm needs a sparse log no code path builds. */
-      if (candidate !== undefined && candidate.type === 'tool/call' && String(candidate.data.callId) === callId) {
+      if (candidate !== undefined
+        && (callSeq === undefined || candidate.seq === callSeq)
+        && candidate.type === 'tool/call'
+        && String(candidate.data.callId) === callId) {
         const resultText = event.data.message.content[0].content.map(b => (b.type === 'text' ? b.text : '')).join('')
         const view = presentResult(candidate.data.name, candidate.data.arguments, resultText)
         return view === undefined ? undefined : { for: 'result', view }
@@ -902,7 +906,7 @@ function sessionStatsOf(log: readonly SessionEvent[]): {
   const value = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 }
   let lastTurn: number | null = null
   let openStep: { turn: number; step: number; startTime: number; firstTokenTime: number | null } | null = null
-  const pendingCalls = new Map<string, number>()
+  const pendingCalls = new Map<number, number>()
   for (const event of log) {
     switch (event.type) {
       case 'step/start':
@@ -930,13 +934,14 @@ function sessionStatsOf(log: readonly SessionEvent[]): {
         break
       }
       case 'tool/call':
-        pendingCalls.set(event.data.callId, event.time)
+        pendingCalls.set(event.seq, event.time)
         break
       case 'tool/result': {
-        const callId = event.data.message.source.callId
-        const dispatched = pendingCalls.get(callId)
+        const callSeq = event.sourceEventSeqs?.[0]
+        if (callSeq === undefined) break
+        const dispatched = pendingCalls.get(callSeq)
         if (dispatched === undefined) break
-        pendingCalls.delete(callId)
+        pendingCalls.delete(callSeq)
         value.toolMs += Math.max(0, event.time - dispatched)
         break
       }

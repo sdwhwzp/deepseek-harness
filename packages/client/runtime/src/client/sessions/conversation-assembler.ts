@@ -21,6 +21,7 @@ interface InternalContext {
   readonly key: string
   readonly kind: string
   readonly id: string
+  readonly lifecycle: string | undefined
   readonly definition: ConversationNodeDefinition
   startSeq: number | undefined
   start: ConversationMatch | undefined
@@ -35,6 +36,7 @@ interface InternalContext {
 interface PendingMatch {
   readonly definition: ConversationNodeDefinition
   readonly id: string
+  readonly lifecycle: string | undefined
   readonly match: ConversationMatch
 }
 
@@ -84,6 +86,7 @@ function contextSnapshot<State>(context: InternalContext): ConversationNodeConte
     key: context.key,
     kind: context.kind,
     id: context.id,
+    lifecycle: context.lifecycle,
     matches: context.matches,
     start: context.start,
     state: context.state as State | undefined,
@@ -335,23 +338,23 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
   }
 
   private matchInput(input: ConversationEventInput): ConversationPublication {
-    return this.dispatchInput(input, (definition, id, role) =>
-      this.acceptMatch(definition, id, role, input))
+    return this.dispatchInput(input, (definition, id, lifecycle, role) =>
+      this.acceptMatch(definition, id, lifecycle, role, input))
   }
 
   private collectInput(
     input: ConversationEventInput,
     pending: Map<string, PendingMatch[]>,
   ): ConversationPublication {
-    return this.dispatchInput(input, (definition, id, role) => {
-      const key = conversationContextKey(definition.kind, id)
+    return this.dispatchInput(input, (definition, id, lifecycle, role) => {
+      const key = conversationContextKey(definition.kind, id, lifecycle)
       const match: ConversationMatch = {
         ...input,
         role,
         location: this.locationIndex.locationOf(input.event),
       }
       const matches = pending.get(key) ?? []
-      matches.push({ definition, id, match })
+      matches.push({ definition, id, lifecycle, match })
       pending.set(key, matches)
       return definition.publication?.(match) ?? 'immediate'
     })
@@ -362,6 +365,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
     accept: (
       definition: ConversationNodeDefinition,
       id: string,
+      lifecycle: string | undefined,
       role: ConversationMatch['role'],
     ) => ConversationPublication,
   ): ConversationPublication {
@@ -371,14 +375,20 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
       const result = definition.match(input.event)
       if (result === null) continue
       if (definition.target !== undefined) matchedTargets.add(definition.target)
-      publication = maximumPublication(publication, accept(definition, result.id, result.role))
+      publication = maximumPublication(
+        publication,
+        accept(definition, result.id, result.lifecycle, result.role),
+      )
     }
     const fallback = this.eventDefinitions.fallbackEntry()
     const target = fallback?.target
     if (fallback !== undefined && target !== undefined && !matchedTargets.has(target)) {
       const result = fallback.match(input.event)
       if (result !== null) {
-        publication = maximumPublication(publication, accept(fallback, result.id, result.role))
+        publication = maximumPublication(
+          publication,
+          accept(fallback, result.id, result.lifecycle, result.role),
+        )
       }
     }
     return publication
@@ -387,10 +397,11 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
   private acceptMatch(
     definition: ConversationNodeDefinition,
     id: string,
+    lifecycle: string | undefined,
     role: ConversationMatch['role'],
     input: ConversationEventInput,
   ): ConversationPublication {
-    const key = conversationContextKey(definition.kind, id)
+    const key = conversationContextKey(definition.kind, id, lifecycle)
     let context = this.contexts.get(key)
     if (role === 'start' && context?.start !== undefined) {
       throw new Error(`conversation Context ${key} received more than one start Match`)
@@ -400,6 +411,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
         key,
         kind: definition.kind,
         id,
+        lifecycle,
         definition,
         startSeq: undefined,
         start: undefined,
@@ -460,6 +472,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
           key,
           kind: first.definition.kind,
           id: first.id,
+          lifecycle: first.lifecycle,
           definition: first.definition,
           startSeq: undefined,
           start: undefined,
@@ -475,7 +488,9 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
       let discoveredStart: ConversationMatch | undefined
       const additions = entries
         .map((entry) => {
-          if (entry.definition !== context.definition || entry.id !== context.id) {
+          if (entry.definition !== context.definition
+            || entry.id !== context.id
+            || entry.lifecycle !== context.lifecycle) {
             throw new Error(`conversation Context ${key} received inconsistent Definition identity`)
           }
           if (entry.match.role === 'start') {
@@ -605,6 +620,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
           key: predecessor.key,
           kind: predecessor.kind,
           id: predecessor.id,
+          lifecycle: predecessor.lifecycle,
           startSeq: seq,
           state: predecessor.state as Readonly<State>,
           matches: predecessor.matches,

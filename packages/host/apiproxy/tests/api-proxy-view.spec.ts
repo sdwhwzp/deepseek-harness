@@ -85,6 +85,9 @@ async function harness(): Promise<{ ctx: Context }> {
   ctx.tools.register(tool('call-only', {
     presentCall: () => ({ card: 'generic', title: 'program', kind: 'execute', rawInput: 'return value' }),
   }))
+  ctx.tools.register(tool('arg-result', {
+    presentResult: args => ({ card: 'generic', title: (args as { value: string }).value }),
+  }))
   ctx.tools.register(tool('plain', {}))
   ctx.tools.register(tool('boom', {
     presentCall: () => { throw new Error('presenter exploded') },
@@ -234,6 +237,45 @@ describe('mux live view computation', () => {
     expect('view' in (byKey.get('tool/result:h-orphan') ?? {})).toBe(false)
     expect('view' in (byKey.get('tool/result:h-bad') ?? {})).toBe(false)
     expect('view' in (byKey.get('tool/result:h-plain') ?? {})).toBe(false)
+  })
+
+  it('pairs repeated provider call ids through each result source seq', async () => {
+    const { ctx } = await harness()
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const session = ctx.sessions.create()
+    ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
+    session.append('turn/start', { turn: 1 })
+    const first = session.append('tool/call', {
+      turn: 1, step: 1, callId: CallId('provider-duplicate'), name: 'arg-result', arguments: '{"value":"first"}',
+    })
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: CallId('provider-duplicate'), content: [{ type: 'text', text: 'one' }], isError: false,
+      }),
+    }, { surfaceOp: 'append', sourceEventSeqs: [first.seq] })
+    const second = session.append('tool/call', {
+      turn: 1, step: 1, callId: CallId('provider-duplicate'), name: 'arg-result', arguments: '{"value":"second"}',
+    })
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: CallId('provider-duplicate'), content: [{ type: 'text', text: 'two' }], isError: false,
+      }),
+    }, { surfaceOp: 'append', sourceEventSeqs: [second.seq] })
+
+    const response = await api.sessions.history({ rpcId: RpcId('t-duplicate-call'), payload: { sessionId: session.id } })
+    expect(response.result.ok).toBe(true)
+    if (!response.result.ok) throw new Error('unreachable')
+    expect(response.result.value.events
+      .filter(entry => entry.event.type === 'tool/result')
+      .map(entry => entry.view))
+      .toEqual([
+        { for: 'result', view: { card: 'generic', title: 'first' } },
+        { for: 'result', view: { card: 'generic', title: 'second' } },
+      ])
   })
 
   it('counts only append-origin messages toward maxMessages and keeps each compaction summary with its replacement', async () => {

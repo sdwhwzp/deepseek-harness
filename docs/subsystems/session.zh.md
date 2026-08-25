@@ -70,8 +70,9 @@ interface SessionEventMap {
   'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
   /**
    * The model requested one tool invocation: `name` with the raw `arguments`
-   * JSON string exactly as the model produced it (unparsed). `callId` pairs the
-   * call with its `tool/result`.
+   * JSON string exactly as the model produced it (unparsed). `callId` retains
+   * the provider value; the `tool/result` cites this event seq because a
+   * provider may reuse that value for another invocation.
    */
   'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string }
   /**
@@ -604,7 +605,7 @@ interface TurnEndReasonMap {
 
 插件可以通过 declaration merging 添加额外的 `SessionEventMap` 类型。这些是**仅日志**事件：不是 `SurfaceEventType`（不携带 `surfaceOp`，不参与派生历史）。事件所有方决定它们属于一个开放的执行轮次，还是可以独立位于轮次之间，并在自己的不变量配套插件中强制所需关系。生成的[持久化日志事件目录](../persistence-catalog.zh.md)会列出每个核心或插件贡献的事件，以及其 payload、surface 标记和声明位置；压缩 seam 的 `compaction/*` 语义在 [compaction.md](compaction.zh.md) 中讨论。
 
-如果同一个插件事件族中的多条事件要组装成一个 Web Client Conversation Node，该事件族中的每条 start、update、result、resource 或 interruption 事件都必须携带或独立推导出同一个稳定业务 id。此要求只约束需要关联的 Node 事件族，并不要求每条 Session 事件都有业务 id；Client 因此无须根据相邻关系猜测归属，也无须扫描历史。参见 [Conversation Node 实操手册](../cookbook/adding-a-conversation-node.zh.md)。
+如果同一个插件事件族中的多条事件要组装成一个 Web Client Conversation Node，该事件族中的每条 start、update、result、resource 或 interruption 事件都必须携带或独立推导出同一个稳定业务 id。可能复用 id 的事件族还要携带或推导出 lifecycle identity；`tool/result.sourceEventSeqs` 为此引用准确的 `tool/call` seq。此要求只约束需要关联的 Node 事件族，并不要求每条 Session 事件都有业务 id；Client 因此无须根据相邻关系猜测归属，也无须扫描历史。参见 [Conversation Node 实操手册](../cookbook/adding-a-conversation-node.zh.md)。
 
 钩子桥接层的 `hook/invoked` / `hook/result` 对（来自 `@deepseek-ai/dsh-hook-protocol`）通过 `handlerId` 关联。`UserPromptSubmit`、`PreToolUse`、`PostToolUse` 与 `Stop` 在 loop 已打开的轮次内触发，因此其 `hook/*` 记录天然位于轮次之内。`SessionStart` 不生成 `hook/*` 记录，因为它在轮次 1 之前运行；其上下文会在 inbox 中保持待处理，直到唤醒交付打开一个轮次（见[钩子桥接 Agent Note](../../.agents/notes/implemented/feature/2026-06-30-hook-bridges.zh.md)）。
 

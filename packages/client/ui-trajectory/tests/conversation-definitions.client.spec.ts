@@ -193,6 +193,7 @@ describe('Trajectory conversation Definitions', () => {
       }),
       at(5, 'tool/code-dispatch-start', {
         rootCallId: 'root-a',
+        rootCallSeq: 3,
         parentCallId: 'root-a',
         subCallId: 'child',
         name: 'read',
@@ -200,6 +201,7 @@ describe('Trajectory conversation Definitions', () => {
       }),
       at(6, 'tool/code-dispatch', {
         rootCallId: 'root-a',
+        rootCallSeq: 3,
         parentCallId: 'root-a',
         subCallId: 'child',
         name: 'read',
