@@ -85,7 +85,12 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     createWorkspace: vi.fn(async () => workspace('created', [])),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
     useHostInfo: selector => selector({ home: undefined, isLoopback: true }),
-    renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
+    renderSlot: ((name: string, owner: { open?: boolean; wide?: boolean }) => {
+      if (name === 'sidebar.workspaces.action') {
+        return <div data-testid="workspace-action" data-wide={String(owner.wide)} />
+      }
+      return owner.open ? <div data-testid="directory-flow" /> : null
+    }) as never,
     t,
     ...overrides,
   }
@@ -100,6 +105,13 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it('renders extension actions above the Workspace header with column state', () => {
+    mount()
+    const action = screen.getByTestId('workspace-action')
+    expect(action.dataset.wide).toBe('true')
+    expect(action.parentElement?.nextElementSibling?.textContent).toContain('工作区')
+  })
+
   it('workspace hover card shows a POSIX home descendant as ~', () => {
     vi.useFakeTimers()
     try {

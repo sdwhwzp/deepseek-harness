@@ -34,7 +34,7 @@ The UI is HTML5 drag on session rows inside a group (workspace grouping only, ou
 
 ### Shell/region split
 
-ui-sidebar shrinks to the column-geometry shell: brand row, fold state machine, New Session, Settings, and one `sidebar.workspaces` hole; the shell↔region contract is two facts, `{ wide, expandSidebar }`. ui-workspace fully owns the browsing region (section header, search, grouped tree and flat list, every workspace dialog, drag) plus its groupBy store; the rail-state search/add-workspace icons belong to the region too and request shell expansion via `expandSidebar()`. The picker splits into the core `WorkspacePickFlow` (composed directly inside the region; named `WorkspaceCreateFlow` until the [one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)) and the thin `WorkspacePicker` wrapper (still filling ui-conversation's hero slot); the old `sidebar.workspace` picker slot and its declaration-aware deferral are deleted with it.
+ui-sidebar shrinks to the column-geometry shell: brand row, fold state machine, New Session, Settings, and one `sidebar.workspaces` hole; the shell↔region contract is two facts, `{ wide, expandSidebar }`. ui-workspace fully owns the browsing region (section header, search, grouped tree and flat list, every workspace dialog, drag) plus its groupBy store. The region declares a `sidebar.workspaces.action` list above its header for deployment-owned navigation and management pages; each action receives only the column's `wide` state, and an empty list occupies no space. The rail-state search/add-workspace icons belong to the region too and request shell expansion via `expandSidebar()`. The picker splits into the core `WorkspacePickFlow` (composed directly inside the region; named `WorkspaceCreateFlow` until the [one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)) and the thin `WorkspacePicker` wrapper (still filling ui-conversation's hero slot); the old `sidebar.workspace` picker slot and its declaration-aware deferral are deleted with it.
 
 ## Alternatives considered
 
@@ -51,7 +51,7 @@ ui-sidebar shrinks to the column-geometry shell: brand row, fold state machine, 
 ## Consequences
 
 - Manual order is the sole authority over the Host workspace account: activity never mutates `WorkspaceView.sessionIds`. A later browser-local recent-update view may promote active rows without changing that account; its separate semantics are defined in [Workspace Sidebar Order and Folding](2026-08-11-workspace-sidebar-order-and-folding.md).
-- The two-fact shell/region contract funnels every future workspace-domain feature (Delete confirmation, cross-group moves, Ungrouped adoption) into the single ui-workspace package; ui-sidebar no longer evolves with session-list features.
+- The two-fact shell/region contract funnels workspace-domain behavior (Delete confirmation, cross-group moves, Ungrouped adoption) into ui-workspace; deployment-specific adjacent pages extend its action list without replacing the region, and ui-sidebar does not evolve with either feature class.
 - Flat mode supports neither reordering nor a create-in-workspace entry point (switching back to grouped view is required) — an accepted scope reduction.
 - Wiring session Delete and growing the wire status enum remain future iterations.
 

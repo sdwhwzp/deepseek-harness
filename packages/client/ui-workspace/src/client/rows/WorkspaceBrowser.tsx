@@ -1069,6 +1069,9 @@ export function WorkspaceBrowser({
 
   return (
     <div className={clsx(css.root, !wide && css.rail)}>
+      <div className={css.workspaceActions}>
+        {renderSlot('sidebar.workspaces.action', { wide })}
+      </div>
       <div className={css.sectionHeader}>
         {wide && (
           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>

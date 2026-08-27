@@ -14,6 +14,23 @@
   padding-right: 0;
 }
 
+.workspaceActions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 0 4px 4px;
+}
+
+.workspaceActions:empty {
+  display: none;
+}
+
+.rail .workspaceActions {
+  align-items: center;
+  padding-left: 0;
+}
+
 .iconButton {
   flex: none;
   display: inline-flex;
