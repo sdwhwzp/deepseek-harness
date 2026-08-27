@@ -2,8 +2,7 @@
 # target entries behind a nested include, so this restates the replay overlay
 # directly over the base cordis.yml (the fs.cordis.snapshot.yml pattern) and
 # re-pins the recorded vision model. The replay catalog declares image input,
-# so the strict read_image gate accepts the route and the tool result carries
-# the durable image block.
+# so the next model request receives the durable image block as pixels.
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
   config:

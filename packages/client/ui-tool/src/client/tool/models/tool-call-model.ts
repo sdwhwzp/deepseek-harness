@@ -41,6 +41,7 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   // with its own title from TOOL_TITLES, not the generic `others` row.
   pwsh: 'bash',
   read: 'read',
+  read_image: 'read',
   web_fetch: 'read',
   web_search: 'search',
   grep: 'search',

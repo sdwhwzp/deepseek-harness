@@ -23,6 +23,7 @@ function props(
   block: ToolResultNode,
   selectedCallId?: string,
   description?: HostDescription,
+  renderMessageImages: ToolTreeProps['renderMessageImages'] = () => null,
 ): ToolTreeProps {
   const snapshot = {} as ConversationSnapshot
   const useSession = ((selector: (value: ConversationSnapshot) => unknown) => selector(snapshot)) as ToolTreeProps['useSession']
@@ -44,6 +45,7 @@ function props(
     selectedCallId,
     openFile: vi.fn(),
     inspectCall: vi.fn(),
+    renderMessageImages,
     forkAt: vi.fn(),
     fileMentions: vi.fn(),
     useHostDescription: (selector => selector(description)) as ToolTreeProps['useHostDescription'],
@@ -88,5 +90,39 @@ describe('ToolCallTree', () => {
       version: '0', cwd: '/tmp', attachedSessions: 0, home: '/h', canOpenPath: false,
     })} />)
     expect(view.getByText('~/docs/a.ts')).toBeTruthy()
+  })
+
+  it('renders every settled root and nested Tool image through the shared history gallery', () => {
+    const attachment = {
+      attachmentId: 'sha256:image' as never,
+      mediaType: 'image/png' as const,
+      bytes: 1,
+      width: 1,
+      height: 1,
+      name: 'result.png',
+    }
+    const child = {
+      ...root('parent:code:1', { name: 'read_image', argsRaw: '{"file_path":"result.png"}' }),
+      content: [{ type: 'image' as const, attachment }],
+    }
+    const block = {
+      ...root('parent', { name: 'run_code', argsRaw: '{"code":"return image"}' }),
+      content: [{ type: 'image' as const, attachment }],
+      subCalls: [child],
+    }
+    const owners: Parameters<ToolTreeProps['renderMessageImages']>[0][] = []
+    const renderMessageImages: ToolTreeProps['renderMessageImages'] = (owner) => {
+      owners.push(owner)
+      return <div data-testid="tool-result-image" />
+    }
+    const view = render(<ToolCallTree {...props(block, undefined, undefined, renderMessageImages)} />)
+
+    expect(view.getAllByTestId('tool-result-image')).toHaveLength(2)
+    expect(owners).toEqual([
+      { images: [{ attachment }], align: 'start' },
+      { images: [{ attachment }], align: 'start' },
+    ])
+    expect(view.container.querySelector('[data-tool="read_image"]')).not.toBeNull()
+    expect(view.getByText('Read')).toBeTruthy()
   })
 })

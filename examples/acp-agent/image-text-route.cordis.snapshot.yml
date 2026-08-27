@@ -1,7 +1,7 @@
-# Keyless replay for the read-image refusal scenario: identical to the
-# image.cordis.snapshot.yml overlay except the replay catalog leaves flash
-# text-only, so the strict read_image gate refuses and no image ever enters
-# the durable log.
+# Keyless replay for route-independent read_image execution: unlike the vision
+# scenario, the replay catalog leaves Flash text-only. The Tool still commits
+# the durable image; request projection keeps unsupported pixels out of the
+# next model request.
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
   config:

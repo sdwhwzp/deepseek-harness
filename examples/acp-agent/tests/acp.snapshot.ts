@@ -230,8 +230,8 @@ const SCENARIOS: Scenario[] = [
   // Authored keyless replays through the assembled app: the replay catalog
   // declares the vision model image-capable and Flash text-only, and the
   // real read_image tool executes against the workspace fixture and the real
-  // attachment store. The success route selects the vision model while the
-  // refusal route retains text-only Flash, so each pins its exact header.
+  // attachment store. Both routes commit the Tool image; request projection
+  // sends pixels only to the vision route, so each pins its exact header.
   {
     name: 'read-image',
     hasModelTurn: true,

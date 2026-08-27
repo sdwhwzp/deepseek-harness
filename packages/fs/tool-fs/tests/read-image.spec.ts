@@ -1,8 +1,8 @@
 /**
  * The `read_image` tool over the REAL local filesystem and attachment store:
- * extension routing, the strict image-modality gate (every refusal arm),
- * durable commit + image-block rendering, attachment admission failures, and
- * the regression that `read` keeps its text-only contract.
+ * extension routing, route-independent durable commit + image-block rendering,
+ * attachment admission failures, and the regression that `read` keeps its
+ * text-only contract.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -12,8 +12,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
-import { CallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type { Config as ToolConfig } from '@deepseek-ai/dsh-tools'
@@ -36,34 +35,6 @@ const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADEl
 const PNG_3X3 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAMAAAADCAIAAADZSiLoAAAAEElEQVR4nGP4z8AAQQxYWACPjgj4kWPEuQAAAABJRU5ErkJggg==', 'base64')
 
 const testToolSignal = new AbortController().signal
-
-/** Exact-route fake adapter; `stream` is unreachable in these tests. */
-class CatalogAdapter extends LlmAdapter {
-  constructor(
-    private readonly models: LlmModelInfo[],
-    private readonly resolvedModels: LlmModelInfo[] = models,
-  ) {
-    super()
-  }
-
-  override listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
-    return Promise.resolve(this.models)
-  }
-
-  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
-    const resolved = this.resolvedModels.find(candidate => candidate.id === model)
-    return Promise.resolve({
-      provider,
-      id: model,
-      name: resolved?.name ?? model,
-      ...resolved?.inputModalities === undefined ? {} : { inputModalities: [...resolved.inputModalities] },
-    })
-  }
-
-  override stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
-    throw new Error('read_image tests never stream')
-  }
-}
 
 /** In-process Code Mode seam fake that invokes the real registry bindings. */
 class FakeRuntime extends CodeRuntime {
@@ -89,10 +60,7 @@ afterEach(async () => {
 })
 
 interface SetupOptions {
-  models?: LlmModelInfo[]
-  resolvedModels?: LlmModelInfo[]
   attachments?: boolean
-  llm?: boolean
   storeConfig?: { maxImageBytes?: number; maxImagePixels?: number; maxImageDimension?: number; maxMessageImageBytes?: number }
   toolMode?: ToolConfig['mode']
 }
@@ -109,26 +77,18 @@ async function setup(options: SetupOptions = {}) {
   if (options.attachments !== false) {
     await ctx.plugin(LocalAttachmentStore, { dshHome: home, ...options.storeConfig })
   }
-  if (options.llm !== false) {
-    await ctx.plugin(LlmRuntime)
-    ctx.llm.registerAdapter(['visual'], new CatalogAdapter(options.models ?? [
-      { provider: 'visual', id: 'vision-model', name: 'Vision', inputModalities: ['text', 'image'] },
-      { provider: 'visual', id: 'text-model', name: 'Text', inputModalities: ['text'] },
-      { provider: 'visual', id: 'legacy-model', name: 'Legacy' },
-    ], options.resolvedModels))
-  }
   await ctx.plugin(ToolFs)
   return ctx
 }
 
 /** A fake calling agent pinned to one routed provider/model. */
-function agentOn(model: string | undefined, provider = 'visual', messages: readonly Message[] = []): object {
+function agentOn(model: string | undefined): object {
   return {
     options: {},
     session: {
       header: { cwd: dir },
-      requestHeader: () => (model === undefined ? undefined : { config: { provider, model } }),
-      deriveMessages: () => [...messages],
+      requestHeader: () => (model === undefined ? undefined : { config: { provider: 'visual', model } }),
+      deriveMessages: () => [],
       append: () => undefined,
     },
   }
@@ -215,14 +175,10 @@ describe('read_image happy path', () => {
     expect(observed).toEqual([join(dir, 'red.png')])
   })
 
-  it('falls back to agent options when no request header exists yet', async () => {
+  it('does not require a routed model when agent options and the request header omit one', async () => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
     const ctx = await setup()
-    const agent = {
-      options: { provider: 'visual', model: 'vision-model' },
-      session: { header: { cwd: dir }, requestHeader: () => undefined },
-    }
-    const result = await readImage(ctx, { file_path: 'red.png' }, agent)
+    const result = await readImage(ctx, { file_path: 'red.png' }, agentOn(undefined))
     expect(result.isError).toBe(false)
   })
 
@@ -254,49 +210,26 @@ describe('read_image happy path', () => {
   })
 })
 
-describe('strict image-modality gate', () => {
-  it('accepts an exact visual route even when the advisory model catalog omits it', async () => {
-    await writeFile(join(dir, 'red.png'), PNG_1X1)
-    const ctx = await setup({
-      models: [],
-      resolvedModels: [
-        { provider: 'visual', id: 'hidden-vision', name: 'Hidden Vision', inputModalities: ['text', 'image'] },
-      ],
-    })
-    const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('hidden-vision'))
-    expect(result.isError).toBe(false)
-  })
-
+describe('route-independent image attachment', () => {
   it.each([
+    ['an image-capable model', 'vision-model'],
     ['a text-only model', 'text-model'],
     ['a model without declared modalities', 'legacy-model'],
     ['a model absent from the catalog', 'unknown-model'],
-  ])('refuses on %s', async (_label, model) => {
+  ])('attaches for %s', async (_label, model) => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
     const ctx = await setup()
     const result = await readImage(ctx, { file_path: 'red.png' }, agentOn(model))
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('does not declare image input')
+    expect(result.isError).toBe(false)
+    expect(result.content.some(block => block.type === 'image')).toBe(true)
   })
 
-  it('refuses when the route cannot be resolved (no agent, or no header and no options)', async () => {
+  it('attaches without a calling agent or an llm service', async () => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
     const ctx = await setup()
-    const noAgent = await readImage(ctx, { file_path: 'red.png' })
-    expect(noAgent.isError).toBe(true)
-    expect(text(noAgent)).toContain('route could not be resolved')
-
-    const noRoute = await readImage(ctx, { file_path: 'red.png' }, agentOn(undefined))
-    expect(noRoute.isError).toBe(true)
-    expect(text(noRoute)).toContain('route could not be resolved')
-  })
-
-  it('refuses when no llm service is mounted', async () => {
-    await writeFile(join(dir, 'red.png'), PNG_1X1)
-    const ctx = await setup({ llm: false })
-    const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('route could not be resolved')
+    const result = await readImage(ctx, { file_path: 'red.png' })
+    expect(result.isError).toBe(false)
+    expect(result.content.some(block => block.type === 'image')).toBe(true)
   })
 })
 

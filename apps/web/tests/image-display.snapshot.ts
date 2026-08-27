@@ -1,18 +1,19 @@
 // @vitest-environment jsdom
 // Multimodal image surfaces over the BUILT client graph (the code-mode-fixture
 // idiom: real bundles via AppWebEntry, keyless FixtureApiClient transport).
-// Opens the fixture history session whose turn 73 carries an image in BOTH a
-// user message and an assistant message, and pins the product surfaces: the
-// history ImageGallery loading real fixture bytes through the authorized
-// sessions.attachment route, the single-click ImageLightbox, and the composer
-// intake chain (paste → ordered thumbnail rail → image-only send enablement → remove).
+// Opens the fixture history session whose turn 73 carries images in a user
+// message, an assistant message, and a Tool result, and pins the product
+// surfaces: the history ImageGallery loading real fixture bytes through the
+// authorized sessions.attachment route, the single-click ImageLightbox, and
+// the composer intake chain (paste → ordered thumbnail rail → image-only send
+// enablement → remove).
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { installAssembledBootEnv, mountAssembledApp } from './assembled-boot.ts'
 
 installAssembledBootEnv()
 
-/** Open the fixture history session (the alpha log carrying the turn-72 image pair) and wait for its gallery. */
+/** Open the fixture history session (the alpha log carrying the turn-73 image groups) and wait for its gallery. */
 async function openFixtureSession(): Promise<void> {
   const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
   const group = (await within(tree).findAllByText('fixture'))
@@ -32,12 +33,12 @@ async function openFixtureSession(): Promise<void> {
   }, { timeout: 10_000 })
 }
 
-it('renders the history image pair through the authorized attachment route and opens the lightbox', async () => {
+it('renders user, assistant, and Tool-result history images through the authorized attachment route', async () => {
   mountAssembledApp()
   await openFixtureSession()
 
-  // Both the user-side (align=end) and assistant-side (align=start) galleries
-  // load real fixture bytes over sessions.attachment. jsdom provides
+  // User-side (align=end), assistant-side, and Tool-result (both align=start)
+  // galleries load real fixture bytes over sessions.attachment. jsdom provides
   // createObjectURL, so this environment MUST take the object-URL path — a
   // data: src here would mean the fallback ran where it should not.
   await waitFor(() => {
@@ -55,6 +56,10 @@ it('renders the history image pair through the authorized attachment route and o
           "alt": "fixture-image.png",
           "scheme": "blob",
         },
+        {
+          "alt": "fixture-image.png",
+          "scheme": "blob",
+        },
       ],
       "user": [
         {
@@ -64,6 +69,13 @@ it('renders the history image pair through the authorized attachment route and o
       ],
     }
   `)
+  const toolImage = document.querySelector<HTMLImageElement>(
+    '[data-chat-call-id="fx-image-call"] [data-align="start"] img',
+  )
+  expect({ alt: toolImage?.alt, scheme: toolImage?.src.split(':')[0] }).toEqual({
+    alt: 'fixture-image.png',
+    scheme: 'blob',
+  })
   const userImage = document.querySelector<HTMLElement>('[data-align="end"] img')!
 
   // A single click opens the original-size lightbox; Escape/close dismisses it.

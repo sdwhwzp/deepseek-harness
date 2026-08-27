@@ -8,7 +8,7 @@
     },
     {
       "op": "prompt",
-      "text": "Use read_image on red.png in the current directory. If the tool refuses because the current model is text-only, reply with exactly the single word UNAVAILABLE."
+      "text": "Use read_image on red.png in the current directory, then reply with exactly the single word UNAVAILABLE."
     }
   ]
 }

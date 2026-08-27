@@ -12,9 +12,11 @@ Business UI packages register only their wire Tool names and atomic views. They 
 
 Each root and child wrapper preserves the `data-chat-anchor-key="call:<id>"` and `data-chat-call-id` DOM contract used for paging and selection.
 
+Every settled root or child result renders its standard image blocks immediately below that call's row through the conversation-owned historical image renderer. The renderer keeps session-authorized attachment loading and the shared original-image lightbox authoritative; `ui-tool` only selects the images and `start` alignment. Running calls and settled results without images add no gallery.
+
 The package also fills `conversation.details.tool` with `ToolDetails`. The row and details renderers share the same pure card models for `terminal`, `read`, `diff`, `search`, and `web` render intents. Unknown intent tags and malformed wire card data fall back to flattened Tool result text.
 
-Generic rows classify known Tool names into search, read, shell, write, edit, code, or generic variants. Running, successful, failed, and interrupted lifecycle states come only from the frozen call/result slice. File paths resolve against the session `cwd` only when the user invokes the Host open-file callback; presentation code does not read Session services.
+Generic rows classify known Tool names into search, read, shell, write, edit, code, or generic variants; `read_image` uses the read row. Running, successful, failed, and interrupted lifecycle states come only from the frozen call/result slice. File paths resolve against the session `cwd` only when the user invokes the Host open-file callback; presentation code does not read Session services.
 
 ## Atomic Tool views
 

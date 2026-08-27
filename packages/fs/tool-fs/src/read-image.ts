@@ -1,10 +1,9 @@
 /**
  * The model-facing `read_image` tool commits a PNG/JPEG/WebP/GIF file.
  *
- * The route gate is deliberately stricter than the host upload preflight. An
- * image-reading tool is useful only when the exact calling route can inspect
- * its result, so unknown capability refuses instead of relying on an adapter
- * failure after filesystem and attachment work.
+ * Execution is independent of the calling model route: the durable result is
+ * user-visible conversation content, while LLM request projection decides
+ * whether a model receives pixels or a text-only placeholder.
  * @module @deepseek-ai/dsh-tool-fs/src/read-image
  */
 
@@ -14,7 +13,7 @@ import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { GenericCallView, ToolExecution } from '@deepseek-ai/dsh-tools'
+import type { GenericCallView } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-fs'
 import { resolveRegularReadTarget } from './read-target.ts'
 
@@ -74,28 +73,6 @@ export interface ImageReadValue {
  */
 export function imageMediaTypeForPath(filePath: string): ImageMediaType | undefined {
   return IMAGE_EXTENSIONS[extname(filePath).toLowerCase()]
-}
-
-/**
- * Enforce the strict image-capability gate for the calling route. Resolves the
- * session's latest routed provider/model (request header config, then agent
- * options) and requires the exact resolved route to declare `image` input explicitly.
- * @param ctx - the plugin context used to resolve the optional `llm` service.
- * @param exec - the tool-execution context supplying the calling agent.
- * @param requestedPath - the raw, not-yet-resolved path rendered in refusal messages.
- */
-export async function assertImageCapableRoute(ctx: Context, exec: ToolExecution, requestedPath: string): Promise<void> {
-  const routed = exec.agent?.session.requestHeader()?.config
-  const provider = routed?.provider ?? exec.agent?.options.provider
-  const model = routed?.model ?? exec.agent?.options.model
-  const llm = ctx.get('llm')
-  if (provider === undefined || model === undefined || llm === undefined) {
-    throw new Error(`cannot read "${requestedPath}" as an image: the current model route could not be resolved`)
-  }
-  const active = await llm.resolveModelInfo(provider, model, exec.signal)
-  if (active.inputModalities === undefined || !active.inputModalities.includes('image')) {
-    throw new Error(`cannot read "${requestedPath}" as an image: model "${model}" does not declare image input; switch to an image-capable model to read images`)
-  }
 }
 
 /**
@@ -162,16 +139,17 @@ function imageReadContent(value: ImageReadValue): ContentBlock[] {
  * owns the attachments gate: `src/index.ts` calls this inside
  * `ctx.inject(['attachments'], …)` so the tool exists only while a durable
  * store is mounted. Execution still re-checks `ctx.get('attachments')` for
- * direct callers and gates on the calling route's declared image input.
- * @param ctx - the registration scope; execution uses its `fs` service plus
- *   the optional `attachments`/`llm` services.
+ * direct callers. Text-only model routes receive the existing request-time
+ * placeholder while the Web conversation can display the durable result.
+ * @param ctx - the registration scope; execution uses its `fs` and
+ *   `attachments` services.
  */
 export function applyReadImageTool(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'read_image',
-    description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
-      + 'Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. '
-      + 'Independent files may be read concurrently in small batches. Requires the current model to accept image input.',
+    description: 'Read and attach a PNG/JPEG/WebP/GIF file to the conversation. '
+      + 'Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect or show an image. '
+      + 'An image-capable model can inspect the result; a text-only model receives a placeholder while the user can still preview the image. Independent files may be read concurrently in small batches.',
     parameters: {
       file_path: { type: 'string', required: true, description: 'Path to the image file, resolved by the filesystem backend.' },
     },
@@ -192,8 +170,8 @@ export function applyReadImageTool(ctx: Context): void {
     async execute(args, exec) {
       if (args.file_path.trim().length === 0) throw new Error('file_path must be a non-empty string')
 
-      // Every gate runs before any filesystem I/O so a refusal never leaks
-      // partial reads or attachment writes.
+      // Format and deployment checks run before filesystem I/O so a refusal
+      // never leaks partial reads or attachment writes.
       const mediaType = imageMediaTypeForPath(args.file_path)
       if (mediaType === undefined) {
         throw new Error(`cannot read "${args.file_path}": read_image only accepts PNG/JPEG/WebP/GIF paths`)
@@ -205,8 +183,6 @@ export function applyReadImageTool(ctx: Context): void {
       if (!attachments.imageLimits.mediaTypes.includes(mediaType)) {
         throw new Error(`cannot read "${args.file_path}": ${mediaType} images are not accepted by this deployment`)
       }
-      await assertImageCapableRoute(ctx, exec, args.file_path)
-
       const { target, info } = await resolveRegularReadTarget(ctx, exec, args.file_path)
 
       // The tool result is one message carrying one image, so the per-message
