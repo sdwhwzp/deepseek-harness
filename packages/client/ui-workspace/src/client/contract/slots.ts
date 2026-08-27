@@ -8,8 +8,10 @@
  * - WorkspacePicker fills the conversation empty-state hole (menu + error
  *   dialog shared with the browser).
  *
- * Each registration also declares one **directory-flow hole** (`single`
- * kind): the slot a composed picker package's client half fills with its
+ * The sidebar registration also declares a list of actions above the
+ * Workspace header. Deployment plugins use it for Workspace-adjacent pages
+ * without replacing the browser. Each registration additionally declares
+ * one **directory-flow hole** (`single` kind): the slot a composed picker package's client half fills with its
  * picking interaction — a renderless native-chooser driver or an in-app
  * browsing dialog. ui-workspace owns the trigger (the "Add workspace…"
  * entry, present only while the hole is occupied) and the adoption
@@ -51,8 +53,16 @@ export interface DirectoryFlowOwnerProps {
   onError: (message: string) => void
 }
 
+/** Column state supplied to actions rendered above the Workspace header. */
+export interface WorkspaceActionOwnerProps {
+  /** Whether the sidebar renders its expanded column instead of the compact rail. */
+  wide: boolean
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    /** Ordered actions rendered above the sidebar Workspace header. */
+    'sidebar.workspaces.action': { kind: 'list'; scope: 'root'; owner: WorkspaceActionOwnerProps }
     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
@@ -142,7 +152,7 @@ export type WorkspaceBrowserInjected = {
 /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */
 export type WorkspaceBrowserProps =
   PropsRuntime<'sidebar.workspaces'>
-  & PropsRenderSlots<'sidebar.workspaces.directoryFlow'>
+  & PropsRenderSlots<'sidebar.workspaces.action' | 'sidebar.workspaces.directoryFlow'>
   & PropsStore<ReturnType<typeof createWorkspaceViewStore>>
   & Omit<WorkspaceBrowserInjected, 'hooks'>
   & PropsHooks<WorkspaceBrowserInjected['hooks']>

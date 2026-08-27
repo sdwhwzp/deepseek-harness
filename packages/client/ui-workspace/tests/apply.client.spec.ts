@@ -117,11 +117,12 @@ describe('ui-workspace apply', () => {
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/project' })
   })
 
-  it('declares the two directory-flow holes and reports their occupancy per surface', async () => {
+  it('declares the sidebar action list and both directory-flow holes', async () => {
     const b = await bench()
     declare(b.slots, 'sidebar.workspaces', 'conversation.hero.workspace')
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     // Registration declared the child holes (declaration = render authorization).
+    expect(b.slots.spec('sidebar.workspaces.action')).toMatchObject({ kind: 'list' })
     expect(b.slots.spec('sidebar.workspaces.directoryFlow')).toMatchObject({ kind: 'single' })
     expect(b.slots.spec('conversation.hero.workspace.directoryFlow')).toMatchObject({ kind: 'single' })
 
@@ -163,6 +164,7 @@ describe('ui-workspace apply', () => {
     await fiber.await()
     await fiber.dispose()
     expect(b.slots.entries('sidebar.workspaces')).toHaveLength(0)
+    expect(b.slots.spec('sidebar.workspaces.action')).toBeUndefined()
     expect(b.slots.entries('conversation.hero.workspace')).toHaveLength(0)
     // expect(b.slots.entries('conversation.empty.workspace')).toHaveLength(0)
   })

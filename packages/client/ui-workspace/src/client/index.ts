@@ -3,10 +3,10 @@
  * the sidebar shell's `sidebar.workspaces` hole (the whole browsing region),
  * and WorkspacePicker fills the conversation hero's picker hole
  * (`conversation.hero.workspace` — both hero forms). Both read real Host
- * Workspaces through the global useWorkspaces hook, and each declares its
- * own `single` directory-flow child hole for the composed picker package's
- * client half (see the contract module doc). Export discipline:
- * packages/client/AGENTS.md.
+ * Workspaces through the global useWorkspaces hook. The browser declares its
+ * action list, and both registrations declare one `single` directory-flow
+ * child hole for the composed picker package's client half (see the contract
+ * module doc). Export discipline: packages/client/AGENTS.md.
  */
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
@@ -21,7 +21,8 @@ import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
-  WorkspaceBrowserInjected, WorkspaceBrowserProps, WorkspacePickerInjected, WorkspacePickerProps,
+  WorkspaceActionOwnerProps, WorkspaceBrowserInjected, WorkspaceBrowserProps,
+  WorkspacePickerInjected, WorkspacePickerProps,
 } from './contract/slots.ts'
 export type { WorkspaceKey } from './locales.ts'
 
@@ -108,12 +109,15 @@ export function apply(ctx: ClientContext): void {
     createWorkspace: input => ctx.workspaces.create(input),
     hooks: { directoryFlow: pickerFlowSource },
   })
-  // Each registration declares its directory-flow child in the same call;
-  // slot injection follows both the owner and declaration HMR lifetimes.
+  // Child declarations share the browser/picker registration lifetimes, so
+  // slot injection follows both the owner and declaration through HMR.
   ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register(
     {
       name: 'sidebar.workspaces',
-      children: { 'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } },
+      children: {
+        'sidebar.workspaces.action': { kind: 'list', scope: 'root' },
+        'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' },
+      },
       store: createWorkspaceViewStore(),
       inject: browserInjected,
       locale: NS,
