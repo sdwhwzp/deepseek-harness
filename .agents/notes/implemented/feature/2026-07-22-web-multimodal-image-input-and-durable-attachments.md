@@ -10,7 +10,7 @@ Before this change, the Web composer accepted only text: `InputBar` received a s
 
 This is not only a composer gap. Core needs a durable image content block, providers need explicit modality handling, and the session log must reconstruct everything visible to a model. [The previous image-block removal](../../archived/simplification/2026-07-04-drop-image-content-block.md) rejected a partial design that could silently lose or flatten images. A browser object URL, local path, provider URL, or base64 payload cannot be canonical session content.
 
-The [Web client architecture](../../implemented/architecture/2026-07-19-gui-web-client-architecture.md) keeps components pure and per-session composer state in `ctx.conversation`; the [GUI layering and RPC protocol](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md) makes durable events the source of truth for both live rendering and history replay. Image intake, persistence, provider conversion, and rendering therefore need one explicit lifecycle.
+The [Web client architecture](../../implemented/architecture/2026-07-19-gui-web-client-architecture.md) keeps components pure and per-session composer state in `ctx.conversation`; the [archived GUI layering and RPC protocol decision](../../archived/architecture/2026-07-19-gui-layering-and-rpc-protocol.md) makes durable events the source of truth for both live rendering and history replay. Image intake, persistence, provider conversion, and rendering therefore need one explicit lifecycle.
 
 Peer products converge on an attachment rail above the editor, but their storage choices differ. Codex-style paths such as `/var/folders/.../codex-clipboard-*.png` are reasonable intake staging locations, not durable message identities: the operating system may delete them, another host cannot read them, and a resumed session cannot rely on them.
 
@@ -18,7 +18,7 @@ Peer products converge on an attachment rail above the editor, but their storage
 
 Pasted or dropped raster images are the Web composer's first consumer of a durable attachment capability. Unsent files remain temporary client-owned draft state. Every rich-content intake adapter decodes its wire blocks, proves route capability, and delegates the complete image batch to the attachment service before appending its message event. A provider adapter that produces structured image output must durably commit the output before appending its assistant block. Canonical user and assistant content contains only role-neutral `ImageBlock` references.
 
-Version one supports PNG, JPEG, WebP, and GIF paste and drag-and-drop, image-only or mixed prompts, historical user and assistant image rendering, and original-image preview on a single click (display and interaction specifics superseded in part by the [attachment-display alignment note](2026-08-11-web-attachment-display-alignment.md)). Standard Tool-result image rendering is added by [Tool-result image display on text-only routes](2026-08-26-tool-result-image-display.md). File picking, generic files, PDF, audio, video, image copying, and a custom context menu remain separate follow-ups.
+Version one supports PNG, JPEG, WebP, and GIF paste and drag-and-drop, image-only or mixed prompts, historical user and assistant image rendering, and original-image preview on a single click (display and interaction specifics superseded in part by the [attachment-display alignment note](2026-08-11-web-attachment-display-alignment.md)). The [Tool-result image display decision](2026-08-26-tool-result-image-display.md) extends the same renderer to standard image blocks in settled Tool results. File picking, generic files, PDF, audio, video, image copying, and a custom context menu remain separate follow-ups.
 
 ### Product behavior
 
@@ -128,7 +128,7 @@ Pi-AI and the direct DeepSeek adapter resolve `ctx.attachments` at request time,
 
 Core supports structured assistant image blocks, but no current production provider route is certified for image output. Any future output-capable adapter must retrieve provider bytes under bounded size and time policy, validate them through the same attachment service, persist them, and only then publish the atomic `ImageBlock`. A URL in assistant Markdown remains text and is never downloaded automatically.
 
-Provider-neutral token estimation does not guess visual pricing from image dimensions; provider-reported usage remains authoritative. ACP advertises image prompts only when its configured exact route and attachment deployment can accept them, persists inline input before publishing the user event, and re-reads committed assistant image references for native ACP image updates. MCP keeps canonical raw blocks for programmatic callers while projecting admitted images to durable core blocks; Code Mode carries any settled image-bearing sub-result through the outer result as logged source-attributed context.
+Provider-neutral token estimation does not guess visual pricing from image dimensions; provider-reported usage remains authoritative. ACP advertises image prompts only when its configured exact route and attachment deployment can accept them, persists inline input before publishing the user event, and re-reads committed assistant image references for native ACP image updates. MCP keeps canonical raw blocks for programmatic callers while projecting admitted images to durable core blocks; PTC mode carries any settled image-bearing sub-result through the outer result as logged source-attributed context.
 
 Compaction replays the selected conversation prefix, including image references, into the configured summarization route. A visual-capable route uses the same deterministic request versions as ordinary turns. A text-only route receives the same deterministic attachment placeholders as any other LLM request. The synthesized checkpoint remains text-only, and `compaction-basic` rejects image summary output with `UNSUPPORTED_CONTENT`.
 
@@ -156,16 +156,18 @@ Malformed base64, unsupported or mismatched media, truncated image payloads, exc
 | `packages/compaction/compaction-basic` | Preserve images in summary input and reject non-text checkpoint output explicitly. |
 | `packages/host/apiproxy` and `packages/bundle/base` | Narrow upload wire, shared batch admission, limits and routed-model preflight, persist-before-event ordering, session-authorized reads, and default profile composition. |
 | `packages/client/connection` and `packages/client/runtime` | Bounded request buffering, wire types, fixture images, prompt uploads, attachment reads, and durable-reference folding. |
-| `packages/client/ui-conversation` | Per-session draft images, attachment rail, user and assistant image controls, and original preview. |
+| `packages/client/ui-conversation` | Per-session draft images, session-authorized image loading, and the attachment presentation slots. |
+| `packages/client/ui-attachment` | Draft rail, user/assistant/Tool-result galleries, retry behavior, and original-image lightbox. |
+| `packages/client/ui-tool` | Extraction and placement of standard image blocks from settled root and nested Tool results. |
 | `packages/acp/acp` | Conditional native image capability, atomic inline-image admission, and verified assistant-image delivery. |
 | `packages/mcp/mcp-client` | Lossless canonical MCP results plus capability-gated durable image projection and explicit diagnostics for unsupported rich blocks. |
-| `packages/core/tools` | Generic Code Mode forwarding of settled image-bearing sub-results after the outer result. |
+| `packages/core/tools` | Generic PTC mode forwarding of settled image-bearing sub-results after the outer result. |
 
 The attachment packages form the interface/implementation side of one capability seam. Composer behavior stays in the conversation object layer, provider conversion stays in adapters, and no change is required in `agent-loop`.
 
 ### Implementation
 
-The implemented capability includes shared prepare-once batch admission, provider-independent masters, deterministic request versions, DeepSeek Files reuse, stable crop handles, role-neutral image blocks, Pi-AI and DeepSeek input conversion, durable Web/ACP/MCP ordering, Web upload/read protocol, conditional ACP image support, lossless MCP results with durable image projection, Code Mode rich-result forwarding, bounded Web requests, draft and historical image UI, compaction handling, and keyless assembled coverage.
+The implemented capability includes shared prepare-once batch admission, provider-independent masters, deterministic request versions, DeepSeek Files reuse, stable crop handles, role-neutral image blocks, Pi-AI and DeepSeek input conversion, durable Web/ACP/MCP ordering, Web upload/read protocol, conditional ACP image support, lossless MCP results with durable image projection, PTC mode rich-result forwarding, bounded Web requests, draft and historical image UI, compaction handling, and keyless assembled coverage.
 
 No compatibility shim is required for the pre-release prompt wire; all call sites and fixtures change with the introducing slice.
 
@@ -201,19 +203,19 @@ Rejected because the core already has the role-neutral `ContentBlock` vocabulary
 
 ### Normalize MCP results into core content as the canonical tool value
 
-Rejected because Code Mode and programmatic callers need the complete MCP JSON blocks and optional `structuredContent`; replacing that value with a Native projection would make the bridge lossy. MCP retains the protocol value and prepares a separate model projection, with final post-execute policy remaining authoritative.
+Rejected because PTC mode and programmatic callers need the complete MCP JSON blocks and optional `structuredContent`; replacing that value with a Native projection would make the bridge lossy. MCP retains the protocol value and prepares a separate model projection, with final post-execute policy remaining authoritative.
 
 ### Perform attachment reads and writes inside synchronous output renderers
 
-Rejected because tool renderers are pure, synchronous, and replayable. MCP prepares image projection during async execution and installs it only at the registry's finalization boundary; ACP performs async admission and output conversion in its transport lifecycle. Code Mode forwarding observes the already settled final content instead of giving individual image tools private parent-token behavior.
+Rejected because tool renderers are pure, synchronous, and replayable. MCP prepares image projection during async execution and installs it only at the registry's finalization boundary; ACP performs async admission and output conversion in its transport lifecycle. PTC mode forwarding observes the already settled final content instead of giving individual image tools private parent-token behavior.
 
 ## Testing
 
 - Storage tests cover content-addressed deduplication, private permissions, admission failures, corruption/missing-object failures, and reading history after deployment limits are lowered.
 - Host and protocol tests cover persist-before-event ordering, absence of base64 in logs, session-scoped authorization, capability rejection, upload limits, bounded HTTP request bodies, image-admission/model-selection ordering, text-only queue edits, and text-only request projection.
-- Client unit tests cover paste and drop, mixed clipboard text, image-only send, draft restoration, ordering, draft/session-scope/application object-URL cleanup, and a deferred historical read that completes after disposal; the keyless assembled built-client lane (`apps/web/tests/image-display.snapshot.ts`, `DSH_SNAPSHOT=replay pnpm run test:web`) covers the historical user, assistant, and Tool-result galleries over the authorized attachment route, the original-size lightbox, and the composer paste rail.
+- Client unit tests cover paste and drop, mixed clipboard text, image-only send, draft restoration, ordering, draft/session-scope/application object-URL cleanup, and a deferred historical read that completes after disposal; the keyless assembled built-client lane (`apps/web/tests/image-display.expected.e2e.ts`, `pnpm run test:web`) covers the historical user, assistant, and Tool-result galleries over the authorized attachment route, the original-size lightbox, and the composer paste rail.
 - Adapter and compaction tests cover deterministic Pi-AI request versions, DeepSeek Files upload and reuse, stale-id recovery, text-only projection, recursively nested tool-result images, shared summary request versions, and explicit image-output rejection.
-- Attachment, MCP, ACP, and Code Mode tests cover all-member validation before writes, mixed text/image ordering, no inline base64 in durable events, exact route-capability gates, explicit unsupported-content diagnostics, post-execute replacement/block precedence, cancellation during admission, verified assistant-image delivery, and generic nested-image forwarding. A keyless assembled ACP snapshot sends a real inline PNG and pins only its durable reference in the session log.
+- Attachment, MCP, ACP, and PTC mode tests cover all-member validation before writes, mixed text/image ordering, no inline base64 in durable events, prompt-admission and provider-output capability checks, explicit unsupported-content diagnostics, post-execute replacement/block precedence, cancellation during admission, verified assistant-image delivery, and generic nested-image forwarding. A keyless assembled ACP snapshot sends a real inline PNG and pins only its durable reference in the session log.
 - Credentialed real-API tests cover the configured Anthropic route and the built-in `deepseek-official` Files path. The DeepSeek test does not use a custom provider entry.
 - The current production adapter set has no certified image-output route; output-provider certification remains outside version one.
 

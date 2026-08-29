@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -11,11 +11,12 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as tool from '../src/index.ts'
 import { parkParent } from './park-parent.ts'
+import { TestSessionQuery } from './test-session-query.ts'
 
 /** One scripted response that may wait on a caller-released gate before streaming. */
 interface GatedEntry {
@@ -56,6 +57,7 @@ async function setupWith(adapter: MockAdapter | GatedAdapter) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-tool-subagent-control-'))
   roots.push(root)
   await ctx.plugin(JsonlSessionPersistence, { root })
+  await ctx.plugin(TestSessionQuery)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SubagentRuntime)
@@ -82,13 +84,15 @@ function callTool(
   args: unknown,
   agent?: unknown,
   signal: AbortSignal = testToolSignal,
+  principal?: AuthenticatedPrincipal,
 ) {
   return ctx.tools.execute({
     signal,
-    callId: CallId(`call-${++calls}`),
+    callId: ToolCallId(`call-${++calls}`),
     name,
     arguments: args,
     ...agent !== undefined ? { agent: agent as never } : {},
+    ...principal === undefined ? {} : { principal },
   })
 }
 
@@ -114,6 +118,9 @@ describe('dsh-tool-subagent-control', () => {
   })
 
   it('cold-resumes a settled child and reports the queued next turn', async () => {
+    const principal = {
+      source: 'gateway', id: 'alice', username: 'alice', role: 'user' as const,
+    }
     const { ctx, parent } = await setup([textResponse('first answer'), textResponse('second answer')])
     const started = await ctx.subagents.startContinuable({
       provider: 'spawn',
@@ -126,7 +133,7 @@ describe('dsh-tool-subagent-control', () => {
     const result = await callTool(ctx, 'send_message', {
       subagent_id: started.childId,
       message: 'and then?',
-    }, parent)
+    }, parent, testToolSignal, principal)
 
     expect(result.isError).toBe(false)
     expect(text(result)).toBe(`message queued as the next turn for subagent ${started.childId}`)
@@ -140,6 +147,7 @@ describe('dsh-tool-subagent-control', () => {
       form: 'relay',
       senderSessionId: parent.id,
     })
+    expect(followUp).toMatchObject({ data: { principal } })
   })
 
   it('queues behind an open turn instead of joining it', async () => {

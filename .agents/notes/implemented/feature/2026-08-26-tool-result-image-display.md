@@ -15,7 +15,7 @@ Image-bearing Tool results are durable conversation content independently of the
 - `read_image` remains conditional on the durable attachment service, supported file format, and deployment image limits, but it does not inspect the routed model. It saves the image and appends the standard text-and-image Tool result under image-capable, text-only, unknown, and unresolved model routes.
 - `ToolCallTree` extracts standard image blocks from each settled root and nested Tool result and renders them directly below the owning Tool row. `read_image` uses the existing read-row presentation.
 - Tool-result images use the conversation-owned message image renderer with `start` alignment. The existing attachment plugin remains responsible for session-authorized loading, thumbnail sizing, retry behavior, and the original-image lightbox.
-- Model request projection remains authoritative for modality. Image-capable routes receive request pixels; exact text-only routes receive the stable attachment placeholder while the event log and Web preview retain the image reference.
+- Model request projection remains authoritative for modality. Exact text-only routes receive the stable attachment placeholder; routes without that negative capability retain the image block, while the event log and Web preview always retain the image reference.
 
 The default Web composition therefore displays a generated or filesystem image in the conversation after `read_image`, even when the active model is text-only. Any other Tool that appends standard image blocks receives the same presentation for root and nested calls.
 

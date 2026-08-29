@@ -7,7 +7,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { assertNever } from '@deepseek-ai/dsh-llm'
-import type { CallId } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TOOL_NOT_STARTED } from './repair.ts'
@@ -26,7 +26,7 @@ interface SessionTrace {
   openStep: number | null
   nextTurn: number
   nextStep: number
-  pendingCalls: Map<number, CallId>
+  pendingCalls: Map<number, ToolCallId>
 }
 
 /** One accepted event's deferred mutation of a committed session trace. */
@@ -34,7 +34,7 @@ interface SessionTraceTransition {
   scalars: Pick<SessionTrace, 'lastSeq' | 'openTurn' | 'openStep' | 'nextTurn' | 'nextStep'>
   pendingCalls:
     | { kind: 'none' }
-    | { kind: 'add'; callSeq: number; callId: CallId }
+    | { kind: 'add'; callSeq: number; callId: ToolCallId }
     | { kind: 'delete'; callSeq: number }
     | { kind: 'clear' }
 }
@@ -138,14 +138,15 @@ function validateEvent(
       const callId = event.data.message.source.callId
       const syntheticNotStarted = event.data.message.content[0].isError === true && event.data.error?.code === TOOL_NOT_STARTED
       const citedCallSeq = event.sourceEventSeqs?.[0]
-      const fallbackCallSeq = citedCallSeq === undefined
-        ? [...trace.pendingCalls].find(([, pendingCallId]) => pendingCallId === callId)?.[0]
-        : undefined
-      const callSeq = citedCallSeq ?? fallbackCallSeq
-      if ((callSeq === undefined || trace.pendingCalls.get(callSeq) !== callId) && !syntheticNotStarted) {
-        fail(`tool/result for ${callId} with no prior tool/call in this step`)
+      if (syntheticNotStarted && citedCallSeq !== undefined) {
+        fail(`tool/result for ${callId} marked ${TOOL_NOT_STARTED} must not cite a tool/call seq`)
       }
-      if (callSeq !== undefined) pendingCalls = { kind: 'delete', callSeq }
+      if ((citedCallSeq === undefined || trace.pendingCalls.get(citedCallSeq) !== callId) && !syntheticNotStarted) {
+        fail(`tool/result for ${callId} must cite its prior tool/call seq in this step`)
+      }
+      if (!syntheticNotStarted && citedCallSeq !== undefined) {
+        pendingCalls = { kind: 'delete', callSeq: citedCallSeq }
+      }
       break
     }
     case 'user/message':
@@ -153,7 +154,6 @@ function validateEvent(
     case 'session/end-seed':
       // Unconstrained: an unbalanced seed legally puts it inside an open turn.
       break
-    case 'todo/write':
     case 'request/header':
     case 'request/context': {
       if (trace.openTurn === null) {

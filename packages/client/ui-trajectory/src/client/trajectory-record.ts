@@ -1,7 +1,9 @@
 /** Shared trajectory record data and formatting contracts. */
 
 import type { HTMLAttributes } from 'react'
-import type { ConversationPromptSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ConversationPromptSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { TrajectoryTranslate } from './locales.ts'
 
 /** Closed set of trajectory record kinds. */
 export type TrajectoryCellKind =
@@ -27,10 +29,18 @@ export interface AssistantMetricDetail {
 export interface TrajectorySourceBlock {
   type: string
   content: string
-  imageSrc?: string
-  imageAlt?: string
+  attachment?: ImageAttachmentRef
   callId?: string
+  /** Root `tool/call` seq that disambiguates a reused call id. */
+  rootCallSeq?: number
   toolName?: string
+}
+
+/** Exact or legacy cross-view Tool focus decoded from the opaque request value. */
+export interface TrajectoryCallFocus {
+  readonly callId: string
+  /** Null identifies a legacy call-id-only request. */
+  readonly rootCallSeq: number | null
 }
 
 /** Data and optional presentation attributes for one trajectory record. */
@@ -77,6 +87,8 @@ export interface TrajectoryCellProps extends HTMLAttributes<HTMLDivElement> {
   resultPreviewMarkdown?: string
   /** Tool call id used to link message source blocks to tool records. */
   callId?: string
+  /** Root `tool/call` seq that disambiguates a reused call id. */
+  rootCallSeq?: number | null
   /** Tool-only result failure state. */
   isError?: boolean
   /** Own duration in seconds, or `null` when no duration is known. */
@@ -104,27 +116,73 @@ export interface TrajectoryCellProps extends HTMLAttributes<HTMLDivElement> {
  */
 export function trajectoryRecordId(cell: TrajectoryCellProps): string {
   if (cell.recordId !== undefined) return cell.recordId
+  if (cell.callId !== undefined && cell.rootCallSeq !== undefined && cell.rootCallSeq !== null) {
+    return `${cell.kind}\u0000call\u0000${cell.rootCallSeq}\u0000${cell.callId}`
+  }
   if (cell.callId !== undefined) return `${cell.kind}\u0000call\u0000${cell.callId}`
   if (cell.sourceSeq !== undefined) return `${cell.kind}\u0000seq\u0000${cell.sourceSeq}`
   return `${cell.kind}\u0000index\u0000${cell.index}`
 }
 
 /**
+ * Build the map key for one Tool call inside a root lifecycle.
+ * @param callId - Root or nested call id.
+ * @param rootCallSeq - Seq of the owning root `tool/call`.
+ * @returns Collision-free lifecycle-local call key.
+ */
+export function trajectoryToolKey(callId: string, rootCallSeq: number): string {
+  return `${rootCallSeq}\u0000${callId}`
+}
+
+/**
+ * Decode the Trajectory target's opaque cross-view Tool focus.
+ * @param value - View request focus value.
+ * @returns Exact lifecycle focus, or a call-id-only legacy focus.
+ */
+export function decodeTrajectoryCallFocus(value: string): TrajectoryCallFocus {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    // Provider call ids are opaque strings and commonly are not JSON.
+  }
+  if (typeof parsed === 'object' && parsed !== null) {
+    const candidate = parsed as Record<string, unknown>
+    if (typeof candidate.callId === 'string' && candidate.callId !== ''
+      && typeof candidate.rootCallSeq === 'number'
+      && Number.isSafeInteger(candidate.rootCallSeq) && candidate.rootCallSeq >= 0) {
+      return { callId: candidate.callId, rootCallSeq: candidate.rootCallSeq }
+    }
+  }
+  return { callId: value, rootCallSeq: null }
+}
+
+/**
  * Format a duration in milliseconds with thousands separators.
  * @param milliseconds - Duration in milliseconds, or `null` when absent.
+ * @param t - Trajectory locale translator.
  * @returns `—` when unknown, otherwise an integer-millisecond label.
  */
-export function formatDurationMillis(milliseconds: number | null): string {
+export function formatDurationMillis(
+  milliseconds: number | null,
+  t: TrajectoryTranslate,
+): string {
   if (milliseconds === null || !Number.isFinite(milliseconds)) return '—'
   const integer = String(Math.round(milliseconds))
-  return `${integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} ms`
+  return t('unit.milliseconds', {
+    value: integer.replace(/\B(?=(\d{3})+(?!\d))/g, ','),
+  })
 }
 
 /**
  * Format an elapsed duration given in seconds as a millisecond label.
  * @param seconds - Duration seconds, or `null` when absent.
+ * @param t - Trajectory locale translator.
  * @returns `—` when unknown, otherwise an integer-millisecond label.
  */
-export function formatElapsedSeconds(seconds: number | null): string {
-  return formatDurationMillis(seconds === null ? null : seconds * 1000)
+export function formatElapsedSeconds(
+  seconds: number | null,
+  t: TrajectoryTranslate,
+): string {
+  return formatDurationMillis(seconds === null ? null : seconds * 1000, t)
 }

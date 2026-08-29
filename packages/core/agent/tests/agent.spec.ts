@@ -39,7 +39,7 @@ function stubAgent(rawId: string, overrides: Partial<Agent> = {}): Agent {
 }
 
 describe('Inbox', () => {
-  it('claims one authenticated principal at a time and preserves queued identity on replay', () => {
+  it('claims authenticated and anonymous principal groups separately and preserves them on replay', () => {
     const session = Session.create(SessionId('principal-inbox'))
     const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
     const message = (username: string) => createUserMessage({
@@ -48,15 +48,26 @@ describe('Inbox', () => {
       principal: { source: 'gateway', id: username, username, role: 'user' as const },
     })
     const a = message('a')
+    const internal = createUserMessage({
+      content: [{ type: 'text', text: 'internal' }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })
+    const anonymous = createUserMessage({
+      content: [{ type: 'text', text: 'anonymous' }],
+      source: { kind: 'user' },
+    })
     const b = message('b')
+    inbox.append('next-step', internal)
     inbox.append('next-step', a)
+    inbox.append('next-step', anonymous)
     inbox.append('next-step', b)
 
-    expect(inbox.claim('next-step', 1)).toEqual([a])
-    expect(inbox.nextStep).toEqual([b])
+    expect(inbox.claim('next-step', 1)).toEqual([internal, a])
+    expect(inbox.nextStep).toEqual([anonymous, b])
 
     const restored = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
-    expect(restored.nextStep).toEqual([b])
+    expect(restored.nextStep).toEqual([anonymous, b])
+    expect(restored.claim('next-step', 1)).toEqual([anonymous])
     expect(restored.claim('next-step', 1)).toEqual([b])
   })
 
@@ -170,6 +181,7 @@ describe('AgentRegistry', () => {
     await agentFiber
     await ctx.plugin(TypertRegistry)
     const agent = stubAgent('remote-agent')
+    Object.defineProperty(agent, 'ctx', { value: agent.ctx.extend({ agent }) })
     const disposeAgent = ctx.agents.register(agent)
 
     const lookup = ctx.typert.lookups.get('agent')
@@ -180,7 +192,10 @@ describe('AgentRegistry', () => {
       wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
     })
     expect(lookup?.resolve(agent.id)).toBe(agent)
-    expect(ctx.typert.contexts.getHost('agent')?.resolve(agent.id)).toBe(agent.ctx)
+    const context = ctx.typert.contexts.getHost('agent')
+    expect(context?.identity(agent.ctx)).toBe(agent.id)
+    expect(context?.identity(ctx)).toBeUndefined()
+    expect(context?.resolve(agent.id)).toBe(agent.ctx)
 
     disposeAgent()
     expect(lookup?.resolve(agent.id)).toBeUndefined()

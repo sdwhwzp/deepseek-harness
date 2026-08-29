@@ -1,9 +1,10 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
-  RunningToolCall, ToolCallBlock, ToolResultNode,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  ConversationMatch, ConversationNodeContext, ConversationNodeDefinition, RunningToolCall,
+  ToolCallBlock, ToolResultNode,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-tools/types'
+import { isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import { trajectoryNode } from './trajectory-definition-common.ts'
 
 /* jscpd:ignore-start -- Target-owned Definitions intentionally keep their event
@@ -53,7 +54,6 @@ function rootCall(match: ConversationMatch): RunningToolCall {
     turn: match.event.data.turn,
     step: match.event.data.step,
     time: match.event.time,
-    callView: match.view?.for === 'call' ? match.view.view : null,
     subCalls: [],
   }
 }
@@ -75,8 +75,6 @@ function rootResult(
     isError: result.isError === true,
     ...(match.event.data.error === undefined ? {} : { error: match.event.data.error }),
     meta: match.event.data.meta,
-    callView: previous?.callView ?? null,
-    resultView: match.view?.for === 'result' ? match.view.view : null,
     subCalls: [],
   }
 }
@@ -94,12 +92,12 @@ function locationStep(match: ConversationMatch): number {
 function childCall(match: ConversationMatch, data: DispatchData): RunningToolCall {
   return {
     callId: data.subCallId,
+    parentCallId: data.parentCallId,
     name: data.name,
     argsRaw: JSON.stringify(data.arguments),
     turn: locationTurn(match),
     step: locationStep(match),
     time: match.event.time,
-    callView: null,
     subCalls: [],
   }
 }
@@ -114,12 +112,11 @@ function childResult(
     seq: match.event.seq,
     time: match.event.time,
     callId: data.subCallId,
+    parentCallId: data.parentCallId,
     call: { name: data.name, argsRaw: JSON.stringify(data.arguments) },
     callTime: previous === undefined || 'kind' in previous ? null : previous.time,
     content: data.content ?? [],
     isError: data.isError === true,
-    callView: null,
-    resultView: null,
     subCalls: [],
   }
 }
@@ -205,13 +202,12 @@ function projectCall(
     seq: interruptedAt.seq - 0.8,
     time: interruptedAt.time,
     callId: block.callId,
+    ...block.parentCallId === undefined ? {} : { parentCallId: block.parentCallId },
     call: { name: block.name, argsRaw: block.argsRaw },
     callTime: block.time,
     content: [],
     isError: true,
     error: { name: 'Interrupted', code: 'interrupted' },
-    callView: block.callView,
-    resultView: null,
     subCalls,
   }
 }
@@ -279,9 +275,28 @@ const trajectoryToolDefinition: ConversationNodeDefinition<ToolState> = {
     if (state === undefined) return null
     const root = projectCall(state, state.rootId, interruption(context))
     if (root === undefined) return null
+    const resultMatch = context.matches.findLast(match => match.event.type === 'tool/result')
     const anchorSeq = context.start?.event.seq
       ?? ('kind' in root ? root.seq : context.matches[0]?.event.seq ?? 0)
-    return trajectoryNode(context, anchorSeq, { kind: 'tool', root })
+    const start = context.start?.event
+    const turn = start?.type === 'tool/call'
+      ? start.data.turn
+      : resultMatch?.event.type === 'tool/result' ? resultMatch.event.data.turn : 0
+    const step = start?.type === 'tool/call'
+      ? start.data.step
+      : resultMatch?.event.type === 'tool/result' ? resultMatch.event.data.step : 0
+    const replacementSourceSeqs = resultMatch?.event.type === 'tool/result'
+      && isReplacementSurfaceEvent(resultMatch.event)
+      ? resultMatch.event.sourceEventSeqs ?? []
+      : []
+    return trajectoryNode(context, anchorSeq, {
+      kind: 'tool',
+      root,
+      rootCallSeq: context.start?.event.seq ?? null,
+      turn,
+      step,
+      replacementSourceSeqs,
+    })
   },
 }
 /* jscpd:ignore-end */
@@ -292,5 +307,5 @@ const trajectoryToolDefinition: ConversationNodeDefinition<ToolState> = {
  * @param ctx - Plugin context receiving the Definition.
  */
 export function registerTrajectoryToolDefinition(ctx: Context): void {
-  ctx.conversationEvents.register(trajectoryToolDefinition)
+  ctx.uiConversation.events.register(trajectoryToolDefinition)
 }

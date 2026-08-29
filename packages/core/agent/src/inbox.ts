@@ -54,6 +54,19 @@ export class Inbox {
     return this.nextTurn.length > 0 || this.nextStep.length > 0
   }
 
+  /**
+   * Resolve the caller group at the next requested boundary, skipping neutral
+   * internal next-step context. Anonymous user input is represented by `undefined`.
+   * @param target - whether the boundary may fall back to one queued turn.
+   * @returns the first next-step principal, or the queued-turn principal when requested.
+   */
+  nextPrincipal(target: InboxTarget): UserMessage['principal'] {
+    const nextStepOwner = this.nextStep.find(message =>
+      message.principal !== undefined || message.source.kind === 'user')
+    if (nextStepOwner !== undefined) return nextStepOwner.principal
+    return target === 'next-turn' ? this.nextTurn[0]?.principal : undefined
+  }
+
   /** Durably cancel all pending input, clearing next-step before next-turn. */
   clear(): void {
     this.splice('next-step', 0, this.nextStep.length, [])
@@ -65,25 +78,25 @@ export class Inbox {
    * each claimed message. The durable splices are pure deletions.
    * @param target - whether this boundary also consumes one queued turn.
    * @param turn - turn that will own the claimed batch.
-   * @returns next-step input followed by the queued turn, when requested.
+   * @param group - fixed principal group to claim; omission selects the next pending group.
+   * @returns matching next-step input followed by the queued turn, when requested.
    * @internal - The agent loop's step-boundary operation, not a plugin extension point.
    */
-  claim(target: InboxTarget, turn: number): UserMessage[] {
-    const selectedPrincipal = this.nextStep.find(message => message.principal !== undefined)?.principal
-      ?? (target === 'next-turn' ? this.nextTurn[0]?.principal : undefined)
+  claim(
+    target: InboxTarget,
+    turn: number,
+    group?: { readonly principal: UserMessage['principal'] },
+  ): UserMessage[] {
+    const selectedPrincipal = group === undefined ? this.nextPrincipal(target) : group.principal
     let nextStepCount = 0
     for (const message of this.nextStep) {
-      if (message.principal !== undefined
-        && selectedPrincipal !== undefined
-        && !samePrincipal(message.principal, selectedPrincipal)) break
+      if (!messageBelongsToPrincipal(message, selectedPrincipal)) break
       nextStepCount++
     }
     const claimed = this.mutate('next-step', 0, nextStepCount, [], false)
     if (target === 'next-turn') {
       const queued = this.nextTurn[0]
-      if (queued !== undefined && (selectedPrincipal === undefined
-        || queued.principal === undefined
-        || samePrincipal(queued.principal, selectedPrincipal))) {
+      if (queued !== undefined && messageBelongsToPrincipal(queued, selectedPrincipal)) {
         claimed.push(...this.mutate('next-turn', 0, 1, [], false))
       }
     }
@@ -239,4 +252,22 @@ function samePrincipal(
   right: NonNullable<UserMessage['principal']>,
 ): boolean {
   return left.source === right.source && left.id === right.id
+}
+
+/**
+ * Whether one message may enter a fixed principal group. A principal-less
+ * user message is anonymous input; other principal-less messages are neutral
+ * internal context and may accompany the selected caller.
+ * @param message - candidate inbox message.
+ * @param principal - fixed authenticated owner, or the anonymous group.
+ * @returns whether the message may enter that group.
+ */
+export function messageBelongsToPrincipal(
+  message: UserMessage,
+  principal: UserMessage['principal'],
+): boolean {
+  if (message.principal === undefined) {
+    return message.source.kind !== 'user' || principal === undefined
+  }
+  return principal !== undefined && samePrincipal(message.principal, principal)
 }

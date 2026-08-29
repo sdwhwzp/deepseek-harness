@@ -14,9 +14,9 @@ Both image-reading operations live in `dsh-tool-fs` and publish ordinary logged 
 
 - **`read_image` reads a filesystem path.** Extension selects the declared PNG/JPEG/WebP/GIF media type; the attachment store's magic-byte and pixel validation stays authoritative. Bytes travel `ctx.fs.stat` → bounded `ctx.fs.readBytes` → `ctx.attachments.saveImage` → `fs/observed`. The tool result contains metadata and an `ImageBlock`.
 - **`FileSystem.readBytes(target, signal, maxBytes)`** is a new required provider primitive: the byte bound lives at the seam so no backend can buffer an unbounded file, with the stat-size short-circuit and a one-byte-past-cap stream guard against post-stat growth (`FS_TOO_LARGE`).
-- **Registration is composition-conditional, and execution commits a durable result independently of the model route.** The tools register only under `ctx.inject(['attachments'], …)`. The shared LLM runtime gives a text-only route a deterministic placeholder at request assembly, while the user can still see the result through the Web presentation defined by [Tool-result image display on text-only routes](2026-08-26-tool-result-image-display.md).
-- **Code Mode forwards the image out-of-band**: a nested dispatch returns the canonical value (execution-local, no image block) and defers a `user`-role context message carrying the envelope and image, so the picture still reaches the next request.
-- **llm-replay models may declare `inputModalities`**, which lets keyless ACP snapshots cover image-capable delivery and text-only request projection.
+- **Registration is composition-conditional, and execution is independent of the model route.** The tools register only under `ctx.inject(['attachments'], …)`. The durable result remains user-visible under every route, while the shared LLM runtime projects its image to a deterministic placeholder for a text-only request. The [Tool-result image display decision](2026-08-26-tool-result-image-display.md) owns the presentation and modality split.
+- **PTC mode forwards the image out-of-band**: a nested dispatch returns the canonical value (execution-local, no image block) and defers a `user`-role context message carrying the envelope and image, so the picture still reaches the next request.
+- **llm-replay models may declare `inputModalities`**, which lets keyless snapshots cover image-capable delivery and text-only request projection.
 
 ## Alternatives considered
 
@@ -29,4 +29,4 @@ Both image-reading operations live in `dsh-tool-fs` and publish ordinary logged 
 
 - The tools succeed on a text-only route, while that route represents the image with a request-local placeholder.
 - Repeated image results accumulate request cost until request projection or compaction removes them; content addressing deduplicates durable bytes.
-- The Web tool-result card renders the durable pixels through the session-authorized attachment loader and shared lightbox.
+- The Web Tool-result card renders the image through the session-authorized attachment loader and shared lightbox.

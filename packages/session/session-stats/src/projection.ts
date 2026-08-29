@@ -16,7 +16,7 @@
  * token is the first non-empty delta chunk and survives an in-step
  * `llm/retry`, decode spans first token → assembled message on steps that
  * also report output tokens, and tool time pairs `tool/call` → `tool/result`
- * by callId. A cancelled step assembles no message, so its partial stream
+ * by the call event seq cited by the result. A cancelled step assembles no message, so its partial stream
  * time stays uncounted in every time figure — matching the window, which
  * renders it as an untimed interrupted node.
  *
@@ -24,8 +24,25 @@
  */
 
 import { z } from 'zod'
-import { isTokenDelta } from '@deepseek-ai/dsh-llm/message'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm/types'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+
+/* jscpd:ignore-start -- Session Stats owns its whole-log timing projection independently. */
+
+/** Whether a stream chunk carries a non-empty first-token delta. */
+function isTokenDelta(chunk: StreamChunk): boolean {
+  switch (chunk.type) {
+    case 'text-delta':
+    case 'reasoning-delta':
+      return chunk.text !== ''
+    case 'tool-call-delta':
+      return chunk.argumentsDelta !== '' || chunk.name !== undefined
+    default:
+      return false
+  }
+}
+
+/* jscpd:ignore-end */
 
 /** Accumulated whole-log figures (the view is exactly these totals). */
 interface SessionStatsTotals {
@@ -58,7 +75,7 @@ interface SessionStatsState extends SessionStatsTotals {
   lastTurn: number | null
   /** The open step's boundary facts; null outside a step or after its message assembled. */
   openStep: { turn: number; step: number; startTime: number; firstTokenTime: number | null } | null
-  /** Dispatch times of tool calls whose result has not landed, by callId. */
+  /** Dispatch times of tool calls whose result has not landed, by call event seq. */
   pendingCalls: Record<string, number>
 }
 
@@ -111,7 +128,7 @@ function usageOutputTokens(usage: unknown): number | null {
 /** The `sessionStats` unit registered on `ctx.sessionProjections` (exported for the unit spec). */
 export const sessionStatsProjectionDefinition = {
   key: 'sessionStats',
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema: sessionStatsStateSchema,
   init: () => ({
     turns: 0,
@@ -162,17 +179,15 @@ export const sessionStatsProjectionDefinition = {
         return next
       }
       case 'tool/call':
-        return { ...state, pendingCalls: { ...state.pendingCalls, [event.data.callId]: event.time } }
+        return { ...state, pendingCalls: { ...state.pendingCalls, [event.seq]: event.time } }
       case 'tool/result': {
-        // Own-key check: callId is provider-minted (model/tool JSON boundary),
-        // so a prototype property name ('constructor', 'toString') on a result
-        // with no recorded call must read as unmatched, not as an inherited
-        // function that would poison toolMs with NaN.
-        const callId = event.data.message.source.callId
-        const dispatched = Object.hasOwn(state.pendingCalls, callId) ? state.pendingCalls[callId] : undefined
+        const callSeq = event.sourceEventSeqs?.[0]
+        if (callSeq === undefined) return state
+        const key = String(callSeq)
+        const dispatched = Object.hasOwn(state.pendingCalls, key) ? state.pendingCalls[key] : undefined
         if (dispatched === undefined) return state
         const pendingCalls = Object.fromEntries(
-          Object.entries(state.pendingCalls).filter(([id]) => id !== callId),
+          Object.entries(state.pendingCalls).filter(([seq]) => seq !== key),
         )
         return { ...state, toolMs: state.toolMs + Math.max(0, event.time - dispatched), pendingCalls }
       }

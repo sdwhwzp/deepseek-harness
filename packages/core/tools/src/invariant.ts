@@ -14,6 +14,24 @@ export const inject = ['invariants']
 
 type ToolStage = 'pre' | 'execute' | 'post'
 
+type DispatchPhase = 'started' | 'settled'
+
+/** One durable nested-dispatch edge within an exact root-call lifecycle. */
+interface DispatchEdge {
+  rootCallId: string
+  rootCallSeq: number | undefined
+  phase: DispatchPhase
+}
+
+/** Whether an edge belongs to the root lifecycle named by one dispatch event. */
+function belongsToRoot(
+  edge: DispatchEdge,
+  rootCallId: string,
+  rootCallSeq: number | undefined,
+): boolean {
+  return edge.rootCallId === rootCallId && edge.rootCallSeq === rootCallSeq
+}
+
 /** Validate the immutable final execution/result snapshot. */
 function validateResult(
   exec: Readonly<ToolExecution>,
@@ -33,18 +51,18 @@ function validateResult(
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
   const stages = new WeakMap<object, ToolStage>()
   const openTurns = new WeakMap<Session, number | null>()
-  const dispatchRoots = new WeakMap<Session, Map<string, string>>()
+  const dispatchEdges = new WeakMap<Session, Map<string, DispatchEdge[]>>()
   const validateDispatch = (session: Session, event: SessionEvent): void => {
     if (event.type !== 'tool/code-dispatch-start' && event.type !== 'tool/code-dispatch') return
     const root = String(event.data.rootCallId)
+    const rootCallSeq = event.data.rootCallSeq
     const parent = String(event.data.parentCallId)
     const child = String(event.data.subCallId)
     if (root.length === 0 || parent.length === 0 || child.length === 0) {
       fail(`${event.type} must carry non-empty rootCallId, parentCallId, and subCallId`)
       return
     }
-    if (event.data.rootCallSeq !== undefined) {
-      const rootCallSeq = event.data.rootCallSeq
+    if (rootCallSeq !== undefined) {
       const rootCall = session.events.find(candidate => candidate.seq === rootCallSeq)
       if (!Number.isSafeInteger(rootCallSeq)
         || rootCall?.type !== 'tool/call'
@@ -53,21 +71,49 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
         fail(`${event.type} rootCallSeq ${String(rootCallSeq)} does not identify rootCallId ${root}`)
       }
     }
-    const roots = dispatchRoots.get(session)
-    const known = roots?.get(child)
-    if (known !== undefined && known !== root) fail(`${event.type} changed rootCallId for subCallId ${child}`)
-    if (parent !== root && roots?.get(parent) !== root) {
-      fail(`${event.type} parentCallId ${parent} does not belong to rootCallId ${root}`)
+    const edges = dispatchEdges.get(session)
+    const childEdges = edges?.get(child) ?? []
+    if (childEdges.some(edge => edge.rootCallId !== root)) {
+      fail(`${event.type} changed rootCallId for subCallId ${child}`)
+    }
+    const exactEdge = childEdges.find(edge => belongsToRoot(edge, root, rootCallSeq))
+    if (event.type === 'tool/code-dispatch-start') {
+      if (exactEdge !== undefined) {
+        fail(`${event.type} repeated subCallId ${child} in one root-call lifecycle`)
+      }
+      if (childEdges.length > 0
+        && (rootCallSeq === undefined || childEdges.some(edge => edge.rootCallSeq === undefined))) {
+        fail(`${event.type} cannot distinguish reused subCallId ${child} without rootCallSeq`)
+      }
+    } else if (exactEdge?.phase !== 'started') {
+      fail(`${event.type} subCallId ${child} has no matching start in root-call lifecycle ${root}/${String(rootCallSeq)}`)
+    }
+    if (parent !== root) {
+      const parentEdge = edges?.get(parent)?.find(edge => belongsToRoot(edge, root, rootCallSeq))
+      if (parentEdge?.phase !== 'started') {
+        fail(`${event.type} parentCallId ${parent} does not belong to rootCallId ${root} at active rootCallSeq ${String(rootCallSeq)}`)
+      }
     }
   }
   const commitDispatch = (session: Session, event: SessionEvent): void => {
     if (event.type !== 'tool/code-dispatch-start' && event.type !== 'tool/code-dispatch') return
-    const roots = dispatchRoots.get(session) as Map<string, string>
-    roots.set(String(event.data.subCallId), String(event.data.rootCallId))
+    const edges = dispatchEdges.get(session) as Map<string, DispatchEdge[]>
+    const child = String(event.data.subCallId)
+    const root = String(event.data.rootCallId)
+    const rootCallSeq = event.data.rootCallSeq
+    if (event.type === 'tool/code-dispatch-start') {
+      const childEdges = edges.get(child) ?? []
+      childEdges.push({ rootCallId: root, rootCallSeq, phase: 'started' })
+      edges.set(child, childEdges)
+      return
+    }
+    const edge = edges.get(child)?.find(candidate => belongsToRoot(candidate, root, rootCallSeq))
+    /* v8 ignore next -- validateDispatch rejects a settle without its exact start. */
+    if (edge !== undefined) edge.phase = 'settled'
   }
   const seed = (session: Session): number | null => {
     let openTurn: number | null = null
-    dispatchRoots.set(session, new Map())
+    dispatchEdges.set(session, new Map())
     for (const event of session.events) {
       validateDispatch(session, event)
       commitDispatch(session, event)

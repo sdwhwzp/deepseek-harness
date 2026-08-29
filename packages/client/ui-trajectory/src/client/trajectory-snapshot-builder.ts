@@ -1,12 +1,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  AssistantMessageNode, ConversationNode, ConversationPromptSnapshot,
-  ConversationViewBuilder, ConversationViewDefinition, RequestView,
-  ToolCallBlock,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  AssistantMessageNode, ConversationNode, ConversationPromptSnapshot, ConversationViewBuilder,
+  ConversationViewDefinition, RequestPromptChange, RequestView, ToolCallBlock,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { COMPACTION_INTERRUPTED_ERROR } from './copy-codes.ts'
+import { trajectoryToolKey } from './trajectory-record.ts'
 import type {
   TrajectoryConversationViewNode, TrajectoryRequestHeaderState,
-  TrajectorySnapshot,
+  TrajectorySnapshot, TrajectoryToolLifecycle,
 } from './trajectory-contract.ts'
 
 const EMPTY_LIST: readonly never[] = []
@@ -19,6 +20,7 @@ export const EMPTY_TRAJECTORY_SNAPSHOT: TrajectorySnapshot = {
   eventLocations: new Map(),
   requests: EMPTY_LIST,
   callSchemas: new Map(),
+  toolLifecycles: EMPTY_LIST,
   partial: null,
   runningCalls: EMPTY_LIST,
 }
@@ -34,26 +36,38 @@ function headerStepKey(header: TrajectoryRequestHeaderState): string | undefined
     : undefined
 }
 
+interface StepHeaders {
+  /** Latest full request snapshot in the step. */
+  latest: TrajectoryRequestHeaderState
+  /** Latest actual prompt change in the step, retained across a later series snapshot. */
+  change?: RequestPromptChange
+}
+
 function headerFor(
   request: AssistantRequest,
-  headersByStep: ReadonlyMap<string, TrajectoryRequestHeaderState>,
+  headersByStep: ReadonlyMap<string, StepHeaders>,
   previous: TrajectoryRequestHeaderState | undefined,
-): TrajectoryRequestHeaderState | undefined {
+): StepHeaders | undefined {
   return headersByStep.get(stepKey(request.turn, request.step))
-    ?? (previous !== undefined && previous.seq < request.startSeq ? previous : undefined)
+    ?? (previous !== undefined && previous.seq < request.startSeq
+      ? {
+        latest: previous,
+        ...(previous.change === undefined ? {} : { change: previous.change }),
+      }
+      : undefined)
 }
 
 function applyHeader(
   request: AssistantRequest,
-  header: TrajectoryRequestHeaderState | undefined,
+  header: StepHeaders | undefined,
   includeChange: boolean,
 ): AssistantRequest {
   return header === undefined
     ? request
     : {
       ...request,
-      prompt: header.prompt,
-      requestConfig: header.prompt.config,
+      prompt: header.latest.prompt,
+      requestConfig: header.latest.prompt.config,
       ...(includeChange && header.change !== undefined ? { promptChange: header.change } : {}),
     }
 }
@@ -67,17 +81,33 @@ function withRequestConfig(
 
 function captureSchemas(
   block: ToolCallBlock,
+  rootCallSeq: number,
   toolsByName: ReadonlyMap<string, ToolSchema>,
   output: Map<string, ToolSchema>,
 ): void {
   const name = 'kind' in block ? block.call?.name : block.name
   const schema = name === undefined ? undefined : toolsByName.get(name)
-  if (schema !== undefined) output.set(block.callId, schema)
-  for (const child of block.subCalls) captureSchemas(child, toolsByName, output)
+  if (schema !== undefined) output.set(trajectoryToolKey(block.callId, rootCallSeq), schema)
+  for (const child of block.subCalls) captureSchemas(child, rootCallSeq, toolsByName, output)
 }
 
 function indexTools(tools: readonly ToolSchema[]): ReadonlyMap<string, ToolSchema> {
   return new Map(tools.map(tool => [tool.name, tool]))
+}
+
+function replacementRoot(
+  previous: TrajectoryToolLifecycle['root'],
+  replacement: TrajectoryToolLifecycle['root'],
+): TrajectoryToolLifecycle['root'] {
+  if (!('kind' in previous) || !('kind' in replacement)) return replacement
+  return {
+    ...replacement,
+    seq: previous.seq,
+    time: previous.time,
+    call: previous.call,
+    callTime: previous.callTime,
+    subCalls: previous.subCalls,
+  }
 }
 
 function interruptCompactions(
@@ -106,14 +136,14 @@ function interruptCompactions(
       ...request,
       completedAt: boundary.time,
       status: 'error',
-      error: 'Compaction was interrupted before completion.',
+      error: COMPACTION_INTERRUPTED_ERROR,
     }
   }
 }
 
 function applyTurnErrors(
   requests: RequestView[],
-  endings: readonly { turn: number; time: number; error?: string }[],
+  endings: readonly { turn: number; time: number; error?: string; errorCode?: string }[],
 ): void {
   const lastAssistantByTurn = new Map<number, number>()
   for (const [index, request] of requests.entries()) {
@@ -130,6 +160,7 @@ function applyTurnErrors(
       completedAt: request.completedAt ?? ending.time,
       status: 'error',
       error: ending.error,
+      ...(ending.errorCode === undefined ? {} : { errorCode: ending.errorCode }),
     }
   }
 }
@@ -173,23 +204,36 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
   }
 
   private snapshot(): TrajectorySnapshot {
-    const headersByStep = new Map<string, TrajectoryRequestHeaderState>()
+    const headersByStep = new Map<string, StepHeaders>()
     for (const contribution of this.contributions) {
       if (contribution.data.kind !== 'request-header') continue
       const key = headerStepKey(contribution.data.header)
-      if (key !== undefined) headersByStep.set(key, contribution.data.header)
+      if (key === undefined) continue
+      const previous = headersByStep.get(key)
+      headersByStep.set(key, {
+        latest: contribution.data.header,
+        ...(contribution.data.header.change !== undefined
+          ? { change: contribution.data.header.change }
+          : previous?.change === undefined ? {} : { change: previous.change }),
+      })
     }
     const finalized: ConversationNode[] = []
     const eventLocations = new Map<number, TrajectoryConversationViewNode['location']>()
     const requests: RequestView[] = []
     const boundaries: { seq: number; time: number }[] = []
-    const turnEndings: { turn: number; time: number; error?: string }[] = []
+    const turnEndings: {
+      turn: number
+      time: number
+      error?: string
+      errorCode?: string
+    }[] = []
     const callSchemas = new Map<string, ToolSchema>()
+    const toolLifecycles: TrajectoryToolLifecycle[] = []
+    const resultOwners = new Map<number, number>()
     const consumedPromptChanges = new Set<number>()
     let previousHeader: TrajectoryRequestHeaderState | undefined
     let previousTools: ReadonlyMap<string, ToolSchema> = new Map()
     let partial: TrajectorySnapshot['partial'] = null
-    const runningCalls: TrajectorySnapshot['runningCalls'][number][] = []
 
     for (const contribution of this.contributions) {
       const data = contribution.data
@@ -207,21 +251,43 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
         const header = data.request === undefined
           ? undefined
           : headerFor(data.request, headersByStep, previousHeader)
-        if (data.node !== undefined) finalized.push(withRequestConfig(data.node, header?.prompt))
+        if (data.node !== undefined) finalized.push(withRequestConfig(data.node, header?.latest.prompt))
         if (data.partial !== null) partial = data.partial
         if (data.request !== undefined) {
-          const includeChange = header?.change !== undefined
-            && !consumedPromptChanges.has(header.seq)
+          const change = header?.change
+          const includeChange = change !== undefined
+            && !consumedPromptChanges.has(change.seq)
           requests.push(applyHeader(data.request, header, includeChange))
-          if (includeChange) consumedPromptChanges.add(header.seq)
+          if (includeChange) consumedPromptChanges.add(change.seq)
         }
         continue
       }
       if (data.kind === 'tool') {
-        if ('kind' in data.root) finalized.push(data.root)
-        else runningCalls.push(data.root)
-        if (previousHeader !== undefined && previousHeader.seq < contribution.anchorSeq) {
-          captureSchemas(data.root, previousTools, callSchemas)
+        const replacementOwner = data.replacementSourceSeqs
+          .map(seq => resultOwners.get(seq))
+          .find(owner => owner !== undefined)
+        if (replacementOwner !== undefined && 'kind' in data.root) {
+          const previous = toolLifecycles[replacementOwner]
+          if (previous !== undefined) {
+            toolLifecycles[replacementOwner] = {
+              ...previous,
+              root: replacementRoot(previous.root, data.root),
+            }
+            resultOwners.set(data.root.seq, replacementOwner)
+            continue
+          }
+        }
+        const owner = toolLifecycles.length
+        toolLifecycles.push({
+          rootCallSeq: data.rootCallSeq,
+          turn: data.turn,
+          step: data.step,
+          root: data.root,
+        })
+        if ('kind' in data.root) resultOwners.set(data.root.seq, owner)
+        if (data.rootCallSeq !== null
+          && previousHeader !== undefined && previousHeader.seq < contribution.anchorSeq) {
+          captureSchemas(data.root, data.rootCallSeq, previousTools, callSchemas)
         }
         continue
       }
@@ -237,19 +303,34 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
         turn: data.turn,
         time: data.time,
         ...(data.error === undefined ? {} : { error: data.error }),
+        ...(data.errorCode === undefined ? {} : { errorCode: data.errorCode }),
       })
     }
 
     requests.sort((left, right) => left.startSeq - right.startSeq)
     interruptCompactions(requests, boundaries)
     applyTurnErrors(requests, turnEndings)
-    finalized.sort((left, right) => left.seq - right.seq)
+    const resultAnchors = new Map(toolLifecycles.flatMap(lifecycle =>
+      'kind' in lifecycle.root
+        ? [[lifecycle.root.seq, lifecycle.rootCallSeq ?? lifecycle.root.seq] as const]
+        : [],
+    ))
+    for (const lifecycle of toolLifecycles) {
+      if ('kind' in lifecycle.root) finalized.push(lifecycle.root)
+    }
+    finalized.sort((left, right) =>
+      (resultAnchors.get(left.seq) ?? left.seq) - (resultAnchors.get(right.seq) ?? right.seq),
+    )
     const eventNodes = finalized
+    const runningCalls = toolLifecycles.flatMap(lifecycle =>
+      'kind' in lifecycle.root ? [] : [lifecycle.root],
+    )
     return {
       eventNodes,
       eventLocations,
       requests,
       callSchemas,
+      toolLifecycles,
       partial,
       runningCalls,
     }
@@ -280,5 +361,5 @@ export const trajectoryViewDefinition: ConversationViewDefinition<
  * @param ctx - Plugin context receiving the view Definition.
  */
 export function registerTrajectoryConversationView(ctx: Context): void {
-  ctx.conversationViews.register(trajectoryViewDefinition)
+  ctx.uiConversation.views.register(trajectoryViewDefinition)
 }

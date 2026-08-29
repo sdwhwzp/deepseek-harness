@@ -26,7 +26,7 @@ export interface SessionStatsProjection {
   steps: number
   /** Summed model wall time (`step/start` → `assistant/message`) over steps that assembled a message. */
   llmMs: number
-  /** Summed tool wall time over `tool/call` → `tool/result` pairs matched by callId. */
+  /** Summed tool wall time over result-cited `tool/call` → `tool/result` pairs. */
   toolMs: number
   /** Summed first-token latency (`step/start` → first non-empty delta chunk) over `ttftSteps`. */
   ttftMs: number

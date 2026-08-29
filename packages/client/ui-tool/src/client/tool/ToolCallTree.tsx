@@ -1,6 +1,6 @@
 /** Root/subcall Tool composition with one keyed atomic dispatch path. */
 import { memo, useMemo, type ReactNode } from 'react'
-import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ToolCallBlock, ToolCallTarget } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ToolCallOwnerProps, ToolTreeProps } from '../contract/slots.ts'
 import { GenericToolCard } from './toolviews/GenericToolCard.tsx'
 import css from './ToolCallTree.module.css'
@@ -18,11 +18,18 @@ function resultImages(block: ToolCallBlock) {
     : [])
 }
 
+/** Build one collision-free DOM anchor for an atomic call lifecycle. */
+function toolCallAnchorKey(nodeKey: string, callId: string): string {
+  return `call:${JSON.stringify([nodeKey, callId])}`
+}
+
 /** One atomic call dispatched through the Tool-owned keyed slot. */
 const ToolCall = memo(function ToolCall({
-  renderSlot, callId, toolName, block, openFile, selected, cwd, home, inspectCall,
+  renderSlot, nodeKey, rootCallSeq, callId, toolName, block, openFile, selected, cwd, home, inspectCall,
   renderMessageImages, t, children,
 }: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 'renderMessageImages' | 't'> & {
+  nodeKey: string
+  rootCallSeq: number
   callId: string
   toolName: string
   block: ToolCallBlock
@@ -30,6 +37,10 @@ const ToolCall = memo(function ToolCall({
   home?: string | undefined
   children?: ReactNode
 }) {
+  const target = useMemo<ToolCallTarget>(
+    () => ({ nodeKey, rootCallSeq, callId }),
+    [callId, nodeKey, rootCallSeq],
+  )
   const owner: ToolCallOwnerProps = useMemo(() => ({
     callId,
     toolName,
@@ -37,14 +48,15 @@ const ToolCall = memo(function ToolCall({
     openFile,
     cwd,
     home,
-    inspect: () => { inspectCall(callId) },
-  }), [callId, toolName, block, openFile, cwd, home, inspectCall])
+    inspect: () => { inspectCall(target) },
+  }), [callId, toolName, block, openFile, cwd, home, inspectCall, target])
   const images = useMemo(() => resultImages(block), [block])
   return (
     <div
       className={css.callRow}
-      data-chat-anchor-key={`call:${callId}`}
+      data-chat-anchor-key={toolCallAnchorKey(nodeKey, callId)}
       data-chat-call-id={callId}
+      data-chat-root-call-seq={rootCallSeq}
       data-selected={selected || undefined}
     >
       {renderSlot('tool.call.toolview', owner, {
@@ -62,19 +74,25 @@ const ToolCall = memo(function ToolCall({
 })
 
 const ToolCallBranch = memo(function ToolCallBranch({
-  renderSlot, block, selectedCallId, cwd, home, openFile, inspectCall, renderMessageImages, t,
-}: Pick<ToolTreeProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'inspectCall' | 'renderMessageImages' | 't'> & {
+  renderSlot, nodeKey, rootCallSeq, block, selectedToolCall, cwd, home, openFile, inspectCall, renderMessageImages, t,
+}: Pick<ToolTreeProps, 'renderSlot' | 'selectedToolCall' | 'cwd' | 'openFile' | 'inspectCall' | 'renderMessageImages' | 't'> & {
+  nodeKey: string
+  rootCallSeq: number
   block: ToolCallBlock
   home?: string | undefined
 }) {
   return (
     <ToolCall
       renderSlot={renderSlot}
+      nodeKey={nodeKey}
+      rootCallSeq={rootCallSeq}
       callId={block.callId}
       toolName={callName(block)}
       block={block}
       openFile={openFile}
-      selected={block.callId === selectedCallId}
+      selected={selectedToolCall?.nodeKey === nodeKey
+        && selectedToolCall.rootCallSeq === rootCallSeq
+        && selectedToolCall.callId === block.callId}
       cwd={cwd}
       home={home}
       inspectCall={inspectCall}
@@ -87,8 +105,10 @@ const ToolCallBranch = memo(function ToolCallBranch({
             <ToolCallBranch
               key={child.callId}
               renderSlot={renderSlot}
+              nodeKey={nodeKey}
+              rootCallSeq={rootCallSeq}
               block={child}
-              selectedCallId={selectedCallId}
+              selectedToolCall={selectedToolCall}
               cwd={cwd}
               home={home}
               openFile={openFile}
@@ -110,16 +130,18 @@ const ToolCallBranch = memo(function ToolCallBranch({
  * @returns the Tool call tree.
  */
 export function ToolCallTree({
-  renderSlot, node, selectedCallId, cwd, openFile, inspectCall, renderMessageImages,
-  useHostDescription, t,
+  renderSlot, node, selectedToolCall, cwd, openFile, inspectCall, renderMessageImages,
+  useConnectionGeneration, t,
 }: ToolTreeProps) {
-  const home = useHostDescription(description => description?.home)
+  const home = useConnectionGeneration(generation => generation?.host.home)
   const block = node.data.root
   return (
     <ToolCallBranch
       renderSlot={renderSlot}
+      nodeKey={node.key}
+      rootCallSeq={node.anchorSeq}
       block={block}
-      selectedCallId={selectedCallId}
+      selectedToolCall={selectedToolCall}
       cwd={cwd}
       home={home}
       openFile={openFile}

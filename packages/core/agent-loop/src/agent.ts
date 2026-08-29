@@ -15,7 +15,7 @@ import type {
   PreStepDecision,
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
-import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
+import { Inbox, agentEvents, assembleContextFor, messageBelongsToPrincipal } from '@deepseek-ai/dsh-agent'
 import type { AuthenticatedPrincipal, GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   BlockAssembler,
@@ -49,16 +49,25 @@ type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }
 
 type PreparedStep =
   | { kind: 'reject' }
-  | { kind: 'enter'; messages: UserMessage[]; principal?: AuthenticatedPrincipal; assembly: PromptAssembly }
-
-/** Resolve one authenticated owner without falling back to display fields. */
-function principalOf(messages: readonly UserMessage[]): AuthenticatedPrincipal | undefined {
-  return messages.find(message => message.principal !== undefined)?.principal
-}
+  | {
+    kind: 'enter'
+    messages: UserMessage[]
+    startsRequestSeries?: true
+    assembly: PromptAssembly
+  }
 
 /** Resolve the owner of the next durable turn before its inbox claim. */
 function nextTurnPrincipal(inbox: Inbox): AuthenticatedPrincipal | undefined {
-  return principalOf([...inbox.nextStep, ...inbox.nextTurn.slice(0, 1)])
+  return inbox.nextPrincipal('next-turn')
+}
+
+/** Whether the next-step FIFO prefix belongs to the open turn. */
+function hasNextStepForPrincipal(
+  inbox: Inbox,
+  principal: AuthenticatedPrincipal | undefined,
+): boolean {
+  const next = inbox.nextStep[0]
+  return next !== undefined && messageBelongsToPrincipal(next, principal)
 }
 
 /** Remove adapter-derived values before plugins propose the next request config. */
@@ -85,6 +94,8 @@ export class ReactLoopAgent implements Agent {
 
   /** Whether this loop instance has appended its initial/resume request anchor. */
   private requestHeaderLogged = false
+  /** Surface generation of the preceding built request. */
+  private requestSurfaceGeneration: number | undefined
   private readonly runtimeContext: RuntimeContextProjection
 
   constructor(
@@ -232,12 +243,15 @@ export class ReactLoopAgent implements Agent {
     }
   }
 
-  private async preStep(target: InboxTarget, position: { turn: number; step: number }): Promise<PreparedStep> {
+  private async preStep(
+    target: InboxTarget,
+    position: { turn: number; step: number },
+    principal: AuthenticatedPrincipal | undefined,
+  ): Promise<PreparedStep> {
     /* v8 ignore next -- private callers establish the running phase before proposing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
     const signal = this.phase.abort.signal
-    const claimed = this.inbox.claim(target, position.turn)
-    const principal = principalOf(claimed)
+    const claimed = this.inbox.claim(target, position.turn, { principal })
     const assembly = await this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal))
     signal.throwIfAborted()
     const sections = renderContextSections(assembly)
@@ -251,8 +265,7 @@ export class ReactLoopAgent implements Agent {
     )
     signal.throwIfAborted()
     if (decision.kind === 'reject') return decision
-    const decidedPrincipal = principalOf(decision.messages) ?? principal
-    return { ...decision, ...decidedPrincipal === undefined ? {} : { principal: decidedPrincipal }, assembly }
+    return { ...decision, assembly }
   }
 
   /** Open one turn before claiming its first proposed step. */
@@ -264,21 +277,20 @@ export class ReactLoopAgent implements Agent {
     const { signal } = phase.abort
     signal.throwIfAborted()
     const turn = phase.turn + 1
+    const principal = nextTurnPrincipal(this.inbox)
     try {
-      const principal = nextTurnPrincipal(this.inbox)
       this.session.append('turn/start', { turn, ...principal === undefined ? {} : { principal } })
     } catch (error: unknown) {
       this.throwError(error)
     }
     phase.turn = turn
     let turnEnds: TurnEndReason | null = null
-    let activePrincipal: AuthenticatedPrincipal | undefined
     let target: InboxTarget = 'next-turn'
     try {
       while (true) {
         signal.throwIfAborted()
         const step = phase.step + 1
-        const decision = await this.preStep(target, { turn, step })
+        const decision = await this.preStep(target, { turn, step }, principal)
         if (decision.kind === 'reject') {
           turnEnds = { kind: 'blocked' }
           return false
@@ -290,12 +302,11 @@ export class ReactLoopAgent implements Agent {
           turnEnds = { kind: 'completed' }
           return false
         }
-        activePrincipal = decision.principal ?? activePrincipal
         signal.throwIfAborted()
         this.session.append('step/start', {
           turn,
           step,
-          ...activePrincipal === undefined ? {} : { principal: activePrincipal },
+          ...principal === undefined ? {} : { principal },
         })
         phase.step = step
         try {
@@ -304,7 +315,11 @@ export class ReactLoopAgent implements Agent {
           }
           // max-tokens is sticky: once any step hits the ceiling, later steps
           // that complete normally must not downgrade the turn outcome.
-          const stepEnd = await this.step(decision.assembly, activePrincipal)
+          const stepEnd = await this.step(
+            decision.assembly,
+            decision.startsRequestSeries === true,
+            principal,
+          )
           // max-tokens stays sticky: a later completed step must not
           // downgrade the turn outcome.
           if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
@@ -312,11 +327,11 @@ export class ReactLoopAgent implements Agent {
           this.session.append('step/end', { turn, step })
         }
         signal.throwIfAborted()
-        if (turnEnds && this.inbox.nextStep.length === 0) {
+        if (turnEnds && !hasNextStepForPrincipal(this.inbox, principal)) {
           await this.dispatch.serial('agent/turn-stopping', { turn, signal })
           signal.throwIfAborted()
         }
-        if (turnEnds && this.inbox.nextStep.length === 0) break
+        if (turnEnds && !hasNextStepForPrincipal(this.inbox, principal)) break
         target = 'next-step'
       }
     } catch (error: unknown) {
@@ -351,6 +366,7 @@ export class ReactLoopAgent implements Agent {
 
   private async step(
     assembly: PromptAssembly,
+    startsRequestSeries: boolean,
     principal: AuthenticatedPrincipal | undefined,
   ): Promise<StepEndReason | null> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
@@ -360,9 +376,19 @@ export class ReactLoopAgent implements Agent {
     const system = renderPrompt(assembly)
 
     while (true) {
+      const surfaceGeneration = this.session.surface.replaceGeneration
       const { request, preparedCall } = await this.buildRequest(
-        turn, step, assembly.tools, system, this.session.deriveMessages(), principal, signal,
+        turn,
+        step,
+        assembly.tools,
+        system,
+        this.session.deriveMessages(),
+        startsRequestSeries,
+        surfaceGeneration,
+        principal,
+        signal,
       )
+      startsRequestSeries = false
       const assembler = new BlockAssembler()
       const chunkSeqs: number[] = []
       try {
@@ -436,7 +462,12 @@ export class ReactLoopAgent implements Agent {
       if (toolCalls.length === 0) return { kind: 'completed' }
       const { concluded } = await executeToolCalls(
         this.loopCtx, turn, step, toolCalls, principal, signal,
-        context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
+        (context) => {
+          const foreignIndex = this.inbox.nextStep.findIndex(message =>
+            !messageBelongsToPrincipal(message, principal))
+          const index = foreignIndex < 0 ? this.inbox.nextStep.length : foreignIndex
+          this.inbox.splice('next-step', index, 0, [context])
+        },
       )
       return concluded ? { kind: 'completed' } : null
     }
@@ -452,6 +483,8 @@ export class ReactLoopAgent implements Agent {
     tools: GenerateOptions['tools'] & object,
     system: string,
     boundaryMessages: Message[],
+    startsRequestSeries: boolean,
+    surfaceGeneration: number,
     principal: AuthenticatedPrincipal | undefined,
     signal: AbortSignal,
   ): Promise<{ request: GenerateOptions; preparedCall?: PreparedLlmCall }> {
@@ -462,11 +495,12 @@ export class ReactLoopAgent implements Agent {
     const persistedHeader = session.requestHeader()
     const persistedConfig = persistedHeader?.config
     const route = { provider: this.options.provider ?? '', model: this.options.model ?? '' }
-    const reasoningEffort = persistedConfig?.provider === route.provider
+    const persistedReasoningEffort = persistedConfig?.provider === route.provider
       && persistedConfig.model === route.model
       && persistedHeader?.adapterDefaults?.reasoningEffort !== true
       ? persistedConfig.reasoningEffort
       : undefined
+    const reasoningEffort = this.options.reasoningEffort ?? persistedReasoningEffort
     const maxTokens = this.options.maxTokens
     const seedConfig = deepFreeze(structuredClone(
       this.requestHeaderLogged
@@ -505,12 +539,21 @@ export class ReactLoopAgent implements Agent {
       ...tools.length > 0 ? { tools } : {},
     })
     const baseline = this.session.requestHeader()
+    const startsSeries = startsRequestSeries
+      || this.requestSurfaceGeneration !== surfaceGeneration
     if (!this.requestHeaderLogged) {
       this.session.append('request/header', { header, reason: baseline === undefined ? 'initial' : 'resume' })
       this.requestHeaderLogged = true
     } else if (baseline === undefined || !headerEquals(baseline, header)) {
-      this.session.append('request/header', { header, reason: 'change' })
+      this.session.append('request/header', {
+        header,
+        reason: 'change',
+        ...startsSeries ? { startsSeries: true } : {},
+      })
+    } else if (startsSeries) {
+      this.session.append('request/header', { header, reason: 'series' })
     }
+    this.requestSurfaceGeneration = surfaceGeneration
 
     const contextWindow = preparedCall?.context?.contextWindow
     const requestContext: RequestContext = {

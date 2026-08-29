@@ -7,11 +7,12 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { AuthenticatedPrincipal, LlmCallConfig, LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
-import type { AgentCancelCause, Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
+import type { AuthenticatedPrincipal, LlmCallConfig, LlmFailure, ReasoningEffortId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+import type { AgentCancelCause, Session, UserMessage } from '@deepseek-ai/dsh-session'
 export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
 import type { Inbox } from './inbox.ts'
-import type { InboxTarget } from './types.ts'
+import type { Agent } from './types.ts'
+export type { Agent } from './types.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 declare module '@deepseek-ai/dsh-system-prompt' {
   interface AssembleContext {
@@ -26,6 +27,8 @@ export interface AgentOptions {
   provider?: string
   /** Model id interpreted by the selected provider adapter. */
   model?: string
+  /** Adapter-owned reasoning effort for the selected provider/model route. */
+  reasoningEffort?: ReasoningEffortId
   /** Maximum output tokens for each conversation-model request. */
   maxTokens?: number
 }
@@ -52,7 +55,12 @@ export type AgentStatus = 'idle' | 'running'
 /** Whether and with which messages the loop enters a proposed step. */
 export type PreStepDecision =
   | { kind: 'reject' }
-  | { kind: 'enter'; messages: UserMessage[] }
+  | {
+    kind: 'enter'
+    messages: UserMessage[]
+    /** Start a distinct model-message series before this step's admitted messages. */
+    startsRequestSeries?: true
+  }
 
 /** Action returned by a listener that owns model-request recovery. */
 export type RequestErrorAction = { kind: 'retry' } | undefined
@@ -60,39 +68,37 @@ export type RequestErrorAction = { kind: 'retry' } | undefined
 /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
 export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
 
-/** Public live-agent handle. */
-export interface Agent {
-  /** The single identity shared with {@link session}. */
-  readonly id: SessionId
-  /** The provider route and model this agent's requests use. */
-  readonly options: AgentOptions
-  /** The live session this agent drives; its log is the durable source of truth. */
-  readonly session: Session
-  /** The agent-owned projection of durable pending work. */
-  readonly inbox: Inbox
-  /** The current lifecycle state, mirrored on every `agent/status` transition. */
-  readonly status: AgentStatus
-  /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
-  readonly ctx: Context
+declare module './types.ts' {
+  interface Agent {
+    /** The provider route and model this agent's requests use. */
+    readonly options: AgentOptions
+    /** The live session this agent drives; its log is the durable source of truth. */
+    readonly session: Session
+    /** The agent-owned projection of durable pending work. */
+    readonly inbox: Inbox
+    /** The current lifecycle state, mirrored on every `agent/status` transition. */
+    readonly status: AgentStatus
+    /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
+    readonly ctx: Context
 
-  /**
+    /**
    * Clear queued and steering work — unless `keepInbox` — and abort the active
    * turn or between-turn task. The first cause wins for that activity. With no
    * active activity, cancellation is a no-op and does not arm later work.
    * @param cause - the stable caller intent carried by the active operation signal.
    * @param options - cancellation options; `keepInbox` preserves pending work.
    */
-  cancel(cause: AgentCancelCause, options?: CancelOptions): void
+    cancel(cause: AgentCancelCause, options?: CancelOptions): void
 
-  /**
+    /**
    * Resolve after the current whole-agent activity reaches quiescence. This
    * follows replacement work started before the observed driver retires,
    * but does not identify the settlement of any particular message.
    * @returns fulfillment after no active driver or maintenance task remains.
    */
-  whenIdle(): Promise<void>
+    whenIdle(): Promise<void>
 
-  /**
+    /**
    * Run one non-turn maintenance task from the true idle phase. The task starts
    * synchronously after claiming that phase; later waking input remains in the
    * inbox until the task settles, while public status stays `idle`.
@@ -101,9 +107,9 @@ export interface Agent {
    * @throws synchronously when turn-driving or another maintenance task already owns the agent.
    * @returns the task promise.
    */
-  runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>
+    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>
 
-  /**
+    /**
    * Route identified input to an inbox boundary and optionally wake the driver.
    * Waking input submitted after active cancellation is queued for the next
    * turn and runs when the aborted activity converges to idle; a `disposed`
@@ -114,25 +120,25 @@ export interface Agent {
    * @param target - the preferred next-turn or next-step inbox boundary.
    * @param wakeup - whether delivery may wake the driver.
    */
-  send(message: UserMessage, target: InboxTarget, wakeup: boolean): void
+    send(message: UserMessage, target: InboxTarget, wakeup: boolean): void
 
-  /**
+    /**
    * Queue an ordinary follow-up turn and wake the driver. The item becomes the
    * sole ordinary message of its own turn.
    * @param message - identified prompt content and the source that supplied it.
    */
-  followup(message: UserMessage): void
+    followup(message: UserMessage): void
 
-  /**
+    /**
    * Submit steering for the nearest step. An idle driver starts a turn;
    * a running driver consumes it at its next step boundary.
    * A rejected step leaves steering parked in the inbox until the next
    * wake; cancellation or disposal may discard pending steering.
    * @param message - identified steering content and the source that supplied it.
    */
-  steer(message: UserMessage): void
+    steer(message: UserMessage): void
 
-  /**
+    /**
    * Queue model-facing context for the next pre-step without waking the
    * driver. A running driver claims it at the nearest later step boundary;
    * idle drivers leave it pending until follow-up or steering
@@ -140,7 +146,8 @@ export interface Agent {
    * batch. Cancellation or disposal may discard pending context.
    * @param message - identified injected context and the source that supplied it.
    */
-  inject(message: UserMessage): void
+    inject(message: UserMessage): void
+  }
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -222,6 +229,7 @@ declare module '@deepseek-ai/cordis' {
      * `next()` preserves the current messages.
      * @param payload.agent - the agent proposing the step.
      * @param payload.messages - messages removed from the inbox for this step.
+     * @param payload.principal - the authenticated caller owning the proposed step, when present.
      * @param payload.turn - the turn that will own the step.
      * @param payload.step - the step proposed by the loop.
      * @param payload.signal - the current turn's cancellation signal.
@@ -237,6 +245,7 @@ declare module '@deepseek-ai/cordis' {
      * @param payload.agent - the agent making the model call.
      * @param payload.turn - the open turn number.
      * @param payload.step - the step whose request this is.
+     * @param payload.principal - the authenticated caller owning the request, when present.
      * @param payload.signal - the current turn's explicit abort signal.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
      * @mode waterfall
@@ -266,9 +275,10 @@ declare module '@deepseek-ai/cordis' {
      * turn. Data decides, so listener order cannot change the outcome. The
      * inverse control (stop a tool loop early) is data too: a tool result
      * carrying `concludesTurn` ends the turn at its step. The conclusion
-     * never short-circuits already-submitted next-step work: same-step
-     * `additionalContexts` or racing steering still runs, and the turn
-     * closes only when that inbox drains.
+     * never short-circuits already-submitted next-step work in the turn's
+     * principal group: same-step `additionalContexts` or matching steering
+     * still runs. Input for another authenticated or anonymous principal stays
+     * pending for a later turn.
      * @param payload.agent - the agent whose turn is at its stop boundary.
      * @param payload.turn - the turn about to close.
      * @param payload.signal - the current turn's explicit abort signal.

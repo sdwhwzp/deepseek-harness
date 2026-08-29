@@ -1,8 +1,9 @@
 import type {
-  AssistantMessageNode, ConversationLocation, ConversationNode,
-  ConversationPromptSnapshot, ConversationViewNode, PartialAssistant,
-  RequestPromptChange, RequestView, RunningToolCall, ToolCallBlock,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  AssistantMessageNode, ConversationLocation, ConversationNode, ConversationPromptSnapshot,
+  ConversationViewNode, MessageImagesOwnerProps, PartialAssistant, RequestPromptChange,
+  RequestView, RunningToolCall, ToolCallBlock,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 
 /** Request-header facts retained by the Trajectory target. */
 export interface TrajectoryRequestHeaderState {
@@ -28,6 +29,13 @@ export type TrajectoryContribution =
   | {
     readonly kind: 'tool'
     readonly root: ToolCallBlock
+    /** Seq of the root `tool/call`, or null when the loaded window omits it. */
+    readonly rootCallSeq: number | null
+    /** Turn and Step recorded by the root call or result. */
+    readonly turn: number
+    readonly step: number
+    /** Result seqs cited by a surface replacement, in producer order. */
+    readonly replacementSourceSeqs: readonly number[]
   }
   | {
     readonly kind: 'request-header'
@@ -47,6 +55,7 @@ export type TrajectoryContribution =
     readonly turn: number
     readonly time: number
     readonly error?: string
+    readonly errorCode?: string
   }
 
 /** Target envelope consumed by the Trajectory snapshot builder. */
@@ -62,14 +71,46 @@ export interface TrajectorySnapshot {
   readonly eventNodes: readonly ConversationNode[]
   readonly eventLocations: ReadonlyMap<number, ConversationLocation>
   readonly requests: readonly RequestView[]
+  /** Call-time schemas keyed by root Tool lifecycle and provider call id. */
   readonly callSchemas: ReadonlyMap<string, ConversationPromptSnapshot['tools'][number]>
+  /** Root Tool lifecycles after surface replacements are folded onto their cited result. */
+  readonly toolLifecycles: readonly TrajectoryToolLifecycle[]
   readonly partial: PartialAssistant | null
   readonly runningCalls: readonly RunningToolCall[]
 }
 
-declare module '@deepseek-ai/dsh-client-runtime/client' {
+/** One root Tool lifecycle used to correlate repeated provider call ids. */
+export interface TrajectoryToolLifecycle {
+  /** Seq of the root `tool/call`, or null when it is outside the loaded window. */
+  readonly rootCallSeq: number | null
+  readonly turn: number
+  readonly step: number
+  readonly root: ToolCallBlock
+}
+
+/** Selector hook over the current Conversation binding's Trajectory target. */
+export type UseTrajectory = SnapshotSelectorHook<TrajectorySnapshot>
+
+declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ConversationViewSnapshotMap {
     /** Independently assembled data consumed by the Trajectory view. */
     trajectory: TrajectorySnapshot
+  }
+}
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SessionStandardProps {
+    /** Selector hook over the current Conversation binding's Trajectory target. */
+    useTrajectory: UseTrajectory
+  }
+
+  interface SlotMap {
+    /**
+     * Renderer for one group of durable record images in the Trajectory
+     * ledger. The owner supplies image references, an authorized loader, and
+     * alignment. A registration replaces the shipped gallery; without one,
+     * images are omitted.
+     */
+    'conversation.trajectory.images': { kind: 'single'; scope: 'session'; owner: MessageImagesOwnerProps }
   }
 }

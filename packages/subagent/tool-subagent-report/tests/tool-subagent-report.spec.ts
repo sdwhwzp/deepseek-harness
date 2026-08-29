@@ -7,8 +7,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { CallId, LlmAdapter, createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, LlmAdapter, createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -115,13 +115,20 @@ async function startHeldParentTurn(parent: Agent, adapter: HeldAdapter): Promise
 }
 
 let calls = 0
-function callReport(ctx: Context, child: Agent, output: string, signal = testSignal) {
+function callReport(
+  ctx: Context,
+  child: Agent,
+  output: string,
+  signal = testSignal,
+  principal?: AuthenticatedPrincipal,
+) {
   return ctx.tools.execute({
     signal,
-    callId: CallId(`report-${++calls}`),
+    callId: ToolCallId(`report-${++calls}`),
     name: 'report',
     arguments: { output },
     agent: child,
+    ...principal === undefined ? {} : { principal },
   })
 }
 
@@ -206,6 +213,9 @@ describe('dsh-tool-subagent-report', () => {
   })
 
   it('delivers quiet reports with stable message and sender identities without waking', async () => {
+    const principal = {
+      source: 'gateway', id: 'alice', username: 'alice', role: 'user' as const,
+    }
     const { ctx, parent, adapter } = await setup()
     const { started, child } = await startChild(ctx, parent)
     const parentRequests = adapter.requests.filter(request => request.sessionId === parent.id).length
@@ -216,7 +226,7 @@ describe('dsh-tool-subagent-report', () => {
       }
     })
 
-    const result = await callReport(ctx, child, 'CHILD_FINDING')
+    const result = await callReport(ctx, child, 'CHILD_FINDING', testSignal, principal)
 
     expect(result.isError).toBe(false)
     if (result.isError) throw new Error('report unexpectedly failed')
@@ -227,6 +237,11 @@ describe('dsh-tool-subagent-report', () => {
       text: `Background subagent ${started.childId} reported:\nCHILD_FINDING`,
       sender: started.childId,
     }])
+    const report = [...parent.session.events.flatMap(event => event.type === 'user/message'
+      ? [event.data]
+      : []), ...parent.inbox.nextStep]
+      .find(message => message.source.kind === 'subagent-report')
+    expect(report).toMatchObject({ principal })
     expect(enqueues).toEqual(['steering'])
     expect(parent.status).toBe('idle')
     expect(adapter.requests.filter(request => request.sessionId === parent.id)).toHaveLength(parentRequests)

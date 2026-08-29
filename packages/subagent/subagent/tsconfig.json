@@ -18,6 +18,9 @@
       "path": "../../core/agent"
     },
     {
+      "path": "../../api/gateway/tsconfig.host.json"
+    },
+    {
       "path": "../../llm/llm"
     },
     {
@@ -25,6 +28,9 @@
     },
     {
       "path": "../../core/scope"
+    },
+    {
+      "path": "../../core/system-prompt"
     },
     {
       "path": "../../interaction/user-approval"
@@ -48,7 +54,13 @@
       "path": "../../session/session-projection-cache"
     },
     {
+      "path": "../../session-query/session-query"
+    },
+    {
       "path": "../../jobs/jobs"
+    },
+    {
+      "path": "../../typert/protocol"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

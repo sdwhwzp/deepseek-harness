@@ -1,8 +1,9 @@
 /** Message value types, identity, and immutable construction helpers. */
 
-import { MessageId, type CallId } from './brand.ts'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import { MessageId, type ToolCallId } from './brand.ts'
 import { deepFreeze } from './call-config.ts'
-import type { ContentBlock, StreamChunk, ToolResultBlock } from './types.ts'
+import type { ContentBlock, ToolResultBlock } from './types.ts'
 
 /** Provider/model identity and adapter-private replay data for an assistant message. */
 export interface AssistantProvenance {
@@ -26,7 +27,7 @@ export interface ModelMessageSource extends AssistantProvenance {
 /** Required source of a user-role message carrying one tool result. */
 export interface ToolMessageSource {
   kind: 'tool'
-  callId: CallId
+  callId: ToolCallId
 }
 
 /**
@@ -156,7 +157,7 @@ export interface Message {
 /** A user-role specialization of the one shared message representation. */
 export interface UserMessage extends Message {
   readonly role: 'user'
-  /** Host-authenticated caller; absent for legacy and plugin-generated input. */
+  /** Host-authenticated owner; absent for anonymous input and unowned internal context. */
   readonly principal?: AuthenticatedPrincipal
 }
 
@@ -198,7 +199,7 @@ export function createMessage<T extends NewMessage>(
 ): T & Pick<Message, 'id'> {
   return freezeMessage({
     ...input,
-    id: MessageId(crypto.randomUUID()),
+    id: MessageId(randomUUID()),
   })
 }
 
@@ -236,7 +237,7 @@ export function createAssistantMessage(
 
 /** Input whose acceptance creates one tool-result message. */
 export interface ToolResultMessageInput {
-  readonly callId: CallId
+  readonly callId: ToolCallId
   readonly content: ContentBlock[]
   readonly isError: boolean
 }
@@ -256,24 +257,4 @@ export function createToolResultMessage(input: ToolResultMessageInput): ToolResu
       isError: input.isError,
     }],
   })
-}
-
-/**
- * Whether a stream chunk carries visible model output (the first-token
- * boundary shared by client step timing and the whole-log sessionStats
- * projection). Empty deltas (heartbeats, empty tool-call frames) do not count
- * as a first token.
- * @param chunk - the stream chunk to test.
- * @returns true when the chunk contains a non-empty text/reasoning/tool delta.
- */
-export function isTokenDelta(chunk: StreamChunk): boolean {
-  switch (chunk.type) {
-    case 'text-delta':
-    case 'reasoning-delta':
-      return chunk.text !== ''
-    case 'tool-call-delta':
-      return chunk.argumentsDelta !== '' || chunk.name !== undefined
-    default:
-      return false
-  }
 }

@@ -148,8 +148,14 @@ describe('sessionStats projection unit (registry drive)', () => {
 })
 
 /** Build one synthetic committed event with a controlled timestamp. */
-function at(time: number, type: string, data: unknown): SessionEvent {
-  return { type, seq: time, time, data } as unknown as SessionEvent
+function at(time: number, type: string, data: unknown, sourceEventSeqs?: number[]): SessionEvent {
+  return {
+    type,
+    seq: time,
+    time,
+    data,
+    ...sourceEventSeqs === undefined ? {} : { sourceEventSeqs },
+  } as unknown as SessionEvent
 }
 
 /** Fold a synthetic event list through the definition and view the result. */
@@ -204,6 +210,35 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
     ])).toEqual(totals({ turns: 1, steps: 1, llmMs: 1_000, ttftMs: 400, ttftSteps: 1 }))
   })
 
+  it('uses non-empty Tool-call names or arguments as the first token', () => {
+    expect(fold([
+      at(1_000, 'step/start', { turn: 1, step: 1 }),
+      at(1_100, 'assistant/chunk', {
+        turn: 1,
+        step: 1,
+        chunk: { type: 'tool-call-delta', index: 0, id: 'call-1', argumentsDelta: '' },
+      }),
+      at(1_200, 'assistant/chunk', {
+        turn: 1,
+        step: 1,
+        chunk: { type: 'tool-call-delta', index: 0, id: 'call-1', name: 'read', argumentsDelta: '' },
+      }),
+      at(2_000, 'assistant/message', { turn: 1, step: 1, message }),
+      at(2_100, 'step/end', { turn: 1, step: 1 }),
+    ])).toEqual(totals({ turns: 1, steps: 1, llmMs: 1_000, ttftMs: 200, ttftSteps: 1 }))
+
+    expect(fold([
+      at(1_000, 'step/start', { turn: 1, step: 1 }),
+      at(1_300, 'assistant/chunk', {
+        turn: 1,
+        step: 1,
+        chunk: { type: 'tool-call-delta', index: 0, id: 'call-1', argumentsDelta: '{' },
+      }),
+      at(2_000, 'assistant/message', { turn: 1, step: 1, message }),
+      at(2_100, 'step/end', { turn: 1, step: 1 }),
+    ])).toEqual(totals({ turns: 1, steps: 1, llmMs: 1_000, ttftMs: 300, ttftSteps: 1 }))
+  })
+
   it('leaves a cancelled step untimed: counted by step/end, no assembled message to accrue from', () => {
     expect(fold([
       at(1_000, 'step/start', { turn: 1, step: 1 }),
@@ -212,16 +247,16 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
     ])).toEqual(totals({ turns: 1, steps: 1 }))
   })
 
-  it('pairs tool wall time by callId, ignores orphan results, and prunes leftovers at turn/end', () => {
+  it('pairs repeated call-id lifecycles by cited call seq and prunes leftovers at turn/end', () => {
     const result = (callId: string): unknown =>
       ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId } } })
     const paired = fold([
       at(1_000, 'step/start', { turn: 1, step: 1 }),
-      at(1_100, 'tool/call', { turn: 1, step: 1, callId: 'a', name: 'read', arguments: '{}' }),
-      at(1_200, 'tool/call', { turn: 1, step: 1, callId: 'b', name: 'read', arguments: '{}' }),
-      // Out-of-order settlement pairs by id, not adjacency.
-      at(4_200, 'tool/result', result('b')),
-      at(1_600, 'tool/result', result('a')),
+      at(1_100, 'tool/call', { turn: 1, step: 1, callId: 'duplicate', name: 'read', arguments: '{}' }),
+      at(1_200, 'tool/call', { turn: 1, step: 1, callId: 'duplicate', name: 'read', arguments: '{}' }),
+      // Each result pairs by its cited call event even though the provider id is reused.
+      at(1_600, 'tool/result', result('duplicate'), [1_100]),
+      at(4_200, 'tool/result', result('duplicate'), [1_200]),
       at(5_000, 'tool/result', result('ghost')),
       at(5_100, 'step/end', { turn: 1, step: 1 }),
     ])
@@ -232,18 +267,16 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
       at(1_100, 'tool/call', { turn: 1, step: 1, callId: 'orphan', name: 'read', arguments: '{}' }),
       at(2_000, 'step/end', { turn: 1, step: 1 }),
       at(2_100, 'turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'legacy' } } }),
-      at(9_000, 'tool/result', result('orphan')),
+      at(9_000, 'tool/result', result('orphan'), [1_100]),
     ])
     expect(pruned).toEqual(totals({ turns: 1, steps: 1 }))
   })
 
-  it('pairs only own pendingCalls keys: a prototype-name callId without a recorded call stays unmatched', () => {
+  it('ignores results without call-seq provenance and accepts prototype-name provider ids once cited', () => {
     const result = (callId: string): unknown =>
       ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId } } })
-    // Crash recovery (TOOL_NOT_STARTED) emits results with no preceding
-    // tool/call; a provider-minted callId colliding with an Object prototype
-    // property must read as absent, not as an inherited function that would
-    // fold toolMs to NaN and fail the value schema.
+    // Crash recovery (TOOL_NOT_STARTED) emits results with no preceding call
+    // seq and therefore contributes no tool wall time.
     expect(fold([
       at(1_000, 'step/start', { turn: 1, step: 1 }),
       at(1_500, 'tool/result', result('toString')),
@@ -253,7 +286,7 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
     expect(fold([
       at(1_000, 'step/start', { turn: 1, step: 1 }),
       at(1_100, 'tool/call', { turn: 1, step: 1, callId: 'constructor', name: 'read', arguments: '{}' }),
-      at(1_600, 'tool/result', result('constructor')),
+      at(1_600, 'tool/result', result('constructor'), [1_100]),
       at(2_000, 'step/end', { turn: 1, step: 1 }),
     ])).toEqual(totals({ turns: 1, steps: 1, toolMs: 500 }))
   })

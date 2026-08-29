@@ -12,7 +12,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { assertNever, createToolResultMessage, type AuthenticatedPrincipal, type ToolCallBlock } from '@deepseek-ai/dsh-llm'
+import { assertNever, createToolResultMessage, freezeMessage, type AuthenticatedPrincipal, type ToolCallBlock } from '@deepseek-ai/dsh-llm'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import { TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, type ToolExecutionInput, type ToolExecutionMode, type ToolExecutionResult, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 
@@ -156,7 +156,11 @@ async function runGroup(
         : ctx.tools[TOOL_RUNTIME_SCHEDULER].finish(slot.exec, slot.result)
       // oxlint-disable-next-line typescript/no-non-null-assertion -- bounded index
       appendToolResult(session, turn, step, call!.block, result, callSeqs[committed]!)
-      for (const context of result.additionalContexts ?? []) acceptContext(context)
+      for (const context of result.additionalContexts ?? []) {
+        acceptContext(slot.exec.principal === undefined
+          ? context
+          : freezeMessage({ ...context, principal: slot.exec.principal }))
+      }
       concluded ||= result.concludesTurn === true
       committed++
     }

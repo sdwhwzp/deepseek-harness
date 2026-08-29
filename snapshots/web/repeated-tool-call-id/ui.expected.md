@@ -1,0 +1,34 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Repeated provider call id" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Run both diagnostic commands, then identify the model. {{clock}}
+- button "Copy":
+  - img
+- button "2 tool calls":
+  - text: 2 tool calls
+  - img
+- paragraph: I am grok-4.6. REOPENED_REPLY_REMAINS_VISIBLE
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- text: {{clock}} Ran for {{duration}}
+- textbox "Message or run a task... / commands, @ files or sessions"
+- button "Commands":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]
+- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}}
