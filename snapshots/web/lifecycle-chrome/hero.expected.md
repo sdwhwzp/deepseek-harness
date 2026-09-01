@@ -20,6 +20,8 @@
 - button "Settings":
   - img
   - text: Settings
+- text: Build version
+- code: {{buildVersion}}
 - text: Into the Unknown Preview
 - button "Choose workspace":
   - img

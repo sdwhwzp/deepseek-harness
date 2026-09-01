@@ -2,3 +2,5 @@
   - img
   - text: Settings
 - button "Disconnected, reconnect now": Disconnected
+- text: Build version
+- code: {{buildVersion}}
