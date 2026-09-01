@@ -20,6 +20,8 @@ The `DSH_CLIENT_*` prefix itself declares that a value is public. Credentials, p
 
 The root build wrapper supplies one exact public environment to both bundlers. Every complete build carries the root package version as `DSH_CLIENT_VERSION` and the seven-character source Git HEAD prefix as `DSH_CLIENT_COMMIT_HASH`; an explicit commit supports build environments without repository metadata. A default local build also samples Git status before building and sets `DSH_CLIENT_GIT_DIRTY=true` for any staged, unstaged, untracked, or submodule change. Clean checkouts and sources without Git metadata omit the dirty field. These repository-owned fields replace inherited values, while `pnpm run build` otherwise inherits the caller's remaining `DSH_CLIENT_*` values.
 
+The expanded sidebar footer displays the complete build identifier as `version[-commit][-dirty]`. The shell owns this row instead of the replaceable brand-name slot, so deployment branding cannot hide the running artifact's identity. Builds without version metadata omit the row.
+
 `pnpm run build:official` selects the repository's official artifact profile without shell-specific environment syntax. Its exact environment carries the version and commit, sets `DSH_CLIENT_BUILD_PROFILE=official` for deployment-specific business registrations, and omits local dirty metadata. A successful complete build writes the exact public environment and a digest covering the Vite output and every dynamic client bundle. Partial build commands do not replace that record. `pnpm run dev:web` instead samples the default local environment once at startup and passes that environment to every watcher stage for the session. It does not validate the complete-build record because the watcher stages rewrite every recorded artifact.
 
 ## Alternatives considered
@@ -35,6 +37,8 @@ The root build wrapper supplies one exact public environment to both bundlers. E
 **Reuse the last complete-build record for watchers.** Watcher stages rewrite every recorded client artifact, so the artifact digest becomes stale during normal development. An official-build record would also make edited local source retain the official profile and title. Startup sampling gives every stage one local metadata snapshot without coupling watcher restarts to the recorded artifact digest.
 
 **Resample Git state during every watcher rebuild.** Vite and tsdown fix define substitutions when their long-lived watchers start. Restarting the build pipeline on repository status changes would make an incremental source edit rebuild unrelated artifacts; sampling once at startup keeps the stages consistent without rebuilding for later status changes.
+
+**Display the identifier in the local-brand fallback.** A deployment package replaces that fallback when it supplies `sidebar.brand.name`, which would hide the artifact identity exactly where operators need to distinguish builds.
 
 ## Consequences
 

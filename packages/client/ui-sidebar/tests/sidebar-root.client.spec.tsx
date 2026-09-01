@@ -115,6 +115,16 @@ describe('SidebarRoot shell', () => {
     expect(container.querySelector('svg')).not.toBeNull()
   })
 
+  it('keeps complete-build metadata visible when a package fills the brand slots', () => {
+    vi.stubEnv('DSH_CLIENT_COMMIT_HASH', '0123456')
+    vi.stubEnv('DSH_CLIENT_VERSION', '1.2.3-rc.4')
+    mountShell()
+
+    expect(screen.getByTestId('custom-brand-name')).toBeTruthy()
+    expect(screen.getByText('Build version')).toBeTruthy()
+    expect(screen.getByText('1.2.3-rc.4-0123456')).toBeTruthy()
+  })
+
   it.each([
     [{ DSH_CLIENT_VERSION: '1.2.3' }, '1.2.3'],
     [{ DSH_CLIENT_COMMIT_HASH: 'abcdef0', DSH_CLIENT_VERSION: '1.2.3' }, '1.2.3-abcdef0'],
@@ -142,6 +152,7 @@ describe('SidebarRoot shell', () => {
     />)
 
     expect(screen.getByText('DSH Local Build')).toBeTruthy()
+    expect(screen.queryByText('Build version')).toBeNull()
   })
 
   it('hands the region its wide flag and clamps expandSidebar to the collapsed state', () => {

@@ -20,6 +20,8 @@ Vite 配置与动态 client bundle 的共享 tsdown preset 使用同一 define �
 
 根构建包装脚本向两个 bundler 提供同一份精确的公开环境。每次完整构建都以 `DSH_CLIENT_VERSION` 携带根包版本，并以 `DSH_CLIENT_COMMIT_HASH` 携带源码 Git HEAD 的七位前缀；没有仓库元数据的构建环境可显式提供 commit。默认本地构建还会在构建前读取 Git 状态；存在任何暂存、未暂存、未跟踪或子模块变化时设置 `DSH_CLIENT_GIT_DIRTY=true`。没有变化的 worktree 和没有 Git 元数据的源码不携带 dirty 字段。这些由仓库持有的字段会替换继承值，除此之外，`pnpm run build` 继续继承调用方剩余的 `DSH_CLIENT_*` 值。
 
+展开的侧边栏页脚会以 `version[-commit][-dirty]` 显示完整构建标识。该行由外壳持有，而不属于可替换的品牌名 slot，因此部署品牌无法隐藏当前运行产物的标识。没有版本元数据的构建不显示该行。
+
 `pnpm run build:official` 不依赖特定 shell 的环境变量语法，直接选择仓库的官方产物 profile。它的精确环境携带版本和 commit，设置 `DSH_CLIENT_BUILD_PROFILE=official` 供部署专属业务注册使用，并省略本地 dirty 元数据。完整构建成功后会写入精确的公开环境，以及覆盖 Vite 输出和所有动态 client bundle 的摘要；局部构建命令不会替换该记录。`pnpm run dev:web` 则会在启动时读取一次默认本地环境，并在本次会话中把该环境传给所有 watcher stage。它不会校验完整构建记录，因为 watcher stage 会重写记录覆盖的全部产物。
 
 ## Alternatives considered
@@ -35,6 +37,8 @@ Vite 配置与动态 client bundle 的共享 tsdown preset 使用同一 define �
 **让 watcher 复用上次完整构建记录。** watcher stage 会重写记录覆盖的全部 client 产物，因此正常开发期间产物摘要就会变为陈旧。官方构建记录还会让经过编辑的本地源码继续携带官方 profile 和标题。启动时读取一次可以让所有 stage 共用同一份本地元数据快照，同时避免 watcher 重启依赖记录的产物摘要。
 
 **每次 watcher 重建都重新读取 Git 状态。** Vite 和 tsdown 在长驻 watcher 启动时固定 define 替换。仓库状态变化时重启构建流水线，会使一次增量源码修改重建无关产物；启动时只读取一次可以保持各 stage 一致，同时避免因后续状态变化而重新构建。
+
+**在本地品牌 fallback 中显示标识。** 部署包提供 `sidebar.brand.name` 时会替换该 fallback，导致运维人员需要区分构建时反而看不到产物标识。
 
 ## Consequences
 

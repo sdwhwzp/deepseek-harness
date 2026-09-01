@@ -1129,6 +1129,10 @@ function normalizeAria(snapshot: string, workspaceCwd: string, age: boolean): st
   return (age ? snapshot.replace(ARIA_AGE, '{{age}}') : snapshot)
     .split(workspaceCwd).join('{{cwd}}')
     .split(base).join('{{workspace}}')
+    .replace(
+      /^(- code: )\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)*-[0-9a-f]{7}(?:-dirty)?$/gm,
+      '$1{{buildVersion}}',
+    )
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{{uuid}}')
     // The optional space in `\d+m ?\d+s` covers both minute spellings: the
     // stats line's compact `2m42s` and the message-chrome template's `2m 42s`.

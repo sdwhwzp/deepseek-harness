@@ -7,8 +7,9 @@
  * same top-down order) on one fade that ends with the slide. The bottom-pinned
  * settings control only fades. The workspace/session browsing region between
  * the New Session button and the foot is the `sidebar.workspaces` registrant's,
- * and the foot holds `sidebar.settings` plus `sidebar.footer.action`; the shell
- * hands them the wide flag (plus an expand request callback for the browser).
+ * and the foot holds `sidebar.settings`, `sidebar.footer.action`, and the
+ * shell-owned build identifier; the shell hands slot occupants the wide flag
+ * (plus an expand request callback for the browser).
  *
  * The column also owns whether the scroll regions nested in it draw a
  * scrollbar at all: the shell tracks the pointer and rebinds ui-theme's
@@ -34,7 +35,7 @@ const COLLAPSE_SETTLE_MS = 150
  */
 const SCROLLBAR_LINGER_MS = 2000
 
-/** Format complete-build metadata for the local brand badge. */
+/** Format complete-build metadata for the shell footer. */
 function localBuildVersion(): string | undefined {
   const version = process.env.DSH_CLIENT_VERSION
   if (version === undefined) return undefined
@@ -153,14 +154,7 @@ export function SidebarRoot({
               </span>
               <span className={css.brandName}>
                 {renderSlot('sidebar.brand.name', {}, {
-                  fallback: buildVersion === undefined
-                    ? <span className={css.fallbackBrandName}>{t('brand.localBuild')}</span>
-                    : (
-                      <span className={css.localBuildBrand}>
-                        <span className={css.localBuildTitle}>{t('brand.localBuild')}</span>
-                        <span className={css.buildVersion}>{buildVersion}</span>
-                      </span>
-                    ),
+                  fallback: <span className={css.fallbackBrandName}>{t('brand.localBuild')}</span>,
                 })}
               </span>
             </span>
@@ -216,6 +210,12 @@ export function SidebarRoot({
         <div className={css.settingsArea}>
           {renderSlot('sidebar.settings', { wide })}
         </div>
+        {wide && buildVersion !== undefined && (
+          <div className={css.buildMetadata}>
+            <span className={css.buildMetadataLabel}>{t('build.version')}</span>
+            <code className={css.buildVersion} title={buildVersion}>{buildVersion}</code>
+          </div>
+        )}
       </div>
     </div>
   )

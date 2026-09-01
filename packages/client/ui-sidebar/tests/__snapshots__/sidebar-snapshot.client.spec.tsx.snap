@@ -138,18 +138,9 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
               style="display: contents;"
             >
               <span
-                class="localBuildBrand"
+                class="fallbackBrandName"
               >
-                <span
-                  class="localBuildTitle"
-                >
-                  DSH Local Build
-                </span>
-                <span
-                  class="buildVersion"
-                >
-                  1.2.3-rc.4-abc1234-dirty
-                </span>
+                DSH Local Build
               </span>
             </div>
           </span>
@@ -217,6 +208,21 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
           style="display: contents;"
         />
       </div>
+      <div
+        class="buildMetadata"
+      >
+        <span
+          class="buildMetadataLabel"
+        >
+          Build version
+        </span>
+        <code
+          class="buildVersion"
+          title="1.2.3-rc.4-abc1234-dirty"
+        >
+          1.2.3-rc.4-abc1234-dirty
+        </code>
+      </div>
     </div>
   </div>
 </div>
@@ -268,18 +274,9 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
               style="display: contents;"
             >
               <span
-                class="localBuildBrand"
+                class="fallbackBrandName"
               >
-                <span
-                  class="localBuildTitle"
-                >
-                  DSH 本地构建
-                </span>
-                <span
-                  class="buildVersion"
-                >
-                  1.2.3-rc.4-abc1234-dirty
-                </span>
+                DSH 本地构建
               </span>
             </div>
           </span>
@@ -346,6 +343,21 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
           data-slot="sidebar.settings"
           style="display: contents;"
         />
+      </div>
+      <div
+        class="buildMetadata"
+      >
+        <span
+          class="buildMetadataLabel"
+        >
+          构建版本
+        </span>
+        <code
+          class="buildVersion"
+          title="1.2.3-rc.4-abc1234-dirty"
+        >
+          1.2.3-rc.4-abc1234-dirty
+        </code>
       </div>
     </div>
   </div>
