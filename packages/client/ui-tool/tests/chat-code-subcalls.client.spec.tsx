@@ -120,10 +120,6 @@ async function bench(snapshot: ChatSnapshot) {
   ctx.provide('layout', layout as never)
   ctx.provide('uiWorkspace', {} as never)
   new TestRemote(ctx, { session: { openWorkspacePath } })
-  ctx.provide('connection', {
-    isLoopback: false,
-    generation: { getSnapshot: () => undefined, subscribe: () => () => {} },
-  } as never)
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
   locale.register(CONVERSATION_NS, { zh: conversationZh, en: conversationEn })
@@ -222,7 +218,7 @@ describe('run_code sub-calls through the real chat machinery', () => {
     view.getByText('notes/demo.txt').click()
     expect(b.layout.openDetails).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(b.openWorkspacePath).toHaveBeenCalledWith({ path: 'notes/demo.txt' })
+      expect(b.openWorkspacePath).toHaveBeenCalledWith({ sessionId: SID, path: 'notes/demo.txt' })
     })
     view.getByText('List notes').click()
     expect(b.layout.openDetails).not.toHaveBeenCalled()

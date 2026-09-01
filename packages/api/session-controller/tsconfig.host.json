@@ -35,6 +35,7 @@
     { "path": "../../jobs/jobs" },
     { "path": "../../llm/llm" },
     { "path": "../../identity/principal-access" },
+    { "path": "../../util/deque" },
     { "path": "../../util/native-command" },
     { "path": "../../preset/agent-presets" },
     { "path": "../../runtime-diagnostics/invariants" },
@@ -45,6 +46,7 @@
     { "path": "../../session-query/session-query" },
     { "path": "../../skill/skill" },
     { "path": "../../subagent/subagent" },
+    { "path": "../../util/time" },
     { "path": "../../typert/protocol" },
     { "path": "../../typert/registry" },
     { "path": "../../workspace/workspace" }

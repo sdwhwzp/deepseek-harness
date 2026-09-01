@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-file-reference'
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { currentRequestPrincipal, requireReadableSession } from './principal-access.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -38,7 +38,7 @@ export class SessionFileReferences extends TypertRemoteService {
   ): Promise<FileReferenceCandidate[]> {
     await requireReadableSession(this.ctx, sessionId, currentRequestPrincipal(this.ctx), signal)
     const resolved = await this.ctx.sessionController.resolveAgent(sessionId)
-    if ('error' in resolved) throw new TypertRemoteFailure(resolved.error)
+    if ('error' in resolved) throw resolved.error
     return this.ctx.fileReferences.list(resolved.agent, query, signal)
   }
 }

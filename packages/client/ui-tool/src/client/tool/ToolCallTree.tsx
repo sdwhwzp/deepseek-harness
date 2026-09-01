@@ -131,9 +131,9 @@ const ToolCallBranch = memo(function ToolCallBranch({
  */
 export function ToolCallTree({
   renderSlot, node, selectedToolCall, cwd, openFile, inspectCall, renderMessageImages,
-  useConnectionGeneration, t,
+  useHostInfo, t,
 }: ToolTreeProps) {
-  const home = useConnectionGeneration(generation => generation?.host.home)
+  const home = useHostInfo(info => info.home)
   const block = node.data.root
   return (
     <ToolCallBranch

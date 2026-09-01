@@ -156,7 +156,7 @@ interface ToolArgsMap {
     /** Maximum number of lines to return. Defaults to 2000. */
     limit?: number;
   } & Record<string, JsonValue>;
-  /** Read and attach a PNG/JPEG/WebP/GIF file to the conversation. Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect or show an image. An image-capable model can inspect the result; a text-only model receives a placeholder while the user can still preview the image. Independent files may be read concurrently in small batches. */
+  /** Read and attach a PNG/JPEG/WebP/GIF file to the conversation. A path without a file extension is accepted; the format is detected from the file content, so normalized attachment paths can be passed directly without copying or renaming. Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect or show an image. An image-capable model can inspect the result; a text-only model receives a placeholder while the user can still preview the image. Independent files may be read concurrently in small batches. */
   read_image: {
     /** Path to the image file, resolved by the filesystem backend. */
     file_path: string;

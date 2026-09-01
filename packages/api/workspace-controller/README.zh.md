@@ -22,11 +22,11 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-Host 控制器会串行执行正确性取决于当前 registry 状态的变更，并为预期失败返回稳定的 `WorkspaceError` 值。它的 `follow()` 流会同步订阅持久 Workspace 变更，先发出一份调用方可读的完整 baseline，再按顺序发出 `upsert`、`remove`、`order` 和 `archived` 增量。重连会以替换 baseline 开始新一代，因此消费方不依赖收到断线期间的每个增量。
+Host 控制器会串行执行正确性取决于当前 registry 状态的变更，并为预期失败抛出带稳定 `workspace/*` 或 `directory-picker/*` 码的 `RemoteError`。它的 `follow()` 流会同步订阅持久 Workspace 变更，先发出一份调用方可读的完整 baseline，再按顺序发出 `upsert`、`remove`、`order` 和 `archived` 增量。重连会以替换 baseline 开始新一代，因此消费方不依赖收到断线期间的每个增量。
 
-未配置 principal-access provider 的本地匿名部署会收到完整投影。认证部署需要挂载 `ctx.principalAccess`；此时 `follow()` 会在发布前过滤 opening Workspace 行、其中的 Session 成员、已归档 Session id 以及后续每条增量。对既有 Workspace 或 Session 的每次变更都会在写入前授权所有被寻址资源。变更结果会把 Workspace 成员、registry 顺序和归档集合过滤为可读 id，因此一元响应不能绕过流策略。被拒绝的精确 id 会使用现有的 `workspace-not-found` 或 `session-not-found` 失败，不暴露资源是否存在。存在 principal 却缺少 provider，或 provider 支持的请求缺少 principal 时会保留 principal-access 配置错误并关闭式拒绝。
+未配置 principal-access provider 的本地匿名部署会收到完整投影。认证部署需要挂载 `ctx.principalAccess`；此时 `follow()` 会在发布前过滤 opening Workspace 行、其中的 Session 成员、已归档 Session id 以及后续每条增量。对既有 Workspace 或 Session 的每次变更都会在写入前授权所有被寻址资源。变更结果会把 Workspace 成员、registry 顺序和归档集合过滤为可读 id，因此一元响应不能绕过流策略。被拒绝的精确 id 会使用现有的 `workspace/not-found` 或 `session/not-found` 失败，不暴露资源是否存在。存在 principal 却缺少 provider，或 provider 支持的请求缺少 principal 时会保留 principal-access 配置错误并关闭式拒绝。
 
-`create()` 会在串行命令中解析路径。已注册路径属于精确 Workspace 访问，其行必须先通过授权才能返回；拒绝时使用 `workspace-invalid-path`，且不披露既有 Workspace id。真正的新路径还没有可授权的 Workspace id；控制器会验证 principal/provider 组合，创建成员为空的行并返回。部署需要在该命令之前负责目录选择和 Workspace 创建策略，并为后续访问检查登记新资源的归属关系。
+`create()` 会在串行命令中解析路径。已注册路径属于精确 Workspace 访问，其行必须先通过授权才能返回；拒绝时使用 `workspace/invalid-path`，且不披露既有 Workspace id。真正的新路径还没有可授权的 Workspace id；控制器会验证 principal/provider 组合，创建成员为空的行并返回。部署需要在该命令之前负责目录选择和 Workspace 创建策略，并为后续访问检查登记新资源的归属关系。
 
 Client 入口提供 `ClientWorkspaceModel` 和 `createWorkspaceStateStream()`。该模型拥有 Workspace 行、registry 顺序、已归档 Session id、一元变更回声，以及流与一元调用的竞态处理。较新的 Host 行按 `updatedAt` 获胜；已提交的流顺序优先于较旧的一元响应；已经移除的 Workspace id 不会被延迟数据复活。该包公开与框架无关的快照和订阅，把导航策略与 React hook 留给 UI owner。
 

@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount `dsh-agent-loop` in any composition that should run agents. It supplies the driver behind `ctx.agents` and starts any agents you declare in its config; the standard demo composition is [`examples/agent-spine-demo`](../../../packages/examples/agent-spine-demo/README.md).
+Mount `dsh-agent-loop` in any composition that should run agents. It supplies the driver behind `ctx.agents` and starts any agents you declare in its config; both [`dsh-base`](../../bundle/base/README.md) and [`dsh-sdk-minimal`](../../bundle/sdk-minimal/README.md) mount it as an explicit row.
 
 ### Configure declarative agents
 
@@ -107,7 +107,7 @@ Creation is one rollback-covered transaction: construct a private session, concr
 
 ### Turn and step flow
 
-The driver owns one agent for its lifetime and runs inside `ctx.agents.withInitiator(agent, ...)`. At a turn boundary it opens the durable turn and fixes the first pending caller group, then atomically claims compatible next-step input plus one compatible queued prompt; between steps it claims only that group's next-step prefix. A principal-less `user` source is a separate anonymous group and cannot inherit an authenticated turn's request, tool, or accounting identity; principal-less non-user input remains neutral internal context. Tool-result context is stamped with the executing principal and inserted before racing foreign-group input, while that foreign input remains pending for a later turn. `agent/pre-step` decides what enters the step; each successful model call appends one `assistant/message` anchor citing its chunk seqs, and a cancelled stream appends an `interrupted: true` anchor with the delivered prefix so the next request contains what the user saw. Within a step, exclusive calls form barriers and parallel-safe calls use the bounded rolling pool; policy, durable results, and result context remain model-ordered.
+The driver owns one agent for its lifetime and runs inside `ctx.agents.withInitiator(agent, ...)`. At a turn boundary it opens the durable turn and fixes the first pending caller group, then atomically claims compatible next-step input plus one compatible queued prompt; between steps it claims only that group's next-step prefix. A principal-less `user` source is a separate anonymous group and cannot inherit an authenticated turn's request, tool, or accounting identity; principal-less non-user input remains neutral internal context. Tool-result context is stamped with the executing principal and inserted before racing foreign-group input, while that foreign input remains pending for a later turn. `agent/pre-step` decides what enters the step. An entered decision appends its complete `user/message` batch before the driver can claim again, while a rejected decision appends none. Each successful model call appends one `assistant/message` anchor citing its chunk seqs, and a cancelled stream appends an `interrupted: true` anchor with the delivered prefix so the next request contains what the user saw. Within a step, exclusive calls form barriers and parallel-safe calls use the bounded rolling pool; policy, durable results, and result context remain model-ordered.
 
 ### Failure and cancellation
 

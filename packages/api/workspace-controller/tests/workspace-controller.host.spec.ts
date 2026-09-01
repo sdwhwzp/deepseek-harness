@@ -10,13 +10,19 @@ import type {
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import WorkspaceController from '../src/index.ts'
 import { WorkspaceFeed } from '../src/feed.ts'
 import type { WorkspaceFollowFrame } from '../src/types.ts'
 import { MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    'fixture/failure': {}
+  }
+}
 
 const roots: Context[] = []
 
@@ -147,17 +153,15 @@ describe('WorkspaceController commands', () => {
 
     const deniedCreate = controller.create({ path: first.path })
     await expect(deniedCreate).rejects.toMatchObject({
-      failure: {
-        code: 'workspace-invalid-path',
-        details: { path: first.path },
-      },
+      code: 'workspace/invalid-path',
+      details: { path: first.path },
     })
     await expect(deniedCreate).rejects.not.toThrow(first.id)
     await expect(controller.rename({ workspaceId: first.id, title: 'denied' }))
-      .rejects.toMatchObject({ failure: { code: 'workspace-not-found' } })
+      .rejects.toMatchObject({ code: 'workspace/not-found' })
     expect(first.title).toBe('first')
     await expect(controller.delete({ workspaceId: first.id }))
-      .rejects.toMatchObject({ failure: { code: 'workspace-not-found' } })
+      .rejects.toMatchObject({ code: 'workspace/not-found' })
     expect(ctx.workspaceRegistry.get(first.id)).toBe(first)
 
     allowedWorkspaceIds.add(first.id)
@@ -165,10 +169,8 @@ describe('WorkspaceController commands', () => {
       workspaceId: first.id,
       beforeWorkspaceId: second.id,
     })).rejects.toMatchObject({
-      failure: {
-        code: 'workspace-not-found',
-        details: { workspaceId: second.id },
-      },
+      code: 'workspace/not-found',
+      details: { workspaceId: second.id },
     })
     expect(ctx.workspaceRegistry.list().map(workspace => workspace.id)).toEqual(originalWorkspaceOrder)
 
@@ -178,19 +180,15 @@ describe('WorkspaceController commands', () => {
       sessionId: session.id,
       beforeSessionId: anchor.id,
     })).rejects.toMatchObject({
-      failure: {
-        code: 'session-not-found',
-        details: { sessionId: anchor.id },
-      },
+      code: 'session/not-found',
+      details: { sessionId: anchor.id },
     })
     expect(first.sessionIds).toEqual(originalSessionOrder)
 
     allowedSessionIds.delete(session.id)
     await expect(controller.archiveSession({ sessionId: session.id })).rejects.toMatchObject({
-      failure: {
-        code: 'session-not-found',
-        details: { sessionId: session.id },
-      },
+      code: 'session/not-found',
+      details: { sessionId: session.id },
     })
     expect(ctx.workspaceRegistry.archivedSessionIds).not.toContain(session.id)
   })
@@ -268,34 +266,29 @@ describe('WorkspaceController commands', () => {
     const second = await controller.create({ path: stageDir(root, 'second') })
 
     await expect(controller.create({ path: join(root, 'missing') })).rejects.toMatchObject({
-      failure: { code: 'workspace-invalid-path', details: { path: join(root, 'missing') } },
+      code: 'workspace/invalid-path',
+      details: { path: join(root, 'missing') },
     })
     expect(existsSync(join(root, 'missing'))).toBe(false)
     await expect(controller.rename({ workspaceId: first.workspace.workspaceId, title: '  ' }))
-      .rejects.toMatchObject({ failure: { code: 'bad-request' } })
+      .rejects.toMatchObject({ code: 'gateway/bad-request' })
     await controller.rename({ workspaceId: first.workspace.workspaceId, title: 'occupied' })
     await expect(controller.rename({ workspaceId: second.workspace.workspaceId, title: ' occupied ' }))
-      .rejects.toMatchObject({ failure: { code: 'workspace-name-conflict' } })
+      .rejects.toMatchObject({ code: 'workspace/name-conflict' })
     await expect(controller.delete({ workspaceId: 'missing' as WorkspaceId }))
-      .rejects.toMatchObject({ failure: { code: 'workspace-not-found' } })
+      .rejects.toMatchObject({ code: 'workspace/not-found' })
   })
 
   it('preserves Remote failures and propagates unexpected registry failures', async () => {
     const { controller, ctx, root } = await harness()
-    const remoteFailure = new TypertRemoteFailure({
-      code: 'fixture-failure',
-      message: 'already mapped',
-      details: {},
-    })
+    const remoteFailure = new RemoteError('fixture/failure', 'already mapped', {})
     const resolveByPath = vi.spyOn(ctx.workspaceRegistry, 'resolveByPath')
       .mockRejectedValueOnce(remoteFailure)
       .mockRejectedValueOnce('plain failure')
     await expect(controller.create({ path: stageDir(root, 'remote-failure') }))
       .rejects.toBe(remoteFailure)
     const plainFailure = controller.create({ path: stageDir(root, 'plain-failure') })
-    await expect(plainFailure).rejects.toMatchObject({
-      failure: { code: 'workspace-invalid-path' },
-    })
+    await expect(plainFailure).rejects.toMatchObject({ code: 'workspace/invalid-path' })
     await expect(plainFailure).rejects.toThrow('plain failure')
     resolveByPath.mockRestore()
 
@@ -342,7 +335,7 @@ describe('WorkspaceController commands', () => {
     gate.resolve(undefined)
     await blocker
     await expect(deletion).resolves.toEqual({ deleted: true })
-    await expect(staleRename).rejects.toMatchObject({ failure: { code: 'workspace-not-found' } })
+    await expect(staleRename).rejects.toMatchObject({ code: 'workspace/not-found' })
   })
 
   it('reorders Workspaces and Sessions and archives only known Sessions', async () => {
@@ -356,7 +349,7 @@ describe('WorkspaceController commands', () => {
       workspaceIds: [first.workspace.workspaceId, second.workspace.workspaceId],
     })
     await expect(controller.insertBefore({ workspaceId: 'missing' as WorkspaceId }))
-      .rejects.toMatchObject({ failure: { code: 'workspace-not-found' } })
+      .rejects.toMatchObject({ code: 'workspace/not-found' })
 
     const session = ctx.sessions.create(SessionId('session-one'), {
       meta: { cwd: first.workspace.path },
@@ -371,26 +364,24 @@ describe('WorkspaceController commands', () => {
     await expect(controller.insertSessionBefore({
       workspaceId: first.workspace.workspaceId,
       sessionId: SessionId('missing-session'),
-    })).rejects.toMatchObject({ failure: { code: 'workspace-move-invalid' } })
+    })).rejects.toMatchObject({ code: 'workspace/move-invalid' })
     await expect(controller.insertSessionBefore({
       workspaceId: first.workspace.workspaceId,
       sessionId: session.id,
       beforeSessionId: SessionId('missing-anchor'),
     })).rejects.toMatchObject({
-      failure: {
-        code: 'workspace-move-invalid',
-        details: { beforeSessionId: 'missing-anchor' },
-      },
+      code: 'workspace/move-invalid',
+      details: { beforeSessionId: 'missing-anchor' },
     })
     await expect(controller.insertSessionBefore({
       workspaceId: 'missing' as WorkspaceId,
       sessionId: session.id,
-    })).rejects.toMatchObject({ failure: { code: 'workspace-not-found' } })
+    })).rejects.toMatchObject({ code: 'workspace/not-found' })
 
     await expect(controller.archiveSession({ sessionId: session.id }))
       .resolves.toEqual({ archivedSessionIds: [session.id] })
     await expect(controller.archiveSession({ sessionId: SessionId('unknown') }))
-      .rejects.toMatchObject({ failure: { code: 'session-not-found' } })
+      .rejects.toMatchObject({ code: 'session/not-found' })
   })
 })
 

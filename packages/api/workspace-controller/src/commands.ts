@@ -17,7 +17,7 @@ import {
   WorkspaceOrderInvalidError,
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
-import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { workspaceView } from './feed.ts'
 import { principalWorkspaceView } from './principal-feed.ts'
 import type {
@@ -56,11 +56,12 @@ export class WorkspaceCommands {
       try {
         existing = await this.ctx.workspaceRegistry.resolveByPath(request.path)
       } catch (error) {
-        if (error instanceof TypertRemoteFailure) throw error
-        throw failure(
-          'workspace-invalid-path',
+        if (remoteErrorOf(error) !== undefined) throw error
+        throw new RemoteError(
+          'workspace/invalid-path',
           `cannot create a Workspace at "${request.path}": ${errorMessage(error)}`,
           { path: request.path },
+          { cause: error },
         )
       }
       if (existing !== undefined) {
@@ -82,7 +83,7 @@ export class WorkspaceCommands {
         const workspace = await this.ctx.workspaceRegistry.create(request.path)
         return { workspace: workspaceView(workspace), created: true }
       } catch (error) {
-        if (error instanceof TypertRemoteFailure) throw error
+        if (remoteErrorOf(error) !== undefined) throw error
         throw invalidWorkspacePath(request.path, error)
       }
     })
@@ -100,11 +101,7 @@ export class WorkspaceCommands {
   ): Promise<WorkspaceValue> {
     const title = request.title.trim()
     if (title === '') {
-      return Promise.reject(failure(
-        'bad-request',
-        'Workspace rename requires a non-blank title',
-        {},
-      ))
+      return Promise.reject(new RemoteError('gateway/bad-request', 'Workspace rename requires a non-blank title', {}))
     }
     return this.enqueue(async () => {
       const workspace = this.requireWorkspace(request.workspaceId)
@@ -112,8 +109,8 @@ export class WorkspaceCommands {
       if (title !== workspace.title) {
         if (this.ctx.workspaceRegistry.list().some(candidate =>
           candidate.id !== workspace.id && candidate.title === title)) {
-          throw failure(
-            'workspace-name-conflict',
+          throw new RemoteError(
+            'workspace/name-conflict',
             `Workspace name '${title}' is already in use`,
             { name: title },
           )
@@ -219,8 +216,8 @@ export class WorkspaceCommands {
       await workspace.insertSessionBefore(request.sessionId, request.beforeSessionId)
     } catch (error) {
       if (!(error instanceof WorkspaceMoveInvalidError)) throw error
-      throw failure(
-        'workspace-move-invalid',
+      throw new RemoteError(
+        'workspace/move-invalid',
         error.message,
         {
           workspaceId: request.workspaceId,
@@ -229,6 +226,7 @@ export class WorkspaceCommands {
             ? {}
             : { beforeSessionId: request.beforeSessionId },
         },
+        { cause: error },
       )
     }
     return {
@@ -261,7 +259,7 @@ export class WorkspaceCommands {
       await this.ctx.workspaceRegistry.archiveSession(request.sessionId)
     } catch (error) {
       if (!(error instanceof WorkspaceUnknownSessionError)) throw error
-      throw sessionNotFound(request.sessionId, error.message)
+      throw sessionNotFound(request.sessionId, error.message, error)
     }
     return {
       archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds]
@@ -272,7 +270,7 @@ export class WorkspaceCommands {
   private authorizeWorkspace(
     workspace: Workspace,
     principal: AuthenticatedPrincipal | undefined,
-    denied: (subject: PrincipalAccessSubject) => TypertRemoteFailure = hiddenResource,
+    denied: (subject: PrincipalAccessSubject) => RemoteError = hiddenResource,
   ): Promise<PrincipalAccessResult> {
     return this.authorize(
       principal,
@@ -286,7 +284,7 @@ export class WorkspaceCommands {
     principal: AuthenticatedPrincipal | undefined,
     subjects: PrincipalAccessSubjects,
     exactSubjects: readonly PrincipalAccessSubject[],
-    denied: (subject: PrincipalAccessSubject) => TypertRemoteFailure,
+    denied: (subject: PrincipalAccessSubject) => RemoteError,
   ): Promise<PrincipalAccessResult> {
     try {
       const access = await resolvePrincipalAccess(this.ctx, principal, subjects)
@@ -325,7 +323,7 @@ function isSubjectDenied(error: unknown): error is PrincipalAccessDeniedError {
   return error instanceof PrincipalAccessDeniedError && error.reason === 'subject-denied'
 }
 
-function hiddenResource(subject: PrincipalAccessSubject): TypertRemoteFailure {
+function hiddenResource(subject: PrincipalAccessSubject): RemoteError {
   return subject.kind === 'workspace'
     ? workspaceNotFound(subject.id)
     : sessionNotFound(subject.id)
@@ -338,19 +336,20 @@ function sameSubject(
   return left.kind === right.kind && left.id === right.id
 }
 
-function invalidWorkspacePath(path: string, error?: unknown): TypertRemoteFailure {
-  return failure(
-    'workspace-invalid-path',
+function invalidWorkspacePath(path: string, error?: unknown): RemoteError<'workspace/invalid-path'> {
+  return new RemoteError(
+    'workspace/invalid-path',
     `cannot create a Workspace at "${path}"${
       error === undefined ? '' : `: ${errorMessage(error)}`
     }`,
     { path },
+    error === undefined ? undefined : { cause: error },
   )
 }
 
-function workspaceNotFound(workspaceId: WorkspaceId): TypertRemoteFailure {
-  return failure(
-    'workspace-not-found',
+function workspaceNotFound(workspaceId: WorkspaceId): RemoteError<'workspace/not-found'> {
+  return new RemoteError(
+    'workspace/not-found',
     `Workspace "${workspaceId}" not found`,
     { workspaceId },
   )
@@ -359,16 +358,14 @@ function workspaceNotFound(workspaceId: WorkspaceId): TypertRemoteFailure {
 function sessionNotFound(
   sessionId: WorkspaceArchiveSessionRequest['sessionId'],
   message = `Session "${sessionId}" not found`,
-): TypertRemoteFailure {
-  return failure('session-not-found', message, { sessionId })
-}
-
-function failure(
-  code: string,
-  message: string,
-  details: object,
-): TypertRemoteFailure {
-  return new TypertRemoteFailure({ code, message, details })
+  cause?: unknown,
+): RemoteError<'session/not-found'> {
+  return new RemoteError(
+    'session/not-found',
+    message,
+    { sessionId },
+    cause === undefined ? undefined : { cause },
+  )
 }
 
 function errorMessage(error: unknown): string {

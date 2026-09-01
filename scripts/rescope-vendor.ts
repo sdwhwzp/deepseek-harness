@@ -124,12 +124,12 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'packages/extensions/tool-cordis/src/providers.ts', upstream: ['cordis'] },
   { file: 'packages/extensions/ui-cordis/src/client/index.ts', upstream: ['cordis'] },
   { file: 'packages/extensions/ui-cordis/src/client/inventory.ts', upstream: ['cordis'] },
-  { file: 'scripts/gen-cordis-catalog.ts', upstream: ['cordis'] },
-  // `cordis/tree` is the Inspector observation topic, not a package subpath.
+  // `cordis/tree` is an Inspector observation topic, not a package subpath.
   { file: 'packages/experimental/inspector/src/shared/bridge/messages/cordis.ts', upstream: ['cordis'] },
   { file: 'packages/experimental/inspector/tests/cordis-query.host.spec.ts', upstream: ['cordis'] },
   { file: 'packages/experimental/inspector/tests/cordis-tree.host.spec.ts', upstream: ['cordis'] },
   { file: 'packages/experimental/inspector/tests/plugin.client.spec.ts', upstream: ['cordis'] },
+  { file: 'scripts/gen-cordis-catalog.ts', upstream: ['cordis'] },
   // The UI locale namespace and input-trigger source id are product keys.
   { file: 'packages/client/ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.tsx', upstream: ['cordis'] },
   { file: 'packages/extensions/ui-cordis/src/client/CordisActionRow.tsx', upstream: ['cordis'] },
@@ -158,7 +158,6 @@ const POSTCONDITIONS: readonly PostCondition[] = [
   { file: 'tsconfig.base.json', text: '"@deepseek-ai/cordis-plugin-loader": ["./vendor/loader/src"]', count: 1 },
   // The vendored README owns this required entry; reject its deletion or duplication.
   { file: 'vendor/README.md', text: '17. **`@deepseek-ai` rescope**', count: 1 },
-  { file: 'knip.json', text: '@cordisjs', count: 0 },
   { file: 'pnpm-workspace.yaml', text: 'cordis@4.0.0-rc.7', count: 0 },
   // The preset ids in this table are product data, not package names.
   { file: 'packages/client/ui-agent-preset/tests/locales.client.spec.ts', text: '[\'cordis\', \'presetCordisName\'', count: 1 },
@@ -197,20 +196,6 @@ const EXACT_EDITS: readonly ExactEdit[] = [
     if (!dev) errors.push(\`\${label}: @deepseek-ai/cordis must also be a devDependency\`)
     if (peer && dev && peer !== dev) {
       errors.push(\`\${label}: @deepseek-ai/cordis peer (\${peer}) and dev (\${dev}) ranges must match\`)`,
-    expect: 1,
-  },
-  {
-    id: 'knip-bundle-base',
-    file: 'knip.json',
-    find: `    "packages/bundle/base": {
-      "ignoreDependencies": [
-        "@deepseek-ai/.+",
-        "@cordisjs/.+"
-      ]`,
-    replace: `    "packages/bundle/base": {
-      "ignoreDependencies": [
-        "@deepseek-ai/.+"
-      ]`,
     expect: 1,
   },
   {
@@ -289,6 +274,37 @@ const VENDORED_LIBRARY = /^@deepseek-ai\\/(cosmokit|schemastery)(\\/|$)/
     find: '        if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null // wire contribution: inline is the point',
     replace: `        if (VENDORED_LIBRARY.test(source)) return null // vendored library: inline, no shared identity
         if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null // wire contribution: inline is the point`,
+    expect: 1,
+  },
+  {
+    // The step-1 file tree told the reader to keep the upstream name, one
+    // paragraph above the invariant that says to rescope it.
+    id: 'vendoring-cookbook-tree-comment',
+    file: 'docs/cookbook/adding-a-vendored-package.md',
+    find: '  package.json     # from upstream; set "private": true, keep name/exports/type',
+    replace: '  package.json     # from upstream; rescope the name, keep exports/type (publishable release member, no private flag)',
+    expect: 1,
+  },
+  {
+    id: 'vendoring-cookbook-tree-comment-zh',
+    file: 'docs/cookbook/adding-a-vendored-package.zh.md',
+    find: '  package.json     # from upstream; set "private": true, keep name/exports/type',
+    replace: '  package.json     # from upstream; rescope the name, keep exports/type (publishable release member, no private flag)',
+    expect: 1,
+  },
+  {
+    // The checklist told the next vendoring to keep upstream's name.
+    id: 'vendoring-cookbook-name-invariant',
+    file: 'docs/cookbook/adding-a-vendored-package.md',
+    find: "keep upstream's `name`/`version`/`exports`/`type`",
+    replace: "rescope the `name` ([mapping](../rescope.md)) while keeping upstream's `exports`/`type`",
+    expect: 1,
+  },
+  {
+    id: 'vendoring-cookbook-name-invariant-zh',
+    file: 'docs/cookbook/adding-a-vendored-package.zh.md',
+    find: '保留上游的 `name`/`version`/`exports`/`type`',
+    replace: '改写 `name` 的 scope（[映射](../rescope.zh.md)），保留上游的 `exports`/`type`',
     expect: 1,
   },
   {

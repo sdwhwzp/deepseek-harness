@@ -194,7 +194,7 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * Create or idempotently resolve one Workspace over an existing directory.
  * @param request - directory path to register.
  * @returns a new empty-membership row or an authorized existing Workspace.
- * @throws `workspace-invalid-path` when an existing Workspace is denied; incomplete authenticated composition fails closed.
+ * @throws `workspace/invalid-path` when an existing Workspace is denied; incomplete authenticated composition fails closed.
  */
 @Remote('create') create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>
 
@@ -202,7 +202,7 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * Rename one Workspace to a unique non-blank title.
  * @param request - Workspace identity and proposed title.
  * @returns the updated Workspace projection with readable Session membership.
- * @throws `workspace-not-found` when the caller may not read the addressed Workspace.
+ * @throws `workspace/not-found` when the caller may not read the addressed Workspace.
  */
 @Remote('rename') rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue>
 
@@ -210,7 +210,7 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * Remove one Workspace registration while retaining files and Sessions.
  * @param request - Workspace identity to remove.
  * @returns deletion confirmation.
- * @throws `workspace-not-found` when the caller may not read the addressed Workspace.
+ * @throws `workspace/not-found` when the caller may not read the addressed Workspace.
  */
 @Remote('delete') delete(request: WorkspaceDeleteRequest): Promise<WorkspaceDeleteValue>
 
@@ -218,7 +218,7 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * Move one Workspace within the registry display order.
  * @param request - moved Workspace and optional anchor.
  * @returns the caller-readable subset of the resulting Workspace order.
- * @throws `workspace-not-found` when the caller may not read the moved Workspace or anchor.
+ * @throws `workspace/not-found` when the caller may not read the moved Workspace or anchor.
  */
 @Remote('insertBefore') insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue>
 
@@ -226,7 +226,7 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * Move one accounted Session within a Workspace.
  * @param request - Workspace, Session, and optional anchor identities.
  * @returns the updated Workspace projection with readable Session membership.
- * @throws `workspace-not-found` or `session-not-found` when an addressed resource is denied.
+ * @throws `workspace/not-found` or `session/not-found` when an addressed resource is denied.
  */
 @Remote('insertSessionBefore') insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>
 
@@ -234,7 +234,7 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * Hide one known Session from Workspace grouping surfaces.
  * @param request - Session identity to archive.
  * @returns the caller-readable subset of the resulting archive set.
- * @throws `session-not-found` when the caller may not read the addressed Session.
+ * @throws `session/not-found` when the caller may not read the addressed Session.
  */
 @Remote('archiveSession') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>
 

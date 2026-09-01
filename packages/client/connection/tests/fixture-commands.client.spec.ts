@@ -47,7 +47,7 @@ describe('createFixtureApi commands/skills', () => {
   it('rejects a catalog request for an unknown session', async () => {
     const { rpc } = createFixtureFaces()
     const result = await rpc.call('/api', 'commands/list', { args: { agentId: sid('fx-nope') } })
-    expect(result).toMatchObject({ ok: false, error: { code: 'session-not-found' } })
+    expect(result).toMatchObject({ ok: false, error: { code: 'session/not-found' } })
   })
 
   it('executes a known command line: pure admission plus a followed lifecycle pair', async () => {
@@ -87,7 +87,7 @@ describe('createFixtureApi commands/skills', () => {
     const missing = await rpc.call('/api', 'commands/execute', {
       args: { agentId: sid('fx-nope'), line: '/goal ship' },
     })
-    expect(missing).toMatchObject({ ok: false, error: { code: 'session-not-found' } })
+    expect(missing).toMatchObject({ ok: false, error: { code: 'session/not-found' } })
   })
 
   it('refuses an image-carrying execute for a non-declaring command with a logged error pair', async () => {
@@ -176,7 +176,7 @@ describe('createFixtureApi commands/skills', () => {
     const missingSession = await rpc.call('/api', 'skills/list', {
       args: { request: { sessionId: sid('fx-nope') } },
     })
-    expect(missingSession).toMatchObject({ ok: false, error: { code: 'session-not-found' } })
+    expect(missingSession).toMatchObject({ ok: false, error: { code: 'session/not-found' } })
   })
 })
 

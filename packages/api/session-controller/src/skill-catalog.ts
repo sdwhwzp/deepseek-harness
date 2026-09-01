@@ -6,7 +6,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import { isUserInvocable } from '@deepseek-ai/dsh-skill'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
-import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { SkillListRequest, SkillListValue } from './types.ts'
 import { currentRequestPrincipal, requireReadableSession } from './principal-access.ts'
 
@@ -31,7 +31,7 @@ export class SessionSkillCatalog extends TypertRemoteService {
    * @param request - Session identity whose cwd and preset select the catalog view.
    * @param signal - caller lifetime carried by the Remote transport; admitted catalog reads retain their existing completion semantics.
    * @returns user-invocable skill metadata without loading skill bodies.
-   * @throws TypertRemoteFailure when the Session cannot be inspected or no registry can serve it.
+   * @throws RemoteError when the Session cannot be inspected or no registry can serve it.
    */
   @Remote
   async list(request: SkillListRequest, signal: AbortSignal): Promise<SkillListValue> {
@@ -49,19 +49,16 @@ export class SessionSkillCatalog extends TypertRemoteService {
     } catch (error: unknown) {
       if (error instanceof SessionQueryError
         && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') {
-        throw failure(
-          'session-not-found',
-          `session "${sessionId}" not found`,
-          { sessionId },
-        )
+        throw new RemoteError('session/not-found', `session "${sessionId}" not found`, { sessionId })
       }
-      throw failure(
-        'internal',
+      throw new RemoteError(
+        'gateway/internal',
         `session "${sessionId}" could not be inspected: ${String(error)}`,
+        {},
       )
     }
     if (cwd === undefined) {
-      throw failure('internal', `session "${sessionId}" has no project cwd`)
+      throw new RemoteError('gateway/internal', `session "${sessionId}" has no project cwd`, {})
     }
 
     const live = this.ctx.agents.get(sessionId)
@@ -69,9 +66,10 @@ export class SessionSkillCatalog extends TypertRemoteService {
     const scoped = live === undefined ? undefined : presets?.serviceFor(live, 'skills')
     const skillRegistry = scoped ?? this.ctx.get('skills')
     if (skillRegistry === undefined) {
-      throw failure(
-        'internal',
+      throw new RemoteError(
+        'gateway/internal',
         'skill registry is absent: neither this session\'s agent preset nor the host composition mounts @deepseek-ai/dsh-skill',
+        {},
       )
     }
 
@@ -87,7 +85,7 @@ export class SessionSkillCatalog extends TypertRemoteService {
         })),
       }
     } catch (error: unknown) {
-      throw failure('internal', `skill listing failed: ${String(error)}`)
+      throw new RemoteError('gateway/internal', `skill listing failed: ${String(error)}`, {})
     }
   }
 
@@ -107,15 +105,6 @@ export class SessionSkillCatalog extends TypertRemoteService {
       return undefined
     }
   }
-}
-
-/** Build one stable Remote failure with optional typed details. */
-function failure(
-  code: 'session-not-found' | 'internal',
-  message: string,
-  details: { readonly sessionId: SessionId } | Record<never, never> = {},
-): TypertRemoteFailure {
-  return new TypertRemoteFailure({ code, message, details })
 }
 
 export default SessionSkillCatalog

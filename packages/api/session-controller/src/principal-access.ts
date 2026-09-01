@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-api-gateway/types'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import { resolvePrincipalAccess } from '@deepseek-ai/dsh-principal-access'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 
 /**
  * Read the transport-verified principal active for one Remote invocation.
@@ -23,7 +23,7 @@ export function currentRequestPrincipal(ctx: Context): AuthenticatedPrincipal | 
  * @param principal - transport-verified caller captured for the operation.
  * @param signal - optional caller cancellation.
  * @throws PrincipalAccessDeniedError for incomplete authenticated composition.
- * @throws TypertRemoteFailure with `session-not-found` when the provider omits the Session.
+ * @throws RemoteError with `session/not-found` when the provider omits the Session.
  */
 export async function requireReadableSession(
   ctx: Context,
@@ -33,9 +33,5 @@ export async function requireReadableSession(
 ): Promise<void> {
   const readable = await resolvePrincipalAccess(ctx, principal, { sessionIds: [sessionId] }, signal)
   if (readable.readableSessionIds.has(sessionId)) return
-  throw new TypertRemoteFailure({
-    code: 'session-not-found',
-    message: `session "${sessionId}" not found`,
-    details: { sessionId },
-  })
+  throw new RemoteError('session/not-found', `session "${sessionId}" not found`, { sessionId })
 }

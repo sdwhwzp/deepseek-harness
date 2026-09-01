@@ -9,6 +9,7 @@ import SessionStore, {
 import type { SurfaceEvent } from '@deepseek-ai/dsh-session'
 import * as SessionInvariant from '@deepseek-ai/dsh-session/invariant'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolResultPruner, {
   codePointLength,
@@ -29,12 +30,15 @@ function service(config: ToolResultPruneConfig = SMALL): ToolResultPruner {
   const ctx = new Context()
   // Service constructors self-register, so `ctx.tokenMeter` resolves for the
   // shadow-price pricing without a full plugin boot.
+  new SessionProjectionRegistry(ctx)
   void new TokenMeter(ctx)
   return new ToolResultPruner(ctx, config)
 }
 
 /** Pricing oracle mirroring the service's estimator for expectations. */
-const METER = new TokenMeter(new Context())
+const METER_CTX = new Context()
+new SessionProjectionRegistry(METER_CTX)
+const METER = new TokenMeter(METER_CTX)
 
 function appendToolStep(
   session: Session,
@@ -60,13 +64,13 @@ function appendToolStep(
       },
     }),
   }, { surfaceOp: 'append' })
-  session.append('tool/call', { turn, step: 1, callId, name: 'bash', arguments: '{}' })
+  const callEvent = session.append('tool/call', { turn, step: 1, callId, name: 'bash', arguments: '{}' })
   const result = session.append('tool/result', {
     turn,
     step: 1,
     message: createToolResultMessage({ callId, content, isError: false }),
     ...extra,
-  }, { surfaceOp: 'append' })
+  }, { surfaceOp: 'append', sourceEventSeqs: [callEvent.seq] })
   session.append('step/end', { turn, step: 1 })
   session.append('turn/end', { turn, reason: { kind: 'completed' } })
   return result.seq
@@ -258,6 +262,7 @@ describe('ToolResultPruner session transaction', () => {
   it('runs under real invariants between closed steps but not outside a turn', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(InvariantRegistry)
     await ctx.plugin(SessionInvariant)
     await ctx.plugin(TokenMeter)

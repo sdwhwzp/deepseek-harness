@@ -12,7 +12,6 @@ import {
   SessionQueryEngine,
   type SessionSearchRequest,
 } from '@deepseek-ai/dsh-session-query'
-import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { createSessionTestController } from './test-remote.ts'
 
@@ -161,23 +160,19 @@ describe('Session Controller principal access', () => {
       address: { kind: 'session', sessionId: hidden.id },
       throughSeq: hidden.events.at(-1)?.seq ?? -1,
     }, new AbortController().signal)).rejects.toMatchObject({
-      failure: {
-        code: 'session-not-found',
-        message: `session "${hidden.id}" not found`,
-        details: { sessionId: hidden.id },
-      },
-    } satisfies Partial<TypertRemoteFailure>)
+      code: 'session/not-found',
+      message: `session "${hidden.id}" not found`,
+      details: { sessionId: hidden.id },
+    })
 
     const hiddenFollow = controller.follow({
       address: { kind: 'session', sessionId: hidden.id },
     }, new AbortController().signal)[Symbol.asyncIterator]()
     await expect(hiddenFollow.next()).rejects.toMatchObject({
-      failure: {
-        code: 'session-not-found',
-        message: `session "${hidden.id}" not found`,
-        details: { sessionId: hidden.id },
-      },
-    } satisfies Partial<TypertRemoteFailure>)
+      code: 'session/not-found',
+      message: `session "${hidden.id}" not found`,
+      details: { sessionId: hidden.id },
+    })
 
     const followAbort = new AbortController()
     const allowedFollow = controller.follow({
@@ -193,12 +188,10 @@ describe('Session Controller principal access', () => {
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     await expect(revokedFrame).rejects.toMatchObject({
-      failure: {
-        code: 'session-not-found',
-        message: `session "${allowed.id}" not found`,
-        details: { sessionId: allowed.id },
-      },
-    } satisfies Partial<TypertRemoteFailure>)
+      code: 'session/not-found',
+      message: `session "${allowed.id}" not found`,
+      details: { sessionId: allowed.id },
+    })
     followAbort.abort()
     await allowedFollow.return?.()
 
@@ -246,12 +239,10 @@ describe('Session Controller principal access', () => {
 
     for (const operation of denied) {
       await expect(operation()).rejects.toMatchObject({
-        failure: {
-          code: 'session-not-found',
-          message: `session "${hidden.id}" not found`,
-          details: { sessionId: hidden.id },
-        },
-      } satisfies Partial<TypertRemoteFailure>)
+        code: 'session/not-found',
+        message: `session "${hidden.id}" not found`,
+        details: { sessionId: hidden.id },
+      })
     }
     expect(openPath).not.toHaveBeenCalled()
     expect(hidden.events).toEqual([])

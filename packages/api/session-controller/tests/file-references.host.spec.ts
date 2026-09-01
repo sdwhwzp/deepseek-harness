@@ -44,9 +44,7 @@ describe('SessionFileReferences', () => {
       SessionId('hidden'),
       '',
       new AbortController().signal,
-    )).rejects.toMatchObject({
-      failure: { code: 'session-not-found' },
-    })
+    )).rejects.toMatchObject({ code: 'session/not-found' })
     expect(resolveAgent).not.toHaveBeenCalled()
     expect(list).not.toHaveBeenCalled()
   })

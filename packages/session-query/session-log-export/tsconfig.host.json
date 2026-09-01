@@ -14,6 +14,7 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../attachment/attachment" },
+    { "path": "../../util/brand" },
     { "path": "../../core/session" },
     { "path": "../../identity/principal-access" },
     { "path": "../../interaction/commands" },

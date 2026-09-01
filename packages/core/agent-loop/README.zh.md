@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在任何应运行 agent 的组合中挂载 `dsh-agent-loop`。它提供 `ctx.agents` 背后的驱动器，并启动你在配置中声明的 agent；标准演示组合是 [`examples/agent-spine-demo`](../../../packages/examples/agent-spine-demo/README.zh.md)。
+在任何应运行 agent 的组合中挂载 `dsh-agent-loop`。它提供 `ctx.agents` 背后的驱动器，并启动你在配置中声明的 agent；[`dsh-base`](../../bundle/base/README.zh.md) 与 [`dsh-sdk-minimal`](../../bundle/sdk-minimal/README.zh.md) 都将它作为显式配置行挂载。
 
 ### 配置声明式 agent
 
@@ -107,7 +107,7 @@ const handle = await ctx.agents.create({
 
 ### 轮次与步骤流程
 
-驱动器在其整个生命周期内拥有一个 agent，并在 `ctx.agents.withInitiator(agent, ...)` 内运行。在轮次边界，它先打开持久轮次并固定首个待处理的调用方分组，再原子领取兼容的 next-step 输入与一条兼容的排队提示词；在步骤之间则只领取该分组的 next-step 前缀。Principal 缺失且来源为 `user` 的消息属于独立匿名分组，不能继承已认证轮次的请求、工具或计费身份；principal 缺失的非用户输入仍是中性内部上下文。工具结果上下文会写入执行 principal，并插到竞速到达的其他分组输入之前；其他分组输入则留待后续轮次。`agent/pre-step` 决定什么进入该步骤；每次成功的模型调用都恰好追加一个引用其分片 seq 的 `assistant/message` 锚点，被取消的流则追加带 `interrupted: true` 的锚点并携带已交付前缀，使下一次请求包含用户看到的内容。在步骤内，独占调用形成屏障，并行安全调用使用有界滚动池；策略、持久结果与结果上下文保持模型顺序。
+驱动器在其整个生命周期内拥有一个 agent，并在 `ctx.agents.withInitiator(agent, ...)` 内运行。在轮次边界，它先打开持久轮次并固定首个待处理的调用方分组，再原子领取兼容的 next-step 输入与一条兼容的排队提示词；在步骤之间则只领取该分组的 next-step 前缀。Principal 缺失且来源为 `user` 的消息属于独立匿名分组，不能继承已认证轮次的请求、工具或计费身份；principal 缺失的非用户输入仍是中性内部上下文。工具结果上下文会写入执行 principal，并插到竞速到达的其他分组输入之前；其他分组输入则留待后续轮次。`agent/pre-step` 决定什么进入该步骤。进入步骤的决定会在驱动器再次领取消息前追加完整的 `user/message` 批次，被拒绝的决定则不追加任何消息。每次成功的模型调用都恰好追加一个引用其分片 seq 的 `assistant/message` 锚点，被取消的流则追加带 `interrupted: true` 的锚点并携带已交付前缀，使下一次请求包含用户看到的内容。在步骤内，独占调用形成屏障，并行安全调用使用有界滚动池；策略、持久结果与结果上下文保持模型顺序。
 
 ### 失败与取消
 

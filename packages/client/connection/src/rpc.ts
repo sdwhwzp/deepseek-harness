@@ -2,7 +2,6 @@
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Correlation id minted by a caller and echoed by the Connection response. */
 export type RpcId = Branded<'rpc-id'>
@@ -28,32 +27,6 @@ export type ConnectionRpcResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: ConnectionRpcFailure }
 
-/** Typed failure details used by Client Session adapters. */
-export interface RpcErrorDetailsMap {
-  'bad-request': { issues: object[] }
-  'cancelled': {}
-  'session-not-found': { sessionId: SessionId }
-  'invalid-time-zone': { value: string }
-  'agent-preset-read-only': { agentPreset: string; reason: string }
-  'agent-preset-locked': { sessionId: SessionId; agentPreset: string }
-  'agent-preset-not-found': { agentPreset: string; available: readonly string[] }
-  'agent-preset-invalid': { agentPreset: string; reason: string }
-  'agent-busy': { reason: string }
-  'internal': {}
-}
-
-/** Error codes used by Client Session adapters. */
-export type RpcErrorCode = keyof RpcErrorDetailsMap
-
-/** Typed failure used by Client Session adapters. */
-export type RpcError = {
-  [Code in RpcErrorCode]: {
-    readonly code: Code
-    readonly message: string
-    readonly details: RpcErrorDetailsMap[Code]
-  }
-}[RpcErrorCode]
-
 /** Historical short name for a generic Connection result. */
 export type RpcResult<T> = ConnectionRpcResult<T>
 
@@ -66,7 +39,7 @@ export function transportError<T>(error: unknown): RpcResult<T> {
   return {
     ok: false,
     error: {
-      code: 'internal',
+      code: 'gateway/internal',
       message: error instanceof Error ? error.message : String(error),
       details: {},
     },
