@@ -206,7 +206,35 @@ describe('candidates', () => {
     const { source, listCalls } = await bench()
     const list = await source.candidates(proj('s1'), req('g'))
     expect(listCalls).toEqual([{ sessionId: sid('s1') }])
-    expect(list).toEqual([{ name: 'goal', description: 'leadingInput kind', hint: 'goal text' }])
+    expect(list).toEqual([{
+      name: 'goal', description: 'command:catalog.goal.description', hint: 'goal text',
+    }])
+  })
+
+  it('localizes every shipped Host command and preserves extension descriptions', async () => {
+    const commands: CommandDescriptor[] = [
+      { name: 'compact', description: 'host compact' },
+      { name: 'export', description: 'host export' },
+      { name: 'feedback', description: 'host feedback' },
+      { name: 'goal', description: 'host goal' },
+      { name: 'image', description: 'host image' },
+      { name: 'permission', description: 'host permission' },
+      { name: 'plan', description: 'host plan' },
+      { name: 'read-image', description: 'host read image' },
+      { name: 'extension', description: '扩展自定义说明' },
+    ]
+    const { source } = await bench({ commands: () => Promise.resolve({ commands }) })
+    expect(await source.candidates(proj('s1'), req(''))).toEqual([
+      { name: 'compact', description: 'command:catalog.compact.description' },
+      { name: 'export', description: 'command:catalog.export.description' },
+      { name: 'feedback', description: 'command:catalog.feedback.description' },
+      { name: 'goal', description: 'command:catalog.goal.description' },
+      { name: 'image', description: 'command:catalog.image.description' },
+      { name: 'permission', description: 'command:catalog.permission.description' },
+      { name: 'plan', description: 'command:catalog.plan.description' },
+      { name: 'read-image', description: 'command:catalog.readImage.description' },
+      { name: 'extension', description: '扩展自定义说明' },
+    ])
   })
 
   it('matches case-insensitive subsequences and ranks prefixes, boundaries, adjacency, gaps, then source order', async () => {

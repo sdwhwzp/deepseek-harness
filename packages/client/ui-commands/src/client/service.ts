@@ -24,6 +24,7 @@ import type {
 import type { CommandContribution, CommandDecoration, CommandUiContract } from './contract.ts'
 import type { CommandDescriptor } from './directory.ts'
 import { CommandDirectory } from './directory.ts'
+import type { CommandKey } from './locales.ts'
 import { PopupSelectController } from './popup.ts'
 import type { TokenSegment } from './popup.ts'
 
@@ -62,6 +63,18 @@ interface RankedCandidate {
   readonly index: number
   readonly prefix: boolean
   readonly score: number
+}
+
+/** Locale keys for Host commands shipped by the Web composition. */
+const HOST_DESCRIPTION_KEYS: Readonly<Partial<Record<string, CommandKey>>> = {
+  compact: 'catalog.compact.description',
+  export: 'catalog.export.description',
+  feedback: 'catalog.feedback.description',
+  goal: 'catalog.goal.description',
+  image: 'catalog.image.description',
+  permission: 'catalog.permission.description',
+  plan: 'catalog.plan.description',
+  'read-image': 'catalog.readImage.description',
 }
 
 /** Extra weight for command-name starts and separator boundaries. */
@@ -125,7 +138,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
 
   private readonly directory: CommandDirectory
   private readonly live: LiveState = { contributions: new Map(), decorations: new Map(), popups: new Map() }
-  /** `command`-namespace translator (composer refusal notices). */
+  /** `command`-namespace translator for catalog descriptions and composer notices. */
   private readonly t: TranslateNS<'command'>
 
   /**
@@ -253,7 +266,12 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     const seen = new Set<string>()
     for (const c of list) {
       seen.add(c.name)
-      rows.push({ name: c.name, description: c.description, ...(c.input !== undefined ? { hint: c.input.hint } : {}) })
+      const descriptionKey = HOST_DESCRIPTION_KEYS[c.name]
+      rows.push({
+        name: c.name,
+        description: descriptionKey === undefined ? c.description : this.t(descriptionKey),
+        ...(c.input !== undefined ? { hint: c.input.hint } : {}),
+      })
     }
     for (const contribution of this.live.contributions.values()) {
       if (!contribution.available(session)) continue
