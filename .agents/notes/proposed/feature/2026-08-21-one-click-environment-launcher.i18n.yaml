@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-08-21-one-click-environment-launcher.md
 2026-08-21-one-click-environment-launcher.md: 503e237d657a79165de00b4367b3a32f90dc1b25
-2026-08-21-one-click-environment-launcher.zh.md: 9f261a5381c225458bb8d3051203be35d66deba5
+2026-08-21-one-click-environment-launcher.zh.md: efa11cac5a420220531d2822e4aad07f861f4250

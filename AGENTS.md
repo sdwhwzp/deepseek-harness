@@ -84,7 +84,7 @@ pnpm run demo:ptc -- "task"  # headless PTC mode run (needs key)
 
 ### Host sandbox failures
 
-If a required `gh`, `pnpm`, build, test, or generator command fails because the sandbox blocks credentials, network, IPC, watching, or nested `sandbox-exec`, retry unchanged with the narrowest host escalation. Require sandbox evidence; never bypass test failures or the product sandbox.
+If sandbox evidence shows a required command blocked by credentials, network, IPC, watching, or nested `sandbox-exec`, retry unchanged with narrowest host escalation; never bypass product or test failures.
 
 ### Run relevant checks locally
 
@@ -92,8 +92,7 @@ Run checks before pushes via [dsh-pre-push-checks](.agents/skills/dsh-pre-push-c
 
 - Match evidence to the surface: focused behavior tests, model/user-output snapshots, `doc-sync` for docs, built smokes for published paths, and real-API e2e for providers.
 - Never default to the full suite or repeat a passing check for commit or push. CI owns exhaustive coverage and the platform matrix; rehearse all locally only by explicit request, for CI diagnosis, or for an irreducibly repository-wide change.
-- `test:coverage`, not `test`, is the CI coverage gate ([why](docs/testing.md)).
-- `pre-push` needs Node in range; run `nvm use 22.21.1` before `git push` ([why](docs/development.md#git-integrations)).
+- The CI coverage gate is `test:coverage`; use Node 22.21.1 for `pre-push` ([testing](docs/testing.md); [Git integrations](docs/development.md#git-integrations)).
 
 ## Secrets / .env
 
