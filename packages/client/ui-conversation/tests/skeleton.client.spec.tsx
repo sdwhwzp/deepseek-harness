@@ -352,7 +352,8 @@ describe('ConversationRoot resident composer', () => {
       ids: [], byId: {}, current: undefined, phase: 'ready',
       subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     })
-    const workspaces = createSnapshotStore<WorkspaceListState>(workspaceState([]))
+    const workspaces = createSnapshotStore<WorkspaceSnapshot>(workspaceState([]))
+    const pendingInteractions = createSnapshotStore<SessionPendingInteractionSnapshot>(new Map())
     const renderSlot = vi.fn(((key: string) => {
       if (key === 'conversation.hero.agentPreset') return <div data-testid="preset-seat" />
       if (key === 'conversation.input.bootstrap') return <div data-testid="bootstrap-row" />
@@ -363,7 +364,9 @@ describe('ConversationRoot resident composer', () => {
       sessionId: undefined,
       SessionProvider: (() => null) as ConversationRootProps['SessionProvider'],
       useSession: () => undefined,
+      useConversation: () => undefined,
       useSessions: bindSnapshotSelector(sessions),
+      useSessionPendingInteraction: bindSnapshotSelector(pendingInteractions),
       useWorkspaces: bindSnapshotSelector(workspaces),
       useProjection: (() => undefined),
       useInput: () => undefined,
@@ -387,7 +390,7 @@ describe('ConversationRoot resident composer', () => {
   })
 
   it('omits root bootstrap actions from an active-session composer', () => {
-    const b = mount(conversationSnapshot())
+    const b = mount(sessionSnapshotOf())
     expect(b.slotCalls.some(key => key === 'conversation.input.bootstrap')).toBe(false)
   })
 
