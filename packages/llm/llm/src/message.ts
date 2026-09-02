@@ -107,6 +107,22 @@ export interface MessageSourceMap {
 }
 
 /**
+ * Trusted identity attached by a Host authentication provider. The stable
+ * `id` is namespaced by `source`; display names never participate in access
+ * control or accounting identity.
+ */
+export interface AuthenticatedPrincipal {
+  /** Authentication provider that established this identity. */
+  readonly source: string
+  /** Stable provider-owned subject id. */
+  readonly id: string
+  /** Human-readable login name. */
+  readonly username: string
+  /** Authorization role asserted by the provider. */
+  readonly role: 'admin' | 'user'
+}
+
+/**
  * Bound for a `notice` summary. The account rides a collapsed transcript row
  * and is committed to the durable log, while its inputs — task labels, goal
  * objectives, tool arguments — are caller text with no length of their own.
@@ -142,6 +158,8 @@ export interface Message {
 /** A user-role specialization of the one shared message representation. */
 export interface UserMessage extends Message {
   readonly role: 'user'
+  /** Host-authenticated owner; absent for anonymous input and unowned internal context. */
+  readonly principal?: AuthenticatedPrincipal
 }
 
 /** A model-produced assistant specialization of the shared message representation. */

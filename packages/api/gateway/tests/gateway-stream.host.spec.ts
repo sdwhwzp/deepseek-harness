@@ -3,6 +3,7 @@ import { once } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket, { type RawData } from 'ws'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -69,6 +70,7 @@ function browserCookie(ctx: Context): string {
 }
 
 class FeedService extends Service {
+  static inject = ['typertGateway']
   readonly typertRemote = bindTypertRemote(this, 'feed')
   readonly signals: AbortSignal[] = []
   returns = 0
@@ -95,6 +97,13 @@ class FeedService extends Service {
   *sync(label: string): Iterable<string> {
     yield `${label}:one`
     yield `${label}:two`
+  }
+
+  @Remote({ mode: 'stream' })
+  async *observePrincipal(): AsyncIterable<string> {
+    yield this.ctx.typertGateway.currentPrincipal()?.id ?? 'anonymous'
+    await Promise.resolve()
+    yield this.ctx.typertGateway.currentPrincipal()?.id ?? 'anonymous'
   }
 
   @Remote({ mode: 'stream' })
@@ -202,6 +211,7 @@ function pendingInvocation(
       event: 'fixture/approval',
       request: { prompt, agent: subject, ...(signal === undefined ? {} : { signal }) },
       context: { value: context, subject },
+      principal: undefined,
       resolve,
       reject,
     },
@@ -235,6 +245,27 @@ describe('Typert Remote streams', () => {
     )
 
     await expect(collect(source)).resolves.toEqual(['wire:one', 'wire:two'])
+  })
+
+  it('keeps each stream iteration under its transport principal', async () => {
+    const { ctx } = await setup(false)
+    const alice: AuthenticatedPrincipal = {
+      source: 'gateway', id: 'alice', username: 'Alice', role: 'user',
+    }
+    const named = await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'observePrincipal', args: {}, principal: alice,
+    })
+    const anonymous = await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'observePrincipal', args: {},
+    })
+    const namedIterator = named[Symbol.asyncIterator]()
+    const anonymousIterator = anonymous[Symbol.asyncIterator]()
+
+    await expect(namedIterator.next()).resolves.toEqual({ done: false, value: 'alice' })
+    await expect(anonymousIterator.next()).resolves.toEqual({ done: false, value: 'anonymous' })
+    await expect(namedIterator.next()).resolves.toEqual({ done: false, value: 'alice' })
+    await expect(anonymousIterator.next()).resolves.toEqual({ done: false, value: 'anonymous' })
+    expect(ctx.typertGateway.currentPrincipal()).toBeUndefined()
   })
 
   it('passes Iterable and AsyncIterable items through and returns the iterator on cancellation', async () => {

@@ -8,6 +8,7 @@ import { isUserInvocable } from '@deepseek-ai/dsh-skill'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { SkillListRequest, SkillListValue } from './types.ts'
+import { currentRequestPrincipal, requireReadableSession } from './principal-access.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -34,8 +35,8 @@ export class SessionSkillCatalog extends TypertRemoteService {
    */
   @Remote
   async list(request: SkillListRequest, signal: AbortSignal): Promise<SkillListValue> {
-    void signal
     const { sessionId } = request
+    await requireReadableSession(this.ctx, sessionId, currentRequestPrincipal(this.ctx), signal)
     let cwd: string | undefined
     let agentPreset: string | undefined
     try {

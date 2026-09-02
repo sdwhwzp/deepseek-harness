@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { describe, expect, it } from 'vitest'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import { z } from 'zod'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
@@ -50,11 +51,15 @@ const emptyModel: TypertContribution['model'] = {
 }
 
 class GoalService extends Service {
+  static inject = ['typertGateway']
   readonly typertRemote = bindTypertRemote(this, 'goals')
   readonly calls: string[] = []
   lastSignal: AbortSignal | undefined
   nextResult: unknown = undefined
   businessError: Error | undefined
+  lastPrincipal: AuthenticatedPrincipal | undefined
+  nestedPrincipal: AuthenticatedPrincipal | undefined
+  readonly principalTrace: (string | undefined)[] = []
 
   constructor(ctx: Context) {
     super(ctx, 'goals')
@@ -64,6 +69,7 @@ class GoalService extends Service {
   create(agent: FixtureAgent, request: { readonly title: string }, signal: AbortSignal): unknown {
     this.calls.push('create')
     this.lastSignal = signal
+    this.lastPrincipal = this.ctx.typertGateway.currentPrincipal()
     return {
       agentId: agent.id,
       title: request.title,
@@ -96,6 +102,25 @@ class GoalService extends Service {
     throw this.businessError ?? new Error('fixture business failure')
   }
 
+  @Remote
+  observePrincipal(): string | undefined {
+    const principal = this.ctx.typertGateway.currentPrincipal()
+    this.principalTrace.push(principal?.id)
+    return principal?.id
+  }
+
+  @Remote
+  async nestPrincipal(): Promise<string | undefined> {
+    this.principalTrace.push(this.ctx.typertGateway.currentPrincipal()?.id)
+    const principal = this.nestedPrincipal
+    const result = await this.ctx.typertGateway.invoke({
+      namespace: 'goals', method: 'observePrincipal', args: {},
+      ...principal === undefined ? {} : { principal },
+    })
+    this.principalTrace.push(this.ctx.typertGateway.currentPrincipal()?.id)
+    return typeof result === 'string' ? result : undefined
+  }
+
   strictOnly(request: { readonly title: string }): unknown {
     this.calls.push('strictOnly')
     return this.nextResult === undefined ? request : this.nextResult
@@ -106,7 +131,12 @@ type FakeRpcResult =
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string; readonly details: object } }
 
-type FakeRpcHandler = (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<FakeRpcResult>
+type FakeRpcHandler = (
+  endpoint: string,
+  payload: unknown,
+  signal: AbortSignal,
+  principal?: AuthenticatedPrincipal,
+) => Promise<FakeRpcResult>
 
 class FakeConnectionService extends Service {
   channel: string | undefined
@@ -391,6 +421,39 @@ class InheritedMethodBase extends Service {
 class InheritedMethodService extends InheritedMethodBase {}
 
 describe('TypertGatewayService', () => {
+  it('scopes named and anonymous nested Remote invocations without leaking their caller', async () => {
+    const { ctx, service } = await setup()
+    registerAgentLookup(ctx, { id: 'agent-1' })
+    const principal: AuthenticatedPrincipal = {
+      source: 'gateway', id: '42', username: 'alice', role: 'user',
+    }
+
+    await ctx.typertGateway.invoke({
+      namespace: 'goals', method: 'create',
+      args: { agentId: 'agent-1', request: { title: 'ship' } },
+      principal,
+    })
+
+    expect(service.lastPrincipal).toEqual(principal)
+    expect(ctx.typertGateway.currentPrincipal()).toBeUndefined()
+
+    const bob: AuthenticatedPrincipal = {
+      source: 'gateway', id: '84', username: 'bob', role: 'user',
+    }
+    service.nestedPrincipal = bob
+    await expect(ctx.typertGateway.invoke({
+      namespace: 'goals', method: 'nestPrincipal', args: {}, principal,
+    })).resolves.toBe('84')
+    expect(service.principalTrace.splice(0)).toEqual(['42', '84', '42'])
+
+    service.nestedPrincipal = undefined
+    await expect(ctx.typertGateway.invoke({
+      namespace: 'goals', method: 'nestPrincipal', args: {}, principal,
+    })).resolves.toBeUndefined()
+    expect(service.principalTrace).toEqual(['42', undefined, '42'])
+    expect(ctx.typertGateway.currentPrincipal()).toBeUndefined()
+  })
+
   it('invokes a strict direct method with schema decoding and a live lookup', async () => {
     const { ctx, service } = await setup()
     const agent = { id: 'agent-1' }

@@ -349,6 +349,8 @@ export interface SessionCancelValue {
 
 /** Request to open one path prepared by a Session-aware caller on the Host desktop. */
 export interface SessionOpenWorkspacePathRequest {
+  /** Session whose visibility authorizes the native opener request. */
+  readonly sessionId: SessionId
   /** Path after best-effort Session workspace resolution, in Host filesystem syntax. */
   readonly path: string
 }

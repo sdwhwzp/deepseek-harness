@@ -5,7 +5,7 @@
  */
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type SubagentRuntime from './index.ts'
@@ -48,6 +48,7 @@ export interface HostPromptQueue {
     content: ContentBlock[],
     source: MessageSource,
     signal: AbortSignal,
+    principal?: AuthenticatedPrincipal,
   ): Promise<MessageId>
 }
 
@@ -59,6 +60,7 @@ export interface HostPromptQueue {
  * @param content - host-authored content to deliver.
  * @param source - durable host-protocol provenance.
  * @param signal - caller cancellation before inbox acceptance.
+ * @param principal - authenticated owner of the Host request.
  * @returns the accepted message's inbox id.
  */
 export function queueHostSubagentPrompt(
@@ -68,6 +70,7 @@ export function queueHostSubagentPrompt(
   content: ContentBlock[],
   source: MessageSource,
   signal: AbortSignal,
+  principal?: AuthenticatedPrincipal,
 ): Promise<MessageId> {
   return (runtime as unknown as HostPromptQueue)[queueSubagentPrompt](
     parent,
@@ -75,5 +78,6 @@ export function queueHostSubagentPrompt(
     content,
     source,
     signal,
+    principal,
   )
 }

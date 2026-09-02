@@ -50,6 +50,11 @@ const SAFE_HOST_DEPENDENCY_EXPORTS = {
 
 /** Runtime exports that require every consumer to resolve the provider's shared peer instance. */
 const PEER_REQUIRED_HOST_EXPORTS = {
+  '@deepseek-ai/dsh-principal-access': [
+    'PrincipalAccessDeniedError',
+    'requirePrincipalAccess',
+    'resolvePrincipalAccess',
+  ],
   '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'scopeOf', 'scopeTarget'],
 } as const satisfies HostDependencyExports
 

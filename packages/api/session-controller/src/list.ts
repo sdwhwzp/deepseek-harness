@@ -28,6 +28,10 @@ const SEARCH_PROVIDER_CALL_LIMIT = 100
 const SESSION_SEARCH_QUERY_MAX_CHARS = 500
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
+type ResolveReadableSessionIds = (
+  sessionIds: readonly SessionId[],
+) => Promise<ReadonlySet<SessionId>>
+
 const sessionListMetadataSchema: z.ZodType<SessionListMetadata> = z.object({
   blank: z.boolean(),
   lastPromptAt: z.number().nullable(),
@@ -132,21 +136,31 @@ export class ApiSessionList {
   /**
    * Read every visible attached and persisted Session without activating an Agent.
    * @param signal - optional cancellation for persistence reads.
+   * @param resolveReadable - optional authorization applied before summaries or cold probes.
    * @returns visible Session summaries ordered by activity.
    */
-  async list(signal?: AbortSignal): Promise<SessionSummary[]> {
+  async list(
+    signal?: AbortSignal,
+    resolveReadable?: ResolveReadableSessionIds,
+  ): Promise<SessionSummary[]> {
     signal?.throwIfAborted()
     const records = await this.ctx.sessionQuery.listSessions(signal)
     signal?.throwIfAborted()
+    const candidates = records.filter(record =>
+      this.ctx.sessions.get(record.header.id) !== undefined || record.header.cwd !== undefined)
+    const readable = resolveReadable === undefined
+      ? new Set(candidates.map(record => record.header.id))
+      : await resolveReadable(candidates.map(record => record.header.id))
+    signal?.throwIfAborted()
     const items: SessionSummary[] = []
     const cold: SessionHeader[] = []
-    for (const record of records) {
+    for (const record of candidates) {
+      if (!readable.has(record.header.id)) continue
       const live = this.ctx.sessions.get(record.header.id)
       if (live !== undefined) {
         items.push(this.summaryFor(live))
         continue
       }
-      if (record.header.cwd === undefined) continue
       cold.push(record.header)
     }
     for (let offset = 0; offset < cold.length; offset += COLD_SUMMARY_BATCH_SIZE) {
@@ -220,9 +234,14 @@ export class ApiSessionList {
    * Search current visible message content without activating any matching Session.
    * @param query - literal message-content query.
    * @param signal - cancellation for list and search reads.
+   * @param resolveReadable - optional authorization over list-visible ids.
    * @returns authorized bounded Session search results.
    */
-  async search(query: string, signal: AbortSignal): Promise<SessionSearchValue> {
+  async search(
+    query: string,
+    signal: AbortSignal,
+    resolveReadable?: ResolveReadableSessionIds,
+  ): Promise<SessionSearchValue> {
     const normalizedQuery = normalizeSearchQuery(query)
     signal.throwIfAborted()
     const provider = this.ctx.get('sessionQuery')
@@ -236,9 +255,13 @@ export class ApiSessionList {
     try {
       const visible = await provider.listSessions(signal)
       signal.throwIfAborted()
-      const visibleIds = new Set(visible
+      const candidateIds = new Set(visible
         .filter(record => record.header.cwd !== undefined)
         .map(record => record.header.id))
+      const visibleIds = resolveReadable === undefined
+        ? candidateIds
+        : await resolveReadable([...candidateIds])
+      signal.throwIfAborted()
       if (visibleIds.size === 0) return { items: [], hasMore: false }
       const authorized: SessionSearchItem[] = []
       const acceptedIds = new Set<SessionId>()

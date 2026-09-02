@@ -72,6 +72,8 @@ const handle = await ctx.agents.create({
 
 每个步骤都会发送该 agent 渲染后的系统提示词、其可见工具 schema 与会话的派生历史；模型的工具调用经过受守卫的工具流水线，每个被接纳的事实都会在下一步据此派生之前追加到会话日志。并行安全调用最多可重叠 `maxParallelToolCalls` 个；独占调用单独运行并构成排序屏障。取消是协作式的：`agent.cancel()` 中止当前活动，并在未设置 `keepInbox` 时清除待处理工作；被取消的流会终结已送达用户的文本。
 
+认证用户消息按 `(source, id)` 分组准入。第一组待处理调用方固定整个轮次的 principal；它会记录在 `turn/start` 与每个 `step/start` 上，传给 `agent/pre-step` 和 `agent/request`，并贯穿工具执行。其他认证用户或匿名用户的消息继续排队到后续轮次；没有 principal 的插件上下文保持中立，可以进入当前调用方的轮次。
+
 -----
 
 <a id="understand-the-implementation"></a>

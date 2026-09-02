@@ -5,6 +5,13 @@ import Schema from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
+import {
+  PrincipalAccessDeniedError,
+  requirePrincipalAccess,
+  resolvePrincipalAccess,
+} from '@deepseek-ai/dsh-principal-access'
+import type { SessionLineageNode, SessionLineageTrace } from '@deepseek-ai/dsh-session-query'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
 import {
@@ -55,7 +62,10 @@ interface SessionLogConnection {
     register(route: {
       readonly path: string
       readonly methods: readonly ('GET' | 'HEAD')[]
-      readonly fetch: (request: Request) => Promise<Response>
+      readonly fetch: (
+        request: Request,
+        principal: AuthenticatedPrincipal | undefined,
+      ) => Promise<Response>
     }): () => Promise<void>
   }
 }
@@ -81,10 +91,11 @@ export function apply(ctx: Context, config: Config = {}): void {
   connectionOf(ctx).fetch.register({
     path: SESSION_LOG_EXPORT_PATH,
     methods: ['GET', 'HEAD'],
-    fetch: async (request) => {
+    fetch: async (request, principal) => {
       const response = await sessionLogExportResponse(
         ctx,
         request,
+        principal,
         config.compressionLevel ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
       )
       if (request.method === 'GET') return response
@@ -101,6 +112,7 @@ function connectionOf(ctx: Context): SessionLogConnection {
 async function sessionLogExportResponse(
   ctx: Context,
   request: Request,
+  principal: AuthenticatedPrincipal | undefined,
   compressionLevel: SessionLogCompressionLevel,
 ): Promise<Response> {
   const url = new URL(request.url)
@@ -133,6 +145,37 @@ async function sessionLogExportResponse(
     attachments: deps.attachments,
     sessions: deps.sessions,
   }
+  const authorize = async (sessionIds: readonly SessionId[]): Promise<Response | undefined> => {
+    try {
+      const access = await resolvePrincipalAccess(ctx, principal, { sessionIds }, request.signal)
+      for (const id of sessionIds) requirePrincipalAccess(access, { kind: 'session', id })
+      return undefined
+    } catch (error: unknown) {
+      if (!(error instanceof PrincipalAccessDeniedError)) throw error
+      const status = error.reason === 'principal-required'
+        ? 401
+        : error.reason === 'provider-required'
+          ? 503
+          : 404
+      return new Response(status === 404 ? 'session not found' : error.message, { status })
+    }
+  }
+  const rootRejection = await authorize([sessionId])
+  if (rootRejection !== undefined) return rootRejection
+  let lineage: SessionLineageTrace
+  try {
+    lineage = await deps.sessionQuery.traceSession(sessionId, request.signal)
+    request.signal.throwIfAborted()
+  } catch {
+    request.signal.throwIfAborted()
+    return new Response('session not found', { status: 404 })
+  }
+  const descendants = descendantsValue === 'true' ? lineage.descendants : []
+  const descendantIds = descendantSessionIds(descendants)
+  if (descendantIds.length > 0) {
+    const descendantRejection = await authorize(descendantIds)
+    if (descendantRejection !== undefined) return descendantRejection
+  }
   let root: SessionRawArtifact | undefined
   try {
     await flushLiveSessionLog(deps, sessionId, request.signal)
@@ -151,6 +194,7 @@ async function sessionLogExportResponse(
       descendantsValue === 'true',
       compressionLevel,
       request.signal,
+      descendants,
     ),
     {
       headers: {
@@ -160,4 +204,17 @@ async function sessionLogExportResponse(
     },
   )
   return response
+}
+
+/** Flatten one authorized descendant forest in stable lineage order. */
+function descendantSessionIds(nodes: readonly SessionLineageNode[]): SessionId[] {
+  const ids: SessionId[] = []
+  const visit = (descendants: readonly SessionLineageNode[]): void => {
+    for (const node of descendants) {
+      ids.push(node.session.header.id)
+      visit(node.descendants)
+    }
+  }
+  visit(nodes)
+  return ids
 }

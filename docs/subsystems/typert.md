@@ -316,6 +316,12 @@ Resolve strict generated definitions or conservative SRC markers against current
 
 ```ts cordis-catalog
 /**
+ * Read the transport-verified principal for the active Remote call.
+ * @returns the principal scoped to dispatch, or undefined outside authenticated dispatch.
+ */
+currentPrincipal(): AuthenticatedPrincipal | undefined
+
+/**
  * Register the sole application-selected forwarded-event source.
  * @param source - stream factory installed by the Remote assembly.
  * @param host - stable Host facts included in each Client generation's opening frame.
@@ -338,6 +344,8 @@ async invoke(request: InvokeRemoteRequest): Promise<unknown>
  */
 async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
 ```
+
+Types: [AuthenticatedPrincipal](core.md)
 
 Source: [`packages/api/gateway/src/index.ts`](../../packages/api/gateway/src/index.ts)
 <!-- END GENERATED cordis-surface -->

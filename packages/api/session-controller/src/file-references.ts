@@ -5,6 +5,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-file-reference'
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { currentRequestPrincipal, requireReadableSession } from './principal-access.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -30,11 +31,12 @@ export class SessionFileReferences extends TypertRemoteService {
    * @returns deterministic path-only candidates from the composed provider.
    */
   @Remote
-  list(
+  async list(
     agent: Agent,
     query: string,
     signal: AbortSignal,
   ): Promise<FileReferenceCandidate[]> {
+    await requireReadableSession(this.ctx, agent.id, currentRequestPrincipal(this.ctx), signal)
     return this.ctx.fileReferences.list(agent, query, signal)
   }
 }

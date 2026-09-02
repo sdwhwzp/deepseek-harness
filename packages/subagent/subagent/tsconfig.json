@@ -18,10 +18,16 @@
       "path": "../../attachment/attachment"
     },
     {
+      "path": "../../api/gateway/tsconfig.host.json"
+    },
+    {
       "path": "../../core/agent"
     },
     {
       "path": "../../llm/llm"
+    },
+    {
+      "path": "../../identity/principal-access"
     },
     {
       "path": "../../core/tools"

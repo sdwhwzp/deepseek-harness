@@ -253,6 +253,27 @@ Host service backing the generated `ctx.remote.credentials` namespace. It carrie
 
 Source: [`packages/api/settings-controller/src/credentials.ts`](../../packages/api/settings-controller/src/credentials.ts)
 
+<a id="ctxprincipalaccess--principalaccessservice"></a>
+
+### `ctx.principalAccess` — `PrincipalAccessService`
+
+Deployment authorization Service Definition for principal-scoped resource reads.
+
+```ts cordis-catalog
+/**
+ * Resolve the readable subset of one batched request.
+ * @param _principal - Host-verified message-scoped identity.
+ * @param _subjects - candidate Session and Workspace ids.
+ * @param _signal - optional caller cancellation.
+ * @returns requested ids the deployment authorizes for this principal.
+ */
+resolve( _principal: AuthenticatedPrincipal, _subjects: PrincipalAccessSubjects, _signal?: AbortSignal, ): Promise<PrincipalAccessResult>
+```
+
+Types: [AuthenticatedPrincipal](core.zh.md) · [PrincipalAccessResult](core.zh.md) · [PrincipalAccessSubjects](core.zh.md)
+
+Source: [`packages/identity/principal-access/src/index.ts`](../../packages/identity/principal-access/src/index.ts)
+
 <a id="authorization-events"></a>
 
 ### `authorization/*` events

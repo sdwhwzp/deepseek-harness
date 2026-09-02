@@ -17,16 +17,19 @@ export type {
   ConnectionFetchRoute,
   ConnectionIndexRequest,
   ConnectionIndexResponse,
+  ConnectionPrincipalRequest,
   ConnectionRpcEndpointMatcher,
   ConnectionRpcFailure,
   ConnectionRpcHandler,
   ConnectionRequestRejection,
+  ConnectionRequestAuthorization,
   ConnectionRpcResult,
   ConnectionTrustRequest,
   ClientRequest,
   HostConnectionHandle,
   HostConnectionFetch,
   HostConnectionRpc,
+  RequestPrincipalProvider,
   RpcMessage,
   ServerResponse,
 } from './rpc.ts'
@@ -115,13 +118,15 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
     kind: 'prefix',
     path: API_PATH,
     handler: async (req, res) => {
-      const rejection = connection.requestRejection(req)
-      if (rejection !== undefined) {
-        res.writeHead(rejection)
-        res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+      const authorization = await connection.authorizeRequest(req)
+      if (!authorization.accepted) {
+        res.writeHead(authorization.status)
+        res.end(authorization.status === 401 ? 'unauthorized' : 'forbidden')
         return
       }
-      await bridge(req, res, fetchHandler, maxRequestBodyBytes)
+      await bridge(req, res, {
+        fetch: request => fetchHandler.fetch(request, authorization),
+      }, maxRequestBodyBytes)
     },
   }
   ctx.effect(() => ctx.webServer.register(route), 'client-connection: /api route')

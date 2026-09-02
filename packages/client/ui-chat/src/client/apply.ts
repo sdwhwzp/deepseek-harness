@@ -122,6 +122,7 @@ export function apply(ctx: Context): void {
           openFile: async (path) => {
             const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
             const result = await ctx.remote.session.openWorkspacePath({
+              sessionId,
               path: resolveWorkspacePath(cwd, path),
             })
             if (!result.ok) throw new Error(`path open failed: ${result.error.message}`)

@@ -1,6 +1,15 @@
 /** Workspace command implementation and stable Remote failure mapping. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
+import {
+  PrincipalAccessDeniedError,
+  requirePrincipalAccess,
+  resolvePrincipalAccess,
+  type PrincipalAccessResult,
+  type PrincipalAccessSubject,
+  type PrincipalAccessSubjects,
+} from '@deepseek-ai/dsh-principal-access'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
   WorkspaceId,
@@ -10,6 +19,7 @@ import {
 } from '@deepseek-ai/dsh-workspace'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { workspaceView } from './feed.ts'
+import { principalWorkspaceView } from './principal-feed.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
@@ -24,7 +34,7 @@ import type {
   WorkspaceValue,
 } from './types.ts'
 
-/** Implements Workspace mutations against the authoritative registry. */
+/** Implements authorized Workspace mutations against the authoritative registry. */
 export class WorkspaceCommands {
   private operationTail = Promise.resolve()
 
@@ -34,25 +44,39 @@ export class WorkspaceCommands {
   /**
    * Create or resolve one Workspace over an existing directory.
    * @param request - directory path to register.
-   * @returns the Workspace and whether this call created it.
+   * @param principal - transport-verified caller, when authenticated.
+   * @returns the authorized Workspace and whether this call created it.
    */
-  create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
+  create(
+    request: WorkspaceCreateRequest,
+    principal: AuthenticatedPrincipal | undefined,
+  ): Promise<WorkspaceCreateValue> {
     return this.enqueue(async () => {
+      let existing: Workspace | undefined
       try {
-        const existing = await this.ctx.workspaceRegistry.resolveByPath(request.path)
-        if (existing !== undefined) {
-          return { workspace: workspaceView(existing), created: false }
+        existing = await this.ctx.workspaceRegistry.resolveByPath(request.path)
+      } catch (error) {
+        if (remoteErrorOf(error) !== undefined) throw error
+        throw invalidWorkspacePath(request.path, error)
+      }
+      if (existing !== undefined) {
+        const access = await this.authorizeWorkspace(
+          existing,
+          principal,
+          () => invalidWorkspacePath(request.path),
+        )
+        return {
+          workspace: principalWorkspaceView(workspaceView(existing), access.readableSessionIds),
+          created: false,
         }
+      }
+      await resolvePrincipalAccess(this.ctx, principal, {})
+      try {
         const workspace = await this.ctx.workspaceRegistry.create(request.path)
         return { workspace: workspaceView(workspace), created: true }
       } catch (error) {
         if (remoteErrorOf(error) !== undefined) throw error
-        throw new RemoteError(
-          'workspace/invalid-path',
-          `cannot create a Workspace at "${request.path}": ${errorMessage(error)}`,
-          { path: request.path },
-          { cause: error },
-        )
+        throw invalidWorkspacePath(request.path, error)
       }
     })
   }
@@ -60,15 +84,20 @@ export class WorkspaceCommands {
   /**
    * Rename one Workspace after serializing title ownership checks.
    * @param request - Workspace identity and proposed title.
-   * @returns the updated Workspace projection.
+   * @param principal - transport-verified caller, when authenticated.
+   * @returns the updated authorized Workspace projection.
    */
-  rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue> {
+  rename(
+    request: WorkspaceRenameRequest,
+    principal: AuthenticatedPrincipal | undefined,
+  ): Promise<WorkspaceValue> {
     const title = request.title.trim()
     if (title === '') {
       return Promise.reject(new RemoteError('gateway/bad-request', 'Workspace rename requires a non-blank title', {}))
     }
     return this.enqueue(async () => {
       const workspace = this.requireWorkspace(request.workspaceId)
+      const access = await this.authorizeWorkspace(workspace, principal)
       if (title !== workspace.title) {
         if (this.ctx.workspaceRegistry.list().some(candidate =>
           candidate.id !== workspace.id && candidate.title === title)) {
@@ -80,17 +109,25 @@ export class WorkspaceCommands {
         }
         await workspace.setTitle(title)
       }
-      return { workspace: workspaceView(workspace) }
+      return {
+        workspace: principalWorkspaceView(workspaceView(workspace), access.readableSessionIds),
+      }
     })
   }
 
   /**
    * Delete one Workspace registration without deleting its directory or Sessions.
    * @param request - Workspace identity to remove.
+   * @param principal - transport-verified caller, when authenticated.
    * @returns deletion confirmation.
    */
-  delete(request: WorkspaceDeleteRequest): Promise<WorkspaceDeleteValue> {
+  delete(
+    request: WorkspaceDeleteRequest,
+    principal: AuthenticatedPrincipal | undefined,
+  ): Promise<WorkspaceDeleteValue> {
     return this.enqueue(async () => {
+      const workspace = this.requireWorkspace(request.workspaceId)
+      await this.authorizeWorkspace(workspace, principal)
       if (!await this.ctx.workspaceRegistry.delete(WorkspaceId(request.workspaceId))) {
         throw workspaceNotFound(request.workspaceId)
       }
@@ -101,17 +138,36 @@ export class WorkspaceCommands {
   /**
    * Move one Workspace within the durable registry order.
    * @param request - moved Workspace and optional anchor.
-   * @returns the complete resulting Workspace order.
+   * @param principal - transport-verified caller, when authenticated.
+   * @returns the readable subset of the resulting Workspace order.
    */
-  async insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue> {
+  async insertBefore(
+    request: WorkspaceInsertBeforeRequest,
+    principal: AuthenticatedPrincipal | undefined,
+  ): Promise<WorkspaceOrderValue> {
+    const exactWorkspaceIds = [
+      request.workspaceId,
+      ...request.beforeWorkspaceId === undefined ? [] : [request.beforeWorkspaceId],
+    ]
+    const access = await this.authorize(
+      principal,
+      {
+        workspaceIds: unique([
+          ...this.ctx.workspaceRegistry.list().map(workspace => workspace.id),
+          ...exactWorkspaceIds,
+        ]),
+      },
+      exactWorkspaceIds.map(id => ({ kind: 'workspace' as const, id })),
+      hiddenResource,
+    )
     try {
       const workspaceIds = await this.ctx.workspaceRegistry.insertBefore(
         WorkspaceId(request.workspaceId),
-        request.beforeWorkspaceId === undefined
-          ? undefined
-          : WorkspaceId(request.beforeWorkspaceId),
+        request.beforeWorkspaceId === undefined ? undefined : WorkspaceId(request.beforeWorkspaceId),
       )
-      return { workspaceIds: [...workspaceIds] }
+      return {
+        workspaceIds: workspaceIds.filter(workspaceId => access.readableWorkspaceIds.has(workspaceId)),
+      }
     } catch (error) {
       if (!(error instanceof WorkspaceOrderInvalidError)) throw error
       throw workspaceNotFound(error.workspaceId)
@@ -121,10 +177,30 @@ export class WorkspaceCommands {
   /**
    * Move one accounted Session within a Workspace's manual order.
    * @param request - Workspace, Session, and optional anchor identities.
-   * @returns the updated Workspace projection.
+   * @param principal - transport-verified caller, when authenticated.
+   * @returns the updated authorized Workspace projection.
    */
-  async insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue> {
+  async insertSessionBefore(
+    request: WorkspaceInsertSessionBeforeRequest,
+    principal: AuthenticatedPrincipal | undefined,
+  ): Promise<WorkspaceValue> {
     const workspace = this.requireWorkspace(request.workspaceId)
+    const exactSessionIds = [
+      request.sessionId,
+      ...request.beforeSessionId === undefined ? [] : [request.beforeSessionId],
+    ]
+    const access = await this.authorize(
+      principal,
+      {
+        workspaceIds: [workspace.id],
+        sessionIds: unique([...workspace.sessionIds, ...exactSessionIds]),
+      },
+      [
+        { kind: 'workspace', id: workspace.id },
+        ...exactSessionIds.map(id => ({ kind: 'session' as const, id })),
+      ],
+      hiddenResource,
+    )
     try {
       await workspace.insertSessionBefore(request.sessionId, request.beforeSessionId)
     } catch (error) {
@@ -135,29 +211,81 @@ export class WorkspaceCommands {
         {
           workspaceId: request.workspaceId,
           sessionId: request.sessionId,
-          ...request.beforeSessionId === undefined
-            ? {}
-            : { beforeSessionId: request.beforeSessionId },
+          ...request.beforeSessionId === undefined ? {} : { beforeSessionId: request.beforeSessionId },
         },
         { cause: error },
       )
     }
-    return { workspace: workspaceView(workspace) }
+    return {
+      workspace: principalWorkspaceView(workspaceView(workspace), access.readableSessionIds),
+    }
   }
 
   /**
    * Add one known Session to the registry-global archive set.
    * @param request - Session identity to archive.
-   * @returns the complete resulting archive set.
+   * @param principal - transport-verified caller, when authenticated.
+   * @returns the readable subset of the resulting archive set.
    */
-  async archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+  async archiveSession(
+    request: WorkspaceArchiveSessionRequest,
+    principal: AuthenticatedPrincipal | undefined,
+  ): Promise<WorkspaceArchiveValue> {
+    const access = await this.authorize(
+      principal,
+      {
+        sessionIds: unique([
+          ...this.ctx.workspaceRegistry.archivedSessionIds,
+          request.sessionId,
+        ]),
+      },
+      [{ kind: 'session', id: request.sessionId }],
+      hiddenResource,
+    )
     try {
       await this.ctx.workspaceRegistry.archiveSession(request.sessionId)
     } catch (error) {
       if (!(error instanceof WorkspaceUnknownSessionError)) throw error
-      throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
+      throw sessionNotFound(request.sessionId, error.message, error)
     }
-    return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
+    return {
+      archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds]
+        .filter(sessionId => access.readableSessionIds.has(sessionId)),
+    }
+  }
+
+  private authorizeWorkspace(
+    workspace: Workspace,
+    principal: AuthenticatedPrincipal | undefined,
+    denied: (subject: PrincipalAccessSubject) => RemoteError = hiddenResource,
+  ): Promise<PrincipalAccessResult> {
+    return this.authorize(
+      principal,
+      { workspaceIds: [workspace.id], sessionIds: workspace.sessionIds },
+      [{ kind: 'workspace', id: workspace.id }],
+      denied,
+    )
+  }
+
+  private async authorize(
+    principal: AuthenticatedPrincipal | undefined,
+    subjects: PrincipalAccessSubjects,
+    exactSubjects: readonly PrincipalAccessSubject[],
+    denied: (subject: PrincipalAccessSubject) => RemoteError,
+  ): Promise<PrincipalAccessResult> {
+    try {
+      const access = await resolvePrincipalAccess(this.ctx, principal, subjects)
+      for (const subject of exactSubjects) requirePrincipalAccess(access, subject)
+      return access
+    } catch (error) {
+      if (!isSubjectDenied(error)) throw error
+      const deniedSubject = error.subject
+      const subject = deniedSubject === undefined
+        ? exactSubjects[0]
+        : exactSubjects.find(candidate => sameSubject(candidate, deniedSubject)) ?? exactSubjects[0]
+      if (subject === undefined) throw error
+      throw denied(subject)
+    }
   }
 
   private requireWorkspace(workspaceId: WorkspaceId): Workspace {
@@ -173,11 +301,45 @@ export class WorkspaceCommands {
   }
 }
 
-function workspaceNotFound(workspaceId: WorkspaceId): RemoteError<'workspace/not-found'> {
+function unique<T>(values: readonly T[]): T[] {
+  return [...new Set(values)]
+}
+
+function isSubjectDenied(error: unknown): error is PrincipalAccessDeniedError {
+  return error instanceof PrincipalAccessDeniedError && error.reason === 'subject-denied'
+}
+
+function hiddenResource(subject: PrincipalAccessSubject): RemoteError {
+  return subject.kind === 'workspace' ? workspaceNotFound(subject.id) : sessionNotFound(subject.id)
+}
+
+function sameSubject(left: PrincipalAccessSubject, right: PrincipalAccessSubject): boolean {
+  return left.kind === right.kind && left.id === right.id
+}
+
+function invalidWorkspacePath(path: string, error?: unknown): RemoteError<'workspace/invalid-path'> {
   return new RemoteError(
-    'workspace/not-found',
-    `Workspace "${workspaceId}" not found`,
-    { workspaceId },
+    'workspace/invalid-path',
+    `cannot create a Workspace at "${path}"${error === undefined ? '' : `: ${errorMessage(error)}`}`,
+    { path },
+    error === undefined ? undefined : { cause: error },
+  )
+}
+
+function workspaceNotFound(workspaceId: WorkspaceId): RemoteError<'workspace/not-found'> {
+  return new RemoteError('workspace/not-found', `Workspace "${workspaceId}" not found`, { workspaceId })
+}
+
+function sessionNotFound(
+  sessionId: WorkspaceArchiveSessionRequest['sessionId'],
+  message = `Session "${sessionId}" not found`,
+  cause?: unknown,
+): RemoteError<'session/not-found'> {
+  return new RemoteError(
+    'session/not-found',
+    message,
+    { sessionId },
+    cause === undefined ? undefined : { cause },
   )
 }
 

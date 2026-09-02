@@ -11,7 +11,7 @@
 
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { ObjectJsonSchema, ToolRestriction } from '@deepseek-ai/dsh-tools'
 import type { SubagentDescriptorData } from './descriptor.ts'
@@ -103,6 +103,8 @@ export interface SubagentStartRequest {
   readonly label?: string
   /** Content delivered as the child's user message. */
   readonly prompt: ContentBlock[]
+  /** Authenticated owner of the delegating model step, persisted on the child's prompt. */
+  readonly principal?: AuthenticatedPrincipal
   /**
    * The spawning agent. In-process providers derive workspace, lineage, and
    * delegation depth from its durable session state. ACP reads only its cwd,

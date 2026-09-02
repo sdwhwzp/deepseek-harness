@@ -46,6 +46,8 @@ kind: "package-reference"
 
 一次性子 agent 只运行一次，并以单个结果结算，可附带可选的结构化输出与失败时的安全诊断。启动请求可以通过 `agentOptions` 覆盖子 Agent 的提供方、模型、推理等级与输出 token 上限；每个请求的选项都要求提供方声明对应能力。可继续子 agent 保留持久会话并按顺序接受后续消息：调用方收到稳定的子 agent id、发送相邻 Agent 消息，并可中断当前轮次而不销毁子 agent。工具行的 `backgroundMode` 选择形态（默认 `one-shot`，或在支持的提供方上使用 `continuable`）。
 
+child 启动时会把父级工具执行的认证 principal 快照到 child prompt。可继续 follow-up 记住每条已接纳消息附带的 principal；父级报告、结算消息、浏览器 prompt、控制操作与冷恢复都会传播该 principal，而不读取可变的 Session 或连接身份。
+
 ### 消息、中断与发现
 
 每个确切在线 Agent 都可以对直接可继续 child 使用 `sendMessage()`；驻留的可继续 child 还可以对自己的直接 parent 使用它。正在工作的目标通过 Steer 在最近 step 接收消息；空闲目标启动轮次，且只有直接 child 可以冷恢复。parent 也可以随时中断正在运行的后代或列举自己的子级。浏览器发出的继续执行 prompt 可以携带图片部分：Host 先通过附件存储完成整批图片的准入与持久化，子级 inbox 才接受这条消息；当子级声明的模型不接受图片输入时拒绝投递。发现覆盖两种形态：服务列举直接子级与完整后代树——模式、活动状态与血缘——直接读取在线会话状态与可选持久化，不加载任何子 agent。

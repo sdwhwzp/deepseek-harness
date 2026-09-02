@@ -34,7 +34,9 @@ import { admitPromptContent } from '@deepseek-ai/dsh-attachment'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
-import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-api-gateway/types'
+import { resolvePrincipalAccess } from '@deepseek-ai/dsh-principal-access'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
@@ -263,6 +265,7 @@ export class SubagentRuntime extends TypertRemoteService {
    * @param content - host-authored content to deliver.
    * @param source - durable host-protocol provenance.
    * @param signal - caller cancellation before inbox acceptance.
+   * @param principal - authenticated owner of the Host request.
    * @returns the accepted message's inbox id.
    */
   private [queueSubagentPrompt](
@@ -271,8 +274,9 @@ export class SubagentRuntime extends TypertRemoteService {
     content: ContentBlock[],
     source: MessageSource,
     signal: AbortSignal,
+    principal?: AuthenticatedPrincipal,
   ): Promise<MessageId> {
-    return this.requireContinuations().queuePrompt(parent, childId, content, source, signal)
+    return this.requireContinuations().queuePrompt(parent, childId, content, source, signal, principal)
   }
 
   /**
@@ -383,6 +387,7 @@ export class SubagentRuntime extends TypertRemoteService {
   @Remote('list')
   async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog> {
     validateControlRequest('subagent.list', { parentSessionId })
+    await this.requireReadableParent(parentSessionId, signal)
     try {
       return catalogView(this.ctx, parentSessionId, await this.listChildren(parentSessionId, signal))
     } catch (error: unknown) {
@@ -410,6 +415,8 @@ export class SubagentRuntime extends TypertRemoteService {
   async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt> {
     const { parentSessionId, childSessionId, clientTimeZone } = request
     validateControlRequest('subagent.prompt', request)
+    const principal = this.currentPrincipal()
+    await this.requireReadableParent(parentSessionId, signal, principal)
     const canonicalTimeZone = clientTimeZone === undefined
       ? undefined
       : canonicalClientTimeZone(clientTimeZone)
@@ -451,6 +458,7 @@ export class SubagentRuntime extends TypertRemoteService {
           content,
           source,
           signal,
+          principal,
         ),
       }
     } catch (error: unknown) {
@@ -473,12 +481,13 @@ export class SubagentRuntime extends TypertRemoteService {
    *   otherwise `gateway/internal`.
    */
   @Remote('interruptByParent')
-  interruptByParent(
+  async interruptByParent(
     childSessionId: SessionId,
     parentSessionId: SessionId,
     mode: 'continuable',
-  ): SubagentInterruptReceipt {
+  ): Promise<SubagentInterruptReceipt> {
     validateControlRequest('subagent.interrupt', { childSessionId, parentSessionId, mode })
+    await this.requireReadableParent(parentSessionId, undefined, this.currentPrincipal())
     try {
       this.interrupt(childSessionId, { kind: 'user', parentSessionId })
     } catch (error: unknown) {
@@ -493,6 +502,29 @@ export class SubagentRuntime extends TypertRemoteService {
       throw new RemoteError('gateway/internal', 'subagent interrupt failed', {}, { cause: error })
     }
     return { accepted: true }
+  }
+
+  private currentPrincipal(): AuthenticatedPrincipal | undefined {
+    return this.ctx.get('typertGateway')?.currentPrincipal()
+  }
+
+  private async requireReadableParent(
+    parentSessionId: SessionId,
+    signal?: AbortSignal,
+    principal = this.currentPrincipal(),
+  ): Promise<void> {
+    const access = await resolvePrincipalAccess(
+      this.ctx,
+      principal,
+      { sessionIds: [parentSessionId] },
+      signal,
+    )
+    if (access.readableSessionIds.has(parentSessionId)) return
+    throw new RemoteError(
+      'session/not-found',
+      `session "${parentSessionId}" not found`,
+      { sessionId: parentSessionId },
+    )
   }
 
   /**

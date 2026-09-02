@@ -7,7 +7,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { LlmCallConfig, LlmFailure, ReasoningEffortId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, LlmCallConfig, LlmFailure, ReasoningEffortId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { AgentCancelCause, Session, UserMessage } from '@deepseek-ai/dsh-session'
 export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
 import type { Inbox } from './inbox.ts'
@@ -229,26 +229,28 @@ declare module '@deepseek-ai/cordis' {
      * `next()` preserves the current messages.
      * @param payload.agent - the agent proposing the step.
      * @param payload.messages - messages removed from the inbox for this step.
+     * @param payload.principal - the authenticated caller owning the proposed step, when present.
      * @param payload.turn - the turn that will own the step.
      * @param payload.step - the step proposed by the loop.
      * @param payload.signal - the current turn's cancellation signal.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
      * @mode waterfall
      */
-    'agent/pre-step'(this: Scoped<Agent>, payload: { agent: Agent; messages: UserMessage[]; turn: number; step: number; signal: AbortSignal }, next: () => Promise<PreStepDecision>): Promise<PreStepDecision>
+    'agent/pre-step'(this: Scoped<Agent>, payload: { agent: Agent; messages: UserMessage[]; principal?: AuthenticatedPrincipal; turn: number; step: number; signal: AbortSignal }, next: () => Promise<PreStepDecision>): Promise<PreStepDecision>
     /**
      * Replace the frozen call configuration. `await next()` yields the config
      * the machine would use (agent options on the first request, the logged
      * header afterwards); return a replacement to switch. Model-visible
      * content must use logged channels; this waterfall cannot mutate messages.
      * @param payload.agent - the agent making the model call.
+     * @param payload.principal - the authenticated caller owning the request, when present.
      * @param payload.turn - the open turn number.
      * @param payload.step - the step whose request this is.
      * @param payload.signal - the current turn's explicit abort signal.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
      * @mode waterfall
     */
-    'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
+    'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; principal?: AuthenticatedPrincipal; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
     /**
      * Handle one failed model-request attempt before the loop retries or closes
      * its step. A listener returns `{ kind: 'retry' }` without calling `next()`
@@ -273,9 +275,10 @@ declare module '@deepseek-ai/cordis' {
      * turn. Data decides, so listener order cannot change the outcome. The
      * inverse control (stop a tool loop early) is data too: a tool result
      * carrying `concludesTurn` ends the turn at its step. The conclusion
-     * never short-circuits already-submitted next-step work: same-step
-     * `additionalContexts` or racing steering still runs, and the turn
-     * closes only when that inbox drains.
+     * never short-circuits already-submitted next-step work in the turn's
+     * principal group: same-step `additionalContexts` or matching steering
+     * still runs. Input for another authenticated or anonymous principal stays
+     * pending for a later turn.
      * @param payload.agent - the agent whose turn is at its stop boundary.
      * @param payload.turn - the turn about to close.
      * @param payload.signal - the current turn's explicit abort signal.

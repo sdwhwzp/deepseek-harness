@@ -29,6 +29,12 @@
       "path": "../../host/webserver"
     },
     {
+      "path": "../../identity/principal-access"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
       "path": "../../typert/protocol"
     },
     {

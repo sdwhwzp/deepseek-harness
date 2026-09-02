@@ -17,11 +17,13 @@
     "src/history.ts",
     "src/list.ts",
     "src/model-selection-projection.ts",
+    "src/principal-access.ts",
     "src/skill-catalog.ts"
   ],
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
+    { "path": "../gateway/tsconfig.host.json" },
     { "path": "../../core/agent" },
     { "path": "../../core/agent-default-model" },
     { "path": "../../core/scope" },
@@ -31,6 +33,7 @@
     { "path": "../../interaction/permission-presets" },
     { "path": "../../jobs/jobs" },
     { "path": "../../llm/llm" },
+    { "path": "../../identity/principal-access" },
     { "path": "../../util/deque" },
     { "path": "../../util/native-command" },
     { "path": "../../preset/agent-presets" },

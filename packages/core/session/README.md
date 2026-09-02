@@ -47,7 +47,7 @@ session.append('user/message', { role: 'user', content: [{ type: 'text', text: '
 session.deriveMessages()         // the derived model history
 ```
 
-Surface events (`user/message`, `assistant/message`, `tool/result`) must declare how they join the ordered surface; raw chunks, boundaries, and other log-only events never produce a message.
+Surface events (`user/message`, `assistant/message`, `tool/result`) must declare how they join the ordered surface; raw chunks, boundaries, and other log-only events never produce a message. A transport-authenticated caller is stored on its `user/message`, `turn/start`, and `step/start` facts, so queued execution, replay, tools, and accounting reconstruct the admitted principal without mutable Session identity. Historical events without this optional field remain valid.
 
 ### Read the log
 

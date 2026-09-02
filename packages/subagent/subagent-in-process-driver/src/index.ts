@@ -147,6 +147,7 @@ export async function startInProcessRun(
     childId,
     activationBoundary,
     structured,
+    request.principal,
   )
 }
 
@@ -161,6 +162,7 @@ function drivePublishedRun(
   childId: SessionId,
   boundary: SessionLogOffsetType,
   structured: StructuredAttachment | undefined,
+  principal: ResolvedSubagentStartRequest['principal'],
 ): SubagentRun {
   const child = handle.agent
   const flags = { cancelled: false }
@@ -177,7 +179,11 @@ function drivePublishedRun(
   const result: Promise<SubagentResult> = (async () => {
     try {
       if (!flags.cancelled) {
-        child.followup(createUserMessage({ content: prompt, source: { kind: 'user' } }))
+        child.followup(createUserMessage({
+          content: prompt,
+          source: { kind: 'user' },
+          ...principal === undefined ? {} : { principal },
+        }))
         await child.whenIdle()
       }
       return readResult(

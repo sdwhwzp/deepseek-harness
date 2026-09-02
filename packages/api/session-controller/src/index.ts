@@ -3,6 +3,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { errorChain } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
+import { resolvePrincipalAccess } from '@deepseek-ai/dsh-principal-access'
 import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
@@ -21,6 +23,7 @@ import { ApiSessionList, DEFAULT_COLD_BLANK_PROBE_MAX_BYTES } from './list.ts'
 import { buildModelCatalog } from './catalog.ts'
 import { installModelSelectionProjection } from './model-selection-projection.ts'
 import { SessionSkillCatalog } from './skill-catalog.ts'
+import { currentRequestPrincipal, requireReadableSession } from './principal-access.ts'
 import type {
   ModelCatalog,
   SessionAttachmentRequest,
@@ -212,7 +215,13 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('list')
   async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
-    return { items: await this.listState.list(signal) }
+    const principal = this.currentPrincipal()
+    return {
+      items: await this.listState.list(
+        signal,
+        sessionIds => this.resolveReadableSessionIds(principal, sessionIds, signal),
+      ),
+    }
   }
 
   /**
@@ -223,7 +232,12 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('search')
   search(request: SessionSearchRequest, signal: AbortSignal): Promise<SessionSearchValue> {
-    return this.listState.search(request.query, signal)
+    const principal = this.currentPrincipal()
+    return this.listState.search(
+      request.query,
+      signal,
+      sessionIds => this.resolveReadableSessionIds(principal, sessionIds, signal),
+    )
   }
 
   /**
@@ -242,7 +256,8 @@ export class SessionController extends TypertRemoteService {
    * @returns the normalized selection installed for the Session.
    */
   @Remote('selectModel')
-  selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue> {
+  async selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue> {
+    await requireReadableSession(this.ctx, request.sessionId, this.currentPrincipal())
     return this.commands.selectModel(request)
   }
 
@@ -284,6 +299,7 @@ export class SessionController extends TypertRemoteService {
       )
     }
     signal.throwIfAborted()
+    await requireReadableSession(this.ctx, request.sessionId, this.currentPrincipal(), signal)
     try {
       await this.openPath(request.path, signal)
       return { opened: true }
@@ -303,7 +319,8 @@ export class SessionController extends TypertRemoteService {
    * @returns the accepted title and durable event sequence.
    */
   @Remote('rename')
-  rename(request: SessionRenameRequest): Promise<SessionRenameValue> {
+  async rename(request: SessionRenameRequest): Promise<SessionRenameValue> {
+    await requireReadableSession(this.ctx, request.sessionId, this.currentPrincipal())
     return this.commands.rename(request)
   }
 
@@ -313,7 +330,8 @@ export class SessionController extends TypertRemoteService {
    * @returns the new Session identity.
    */
   @Remote('fork')
-  fork(request: SessionForkRequest): Promise<SessionForkValue> {
+  async fork(request: SessionForkRequest): Promise<SessionForkValue> {
+    await requireReadableSession(this.ctx, request.sessionId, this.currentPrincipal())
     return this.commands.fork(request)
   }
 
@@ -324,9 +342,11 @@ export class SessionController extends TypertRemoteService {
    * @returns acknowledgement that the Agent accepted the prompt.
    */
   @Remote('prompt')
-  prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue> {
+  async prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue> {
     signal.throwIfAborted()
-    return this.commands.prompt(request)
+    const principal = this.currentPrincipal()
+    await requireReadableSession(this.ctx, request.sessionId, principal, signal)
+    return this.commands.prompt(request, principal)
   }
 
   /**
@@ -335,7 +355,8 @@ export class SessionController extends TypertRemoteService {
    * @returns the durable attachment reference and base64-encoded bytes.
    */
   @Remote('attachment')
-  attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue> {
+  async attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue> {
+    await requireReadableSession(this.ctx, request.sessionId, this.currentPrincipal())
     return this.commands.attachment(request)
   }
 
@@ -345,7 +366,8 @@ export class SessionController extends TypertRemoteService {
    * @returns acknowledgement that the queue mutation was applied.
    */
   @Remote('updateQueue')
-  updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue {
+  async updateQueue(request: SessionUpdateQueueRequest): Promise<SessionUpdateQueueValue> {
+    await requireReadableSession(this.ctx, request.sessionId, this.currentPrincipal())
     return this.commands.updateQueue(request)
   }
 
@@ -355,7 +377,8 @@ export class SessionController extends TypertRemoteService {
    * @returns acknowledgement that cancellation was requested.
    */
   @Remote('cancel')
-  cancel(request: SessionCancelRequest): SessionCancelValue {
+  async cancel(request: SessionCancelRequest): Promise<SessionCancelValue> {
+    await requireReadableSession(this.ctx, request.sessionId, this.currentPrincipal())
     return this.commands.cancel(request)
   }
 
@@ -366,7 +389,8 @@ export class SessionController extends TypertRemoteService {
    * @returns one chronological page.
    */
   @Remote('page')
-  page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionPage> {
+  async page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionPage> {
+    await this.requireReadableAddress(request.address, this.currentPrincipal(), signal)
     return this.history.page(request, signal)
   }
 
@@ -378,7 +402,7 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote({ mode: 'stream' })
   follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
-    return this.history.follow(request, signal)
+    return this.authorizedFollow(request, this.currentPrincipal(), signal)
   }
 
   /**
@@ -388,9 +412,100 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote({ mode: 'stream' })
   control(signal: AbortSignal): AsyncIterable<SessionControlFrame> {
-    return this.controlState.control(signal)
+    return this.authorizedControl(this.currentPrincipal(), signal)
   }
 
+  private currentPrincipal(): AuthenticatedPrincipal | undefined {
+    return currentRequestPrincipal(this.ctx)
+  }
+
+  private async resolveReadableSessionIds(
+    principal: AuthenticatedPrincipal | undefined,
+    sessionIds: readonly SessionId[],
+    signal: AbortSignal,
+  ): Promise<ReadonlySet<SessionId>> {
+    return (await resolvePrincipalAccess(this.ctx, principal, { sessionIds }, signal)).readableSessionIds
+  }
+
+  private async requireReadableAddress(
+    address: SessionFollowRequest['address'],
+    principal: AuthenticatedPrincipal | undefined,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const sessionId = address.kind === 'session' ? address.sessionId : address.parentSessionId
+    const readable = await this.resolveReadableSessionIds(principal, [sessionId], signal)
+    if (readable.has(sessionId)) return
+    if (address.kind === 'session') {
+      throw new RemoteError('session/not-found', `session "${address.sessionId}" not found`, {
+        sessionId: address.sessionId,
+      })
+    }
+    throw new RemoteError('subagent/not-found', 'subagent is unavailable', {
+      parentSessionId: address.parentSessionId,
+      childSessionId: address.childSessionId,
+    })
+  }
+
+  private async *authorizedFollow(
+    request: SessionFollowRequest,
+    principal: AuthenticatedPrincipal | undefined,
+    signal: AbortSignal,
+  ): AsyncIterable<SessionFollowFrame> {
+    await this.requireReadableAddress(request.address, principal, signal)
+    for await (const frame of this.history.follow(request, signal)) {
+      await this.requireReadableAddress(request.address, principal, signal)
+      yield frame
+    }
+  }
+
+  private async *authorizedControl(
+    principal: AuthenticatedPrincipal | undefined,
+    signal: AbortSignal,
+  ): AsyncIterable<SessionControlFrame> {
+    for await (const frame of this.controlState.control(signal)) {
+      if (frame.type === 'baseline') {
+        const sessionIds = controlBaselineSessionIds(frame.value)
+        const readable = await this.resolveReadableSessionIds(principal, sessionIds, signal)
+        yield { type: 'baseline', value: filterControlBaseline(frame.value, readable) }
+        continue
+      }
+      const readable = await this.resolveReadableSessionIds(principal, [frame.sessionId], signal)
+      if (readable.has(frame.sessionId)) yield frame
+    }
+  }
+
+}
+
+function controlBaselineSessionIds(
+  baseline: Extract<SessionControlFrame, { readonly type: 'baseline' }>['value'],
+): SessionId[] {
+  return [...new Set([
+    ...Object.keys(baseline.queues),
+    ...Object.keys(baseline.jobs),
+    ...Object.keys(baseline.projections),
+  ] as SessionId[])]
+}
+
+function filterRecord<T>(
+  source: Readonly<Record<SessionId, T>>,
+  readable: ReadonlySet<SessionId>,
+): Readonly<Record<SessionId, T>> {
+  const filtered = Object.create(null) as Record<SessionId, T>
+  for (const sessionId of Object.keys(source) as SessionId[]) {
+    if (readable.has(sessionId)) filtered[sessionId] = source[sessionId] as T
+  }
+  return filtered
+}
+
+function filterControlBaseline(
+  baseline: Extract<SessionControlFrame, { readonly type: 'baseline' }>['value'],
+  readable: ReadonlySet<SessionId>,
+): Extract<SessionControlFrame, { readonly type: 'baseline' }>['value'] {
+  return {
+    queues: filterRecord(baseline.queues, readable),
+    jobs: filterRecord(baseline.jobs, readable),
+    projections: filterRecord(baseline.projections, readable),
+  }
 }
 
 export { buildModelCatalog }

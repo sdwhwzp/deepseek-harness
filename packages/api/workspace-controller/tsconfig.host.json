@@ -10,12 +10,16 @@
     "src/types.ts",
     "src/commands.ts",
     "src/directory-picker.ts",
-    "src/feed.ts"
+    "src/feed.ts",
+    "src/principal-feed.ts"
   ],
   "references": [
     { "path": "../../../vendor/cordis" },
+    { "path": "../gateway/tsconfig.host.json" },
     { "path": "../../core/session" },
     { "path": "../../host/directory-picker" },
+    { "path": "../../identity/principal-access" },
+    { "path": "../../llm/llm" },
     { "path": "../../storage/storage-domain" },
     { "path": "../../typert/protocol" },
     { "path": "../../util/deque" },
