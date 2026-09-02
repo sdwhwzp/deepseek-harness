@@ -152,6 +152,8 @@ interface InvokeRemoteRequest {
   readonly args: Readonly<Record<string, unknown>>
   /** Carrier or direct-caller cancellation injected only into cancellation-aware methods. */
   readonly signal?: AbortSignal
+  /** Host-only verified identity; browser payloads never populate this field. */
+  readonly principal?: AuthenticatedPrincipal
 }
 ```
 
@@ -180,6 +182,11 @@ type TypertGatewayErrorCode =
 ```ts type-equiv
 /** Host dispatcher consumed by Connection adapters. */
 interface TypertGateway {
+  /**
+   * Return the transport-verified principal for the active Remote call.
+   * @returns the scoped caller, or undefined outside authenticated dispatch.
+   */
+  currentPrincipal(): AuthenticatedPrincipal | undefined
   /** Carrier adapter shared by WebSocket and in-process transports. */
   readonly wireStream: TypertGatewayWireStream
   /**

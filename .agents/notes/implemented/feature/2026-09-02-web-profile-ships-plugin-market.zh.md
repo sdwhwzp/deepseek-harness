@@ -14,6 +14,12 @@ Status: implemented
 
 该确定版本不受仓库最小发布时长策略限制，因此有意更新随附市场的部署可以立即安装已评审的版本。
 
+## Alternatives considered
+
+**保留手动安装。** 这样每台新机器在管理员重复执行本机操作前都不包含市场，因此无法从源码复现本 fork 预期的 web profile。
+
+**升级时改写已有 profile。** 这会替换管理员拥有的组合包选择。因此，该模板只在 profile 不存在时应用。
+
 ## Verification
 
 app-boot profile 测试会确认随附 web 模板中包含市场。包、依赖、文档与构建后 profile 检查覆盖运行时解析的依赖和组合后的组合包。

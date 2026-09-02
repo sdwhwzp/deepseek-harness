@@ -11,6 +11,18 @@ kind: "package-reference"
 
 `@deepseek-ai/dsh-principal-access` 定义 Host 专用的 `ctx.principalAccess` Service Definition。它把传输层验证过的 `AuthenticatedPrincipal` 与候选 Session 或 Workspace id 转换为可读子集。认证部署根据权威账户数据提供实现，API 控制器消费该服务。本包不认证请求，也不附带提供方。
 
+## 目录
+
+- [使用本包](#use-this-package)
+- [进一步探索](#further-exploration)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+
 ## 使用本包
 
 针对一批候选项调用一次 `resolvePrincipalAccess(ctx, principal, { sessionIds, workspaceIds }, signal)`。列表与 feed Consumer 使用 `readableSessionIds` 和 `readableWorkspaceIds` 过滤。精确读取把带判别字段的 `{ kind, id }` 传给 `requirePrincipalAccess`；拒绝时抛出 code 为 `PRINCIPAL_ACCESS_DENIED` 的 `PrincipalAccessDeniedError`。展示名称与断言角色不是访问授权。
@@ -27,12 +39,14 @@ kind: "package-reference"
 
 提供方实现 `PrincipalAccessService.resolve`，根据部署自有成员关系数据验证 `(source, id)`，并省略被拒绝的 id。Consumer 在一元调用或 stream 打开时捕获请求 principal，并在该操作期间保留该值。精确读取先授权再加载内容；实时 feed 对 opening baseline 和之后每个按资源寻址的 frame 分别授权。
 
+<a id="further-exploration"></a>
 ## 进一步探索
 
 - [Session Controller](../../api/session-controller/README.zh.md)——Session 列表、搜索、page、follow 与 control Consumer。
 - [消息作用域认证 principal](../../../.agents/notes/implemented/architecture/2026-08-21-message-scoped-authenticated-principals.zh.md)——传输身份传播。
 - [限定 principal 范围的读取授权](../../../.agents/notes/implemented/architecture/2026-08-29-principal-scoped-read-authorization.zh.md)——部署与默认行为决策。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### Principal 访问解析
@@ -51,8 +65,22 @@ kind: "package-reference"
 
 ## 已知限制与延期工作
 
+<a id="known-limitations-and-deferred-work"></a>
+
 以下限制说明部署集成仍须负责的内容。它们是当前约束，而不是任务清单。
 
 - Harness 不附带账户数据库或具体提供方。
 - 本 Service Definition 只授权读取；变更授权仍由拥有该操作的能力负责。
 - 该 seam 没有通用撤销事件。部署特定的即时 stream 终止需要未来的提供方观测 API。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+无。
+
+</details>
+
+**运行时不变式：** 不断言运行时关系。提供方拥有授权数据，且不公开独立观测流。

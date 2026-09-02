@@ -14,6 +14,12 @@ The `dshmarket` plugin market is otherwise installed separately in every machine
 
 The exact release is exempted from the repository's minimum-release-age policy so a deployment that intentionally updates the bundled market can install that reviewed version immediately.
 
+## Alternatives considered
+
+**Keep installation manual.** This leaves every fresh machine without the market until an administrator repeats a machine-local action, so the fork does not reproduce its intended web profile from source.
+
+**Rewrite existing profiles during upgrade.** This would replace administrator-owned bundle choices. The template applies only to a missing profile instead.
+
 ## Verification
 
 The app-boot profile test pins the market in the shipped web template. Package, dependency, documentation, and built-profile checks cover the runtime-resolved dependency and composed bundle.

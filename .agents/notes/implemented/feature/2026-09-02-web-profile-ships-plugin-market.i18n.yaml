@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-02-web-profile-ships-plugin-market.md
-2026-09-02-web-profile-ships-plugin-market.md: 1614df5e89ee42dc8fb39763c1adf7da7448305e
-2026-09-02-web-profile-ships-plugin-market.zh.md: 5bfc1236773f3df6a1ba4f84e47c1c470acac5d7
+2026-09-02-web-profile-ships-plugin-market.md: b7e388c6e8ba776b6213084889520822c47714fc
+2026-09-02-web-profile-ships-plugin-market.zh.md: d74fbab1f59f0022e6b3ef40628971f1024f1c73
