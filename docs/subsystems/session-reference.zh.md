@@ -139,7 +139,7 @@ Host Remote adapter over the composed file-reference provider.
  * @param signal - caller cancellation.
  * @returns deterministic path-only candidates from the composed provider.
  */
-@Remote list( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>
+@Remote async list( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>
 ```
 
 Types: [Agent](core.zh.md)

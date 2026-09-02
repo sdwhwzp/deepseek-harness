@@ -1,11 +1,12 @@
 import { Context } from '@deepseek-ai/cordis'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
 import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
 import { strFromU8, unzipSync } from 'fflate'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   Config,
   SESSION_LOG_EXPORT_PATH,
@@ -39,19 +40,36 @@ function artifact(id: string): SessionRawArtifact {
   }
 }
 
-async function mounted(withServices: boolean): Promise<{
+async function mounted(
+  withServices: boolean,
+  auth?: { readonly principal: AuthenticatedPrincipal; readonly allowed: ReadonlySet<SessionId> },
+): Promise<{
   readonly connection: HostConnectionService
+  readonly readRaw: ReturnType<typeof vi.fn>
   readonly dispose: () => Promise<void>
 }> {
   const ctx = new Context()
   ctx.provide('commands', { register: () => () => {} } as never)
+  if (auth !== undefined) {
+    ctx.provide('requestPrincipal', { authenticate: () => auth.principal })
+    ctx.provide('principalAccess', {
+      resolve: (_principal: AuthenticatedPrincipal, subjects: { sessionIds?: readonly SessionId[] }) =>
+        Promise.resolve({
+          readableSessionIds: new Set(
+            (subjects.sessionIds ?? []).filter(id => auth.allowed.has(id)),
+          ),
+          readableWorkspaceIds: new Set(),
+        }),
+    } as never)
+  }
+  const readRaw = vi.fn(async (id: SessionId) => artifact(String(id)))
   if (withServices) {
     ctx.provide('sessionQuery', {
       traceSession: async () => ({ descendants: [] }),
     } as never)
     ctx.provide('sessionPersistence', {
       supportsRawArtifacts: true,
-      readRaw: async (id: SessionId) => artifact(String(id)),
+      readRaw,
     } as never)
     ctx.provide('attachments', {
       readImage: async () => { throw new Error('fixture has no images') },
@@ -60,7 +78,7 @@ async function mounted(withServices: boolean): Promise<{
   const connection = new HostConnectionService(ctx, [], {} as BrowserAuth)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber
-  return { connection, dispose: () => fiber.dispose() }
+  return { connection, readRaw, dispose: () => fiber.dispose() }
 }
 
 describe('Session log export Fetch route', () => {
@@ -100,6 +118,23 @@ describe('Session log export Fetch route', () => {
     expect((await shared.fetch(new Request(
       `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1`,
     ))).status).toBe(500)
+    await dispose()
+  })
+
+  it('returns 404 before reading a principal-hidden raw Session artifact', async () => {
+    const principal: AuthenticatedPrincipal = {
+      source: 'fixture', id: 'alice', username: 'Alice', role: 'user',
+    }
+    const { connection, readRaw, dispose } = await mounted(true, {
+      principal,
+      allowed: new Set(),
+    })
+
+    const response = await connection.createSharedFetchHandler('/api').fetch(new Request(
+      `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=hidden`,
+    ))
+    expect(response.status).toBe(404)
+    expect(readRaw).not.toHaveBeenCalled()
     await dispose()
   })
 

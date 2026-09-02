@@ -47,7 +47,7 @@ session.append('user/message', { role: 'user', content: [{ type: 'text', text: '
 session.deriveMessages()         // the derived model history
 ```
 
-表层事件（`user/message`、`assistant/message`、`tool/result`）必须声明如何进入有序 surface；原始分片、边界与其他仅日志事件从不产生消息。
+表层事件（`user/message`、`assistant/message`、`tool/result`）必须声明如何进入有序 surface；原始分片、边界与其他仅日志事件从不产生消息。经传输层认证的调用方会记录在自身 `user/message`、`turn/start` 与 `step/start` 事实中，因此排队执行、回放、工具与计费都能重建已准入 principal，而不依赖可变 Session 身份。缺少该可选字段的历史事件仍然有效。
 
 ### 读取日志
 

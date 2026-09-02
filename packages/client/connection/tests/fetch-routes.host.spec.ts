@@ -1,13 +1,16 @@
 import { Context } from '@deepseek-ai/cordis'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it, vi } from 'vitest'
 import type { BrowserAuth } from '../src/browser-auth.ts'
 import { HostConnectionService } from '../src/rpc-host.ts'
+import type { RequestPrincipalProvider } from '../src/rpc.ts'
 
-async function mounted(): Promise<{
+async function mounted(provider?: RequestPrincipalProvider): Promise<{
   readonly connection: HostConnectionService
   readonly dispose: () => Promise<void>
 }> {
   const ctx = new Context()
+  if (provider !== undefined) ctx.provide('requestPrincipal', provider)
   const fiber = ctx.plugin((pluginCtx) => {
     new HostConnectionService(pluginCtx, [], {} as BrowserAuth)
   })
@@ -67,5 +70,50 @@ describe('Connection exact Fetch routes', () => {
       path: '/api/session.export', methods: ['HEAD'], fetch,
     })).not.toThrow()
     await disposeFiber()
+  })
+
+  it('authenticates exact Fetch routes and passes a detached frozen principal', async () => {
+    const supplied = {
+      source: 'gateway', id: 'alice', username: 'Alice', role: 'user', extra: 'ignored',
+    }
+    const provider = vi.fn(() => supplied as AuthenticatedPrincipal)
+    const { connection, dispose } = await mounted({ authenticate: provider })
+    let received: AuthenticatedPrincipal | undefined
+    const route = vi.fn(async (_request: Request, principal: AuthenticatedPrincipal | undefined) => {
+      received = principal
+      return new Response('ok')
+    })
+    connection.fetch.register({
+      path: '/api/session.export', methods: ['GET'], fetch: route,
+    })
+
+    const response = await connection.createSharedFetchHandler('/api').fetch(
+      new Request('http://host/api/session.export', { headers: { 'x-principal': 'alice' } }),
+    )
+    expect(response.status).toBe(200)
+    expect(provider).toHaveBeenCalledOnce()
+    expect(received).toEqual({
+      source: 'gateway', id: 'alice', username: 'Alice', role: 'user',
+    })
+    expect(received).not.toBe(supplied)
+    expect(Object.isFrozen(received)).toBe(true)
+
+    await dispose()
+  })
+
+  it('returns 401 before selecting an exact route when principal authentication fails', async () => {
+    const { connection, dispose } = await mounted({
+      authenticate: () => { throw new Error('signature rejected') },
+    })
+    const route = vi.fn(async () => new Response('leaked'))
+    connection.fetch.register({ path: '/api/session.export', methods: ['GET'], fetch: route })
+
+    const response = await connection.createSharedFetchHandler('/api').fetch(
+      new Request('http://host/api/session.export'),
+    )
+    expect(response.status).toBe(401)
+    expect(route).not.toHaveBeenCalled()
+
+    await dispose()
   })
 })

@@ -67,7 +67,10 @@ export function apply(ctx: Context): void {
         sender,
         brandString<SessionId>(args.agent_id),
         message,
-        { signal: exec.signal },
+        {
+          signal: exec.signal,
+          ...exec.principal === undefined ? {} : { principal: exec.principal },
+        },
       )
       return { messageId }
     },

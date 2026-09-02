@@ -266,6 +266,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Flows are registered by the plugin that knows how to obtain one credential and keyed by the record they write; the seam owns the conversation and the one-attempt-per-key lifecycle, never the protocol.',
   },
   {
+    key: 'principalAccess',
+    pkg: 'principal-access',
+    title: 'Principal-scoped resource authorization',
+    mode: 'seam',
+    implementations: [],
+    consumers: ['api-gateway', 'api-session-controller', 'api-workspace-controller', 'session-log-export'],
+    note: 'Authenticated deployments provide account-backed Session and Workspace readability; API consumers batch exact branded ids and fail closed for incomplete authentication composition.',
+  },
+  {
     key: 'sessionTelemetry',
     pkg: 'session-telemetry',
     title: 'Session telemetry seam',

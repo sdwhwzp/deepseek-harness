@@ -79,7 +79,7 @@ Web bundle 将本包与 Connection、`dsh-commands`、`dsh-client-ui-commands` �
 
 两条入口都会对 `GET /api/session.export?...` 发出 `HEAD` 预检，然后把 GET URL 交给浏览器下载管理器，JavaScript 不缓冲 ZIP。一个控制器按会话持有一项进行中的下载，把并发操作折叠进该任务，并在插件释放时取消预检。弹窗状态存放在按会话键控的快照存储中，因此按钮与命令按会话共享一个弹窗。
 
-Host 路由是业务拥有的精确 Fetch contribution。Connection 应用 Host/Origin 与浏览器会话检查并桥接流式 `Response`；本包拥有查询校验、活动会话 flush、原始产物与附件读取、ZIP 生成和 HTTP 状态语义。
+Host 路由是业务拥有的精确 Fetch contribution。Connection 应用 Host/Origin 以及传输层 principal 或浏览器会话检查，并桥接流式 `Response`；本包拥有查询校验、活动会话 flush、原始产物与附件读取、ZIP 生成和 HTTP 状态语义。该路由在追踪 lineage 之前授权根 Session；请求 descendants 时，会在读取任何产物之前授权完整 descendant 集合。被拒绝与不存在的 Session 使用同一 not-found 响应，并且不会生成部分归档。
 
 </details>
 

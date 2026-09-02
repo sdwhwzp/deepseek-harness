@@ -11,6 +11,7 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
@@ -283,9 +284,13 @@ export class SessionCommandController {
   /**
    * Admit one browser prompt after explicit Agent resume and image validation.
    * @param request - Session identity, prompt content, source metadata, and delivery mode.
+   * @param principal - transport-verified caller owning this prompt, when present.
    * @returns acknowledgement that the Agent accepted the prompt.
    */
-  async prompt(request: SessionPromptRequest): Promise<SessionPromptValue> {
+  async prompt(
+    request: SessionPromptRequest,
+    principal?: AuthenticatedPrincipal,
+  ): Promise<SessionPromptValue> {
     const clientTimeZone = request.clientTimeZone === undefined
       ? undefined
       : canonicalClientTimeZone(request.clientTimeZone)
@@ -325,7 +330,11 @@ export class SessionCommandController {
           }
         }
         const content = await admitPromptContent(this.ctx.attachments, request.content)
-        const message: UserMessage = createUserMessage({ content, source })
+        const message: UserMessage = createUserMessage({
+          content,
+          source,
+          ...principal === undefined ? {} : { principal },
+        })
         if (request.mode === 'steer') agent.steer(message)
         else agent.followup(message)
       } catch (error) {

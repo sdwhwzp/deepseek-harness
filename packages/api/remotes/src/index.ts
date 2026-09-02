@@ -2,6 +2,7 @@
 
 import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {
   TypertRemoteEventDispatch,
   TypertRemoteEventInvocation,
@@ -10,6 +11,8 @@ import type {
 } from '@deepseek-ai/dsh-api-gateway'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import { carrierKeyOf } from '@deepseek-ai/dsh-scope'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { isJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { API_REMOTE_FORWARDED_EVENTS } from './remote-events.ts'
 
@@ -48,7 +51,15 @@ function remoteEventSource(ctx: Context): TypertRemoteEventSource {
     const disposers = API_REMOTE_FORWARDED_EVENTS.map(({ event, mode }) => {
       if (mode === 'emit') {
         return ctx.on(event as never, ((...args: unknown[]) => {
-          queue.push({ event, args: assertJsonArgs(event, args) })
+          const principal = ctx.typertGateway.currentPrincipal()
+          const wireArgs = assertJsonArgs(event, args)
+          const readSubjects = remoteEventReadSubjects(event, wireArgs)
+          queue.push({
+            event,
+            args: wireArgs,
+            ...principal === undefined ? {} : { principal },
+            ...readSubjects === undefined ? {} : { readSubjects },
+          })
         }) as never)
       }
       return ctx.on(event as never, (function (
@@ -67,6 +78,7 @@ function remoteEventSource(ctx: Context): TypertRemoteEventSource {
           event,
           request,
           { value: value as Context, subject },
+          currentAgentPrincipal(subject as Agent),
           next,
         )
       }) as never)
@@ -75,6 +87,23 @@ function remoteEventSource(ctx: Context): TypertRemoteEventSource {
       for (const dispose of disposers) dispose()
     })
   }
+}
+
+/** Identify Session-addressed notifications whose receivers need a fresh read grant. */
+function remoteEventReadSubjects(
+  event: string,
+  args: readonly JsonValue[],
+): { readonly sessionIds: readonly SessionId[] } | undefined {
+  if (event === 'api-session/added') {
+    return { sessionIds: [(args[0] as { readonly sessionId: SessionId }).sessionId] }
+  }
+  if (event === 'api-session/activity'
+    || event === 'api-session/error'
+    || event === 'api-session/removed'
+    || event === 'api-session/status') {
+    return { sessionIds: [args[0] as SessionId] }
+  }
+  return undefined
 }
 
 /** One pull-driven queue bridging synchronous Cordis listeners to an AsyncIterable. */
@@ -134,6 +163,7 @@ function forwardWaterfall(
   event: string,
   request: object,
   context: TypertRemoteEventInvocation['context'],
+  principal: AuthenticatedPrincipal | undefined,
   next: () => unknown,
 ): Promise<unknown> {
   const settled = Promise.withResolvers<unknown>()
@@ -141,6 +171,7 @@ function forwardWaterfall(
     event,
     request,
     context,
+    principal,
     resolve: (outcome: TypertRemoteEventOutcome) => {
       if (outcome.kind === 'result') {
         settled.resolve(outcome.value)
@@ -152,6 +183,16 @@ function forwardWaterfall(
   }
   if (!queue.push(dispatch)) void Promise.resolve().then(next).then(settled.resolve, settled.reject)
   return settled.promise
+}
+
+/** Recover the owner of one live Agent-scoped waterfall from durable open boundaries. */
+function currentAgentPrincipal(agent: Agent): AuthenticatedPrincipal | undefined {
+  const events = agent.session.snapshotEvents()
+  const turn = events.findLast(event => event.type === 'turn/start' || event.type === 'turn/end')
+  if (turn?.type !== 'turn/start') return undefined
+  const step = events.findLast(event => event.type === 'step/start' || event.type === 'step/end')
+  if (step?.type === 'step/start' && step.data.turn === turn.data.turn) return step.data.principal
+  return turn.data.principal
 }
 
 /** Reject an allowlisted event whose runtime arguments are not lossless JSON data. */

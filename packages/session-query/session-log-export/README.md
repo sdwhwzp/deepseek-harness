@@ -79,7 +79,7 @@ The package has two halves. The Host half ([`src/index.ts`](src/index.ts)) regis
 
 Both entry paths issue a `HEAD` preflight to `GET /api/session.export?...`, then hand the GET URL to the browser download manager without buffering the ZIP in JavaScript. One controller owns one in-flight download per session, collapses concurrent gestures into that operation, and cancels the preflight on plugin disposal. Modal state lives in a snapshot store keyed by session, so the button and the command share one dialog per session.
 
-The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, raw artifact and attachment reads, ZIP generation, and HTTP status semantics.
+The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and transport-principal or browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, raw artifact and attachment reads, ZIP generation, and HTTP status semantics. The route authorizes the root Session before tracing lineage and, when descendants are requested, authorizes the complete descendant set before reading any artifact. Denied and absent Sessions share the not-found response, and no partial archive is produced.
 
 </details>
 

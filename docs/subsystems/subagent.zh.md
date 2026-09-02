@@ -643,7 +643,7 @@ listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<Subagen
  *   `subagent/unauthorized` when the address does not own the live target,
  *   otherwise `gateway/internal`.
  */
-@Remote('interruptByParent') interruptByParent( childSessionId: SessionId, parentSessionId: SessionId, mode: 'continuable', ): SubagentInterruptReceipt
+@Remote('interruptByParent') async interruptByParent( childSessionId: SessionId, parentSessionId: SessionId, mode: 'continuable', ): Promise<SubagentInterruptReceipt>
 
 /**
  * Register a provider under its name. Registration is effect-scoped and HMR

@@ -1,6 +1,7 @@
 /** Generic unary RPC contracts shared by the Host and Client Connection halves. */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 
 /** Correlation id minted by a caller and echoed by the Connection response. */
 export type RpcId = Branded<'rpc-id'>
@@ -81,8 +82,36 @@ export interface ConnectionTrustRequest {
   readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>
 }
 
+/** Request facts available to deployment authentication on HTTP and upgrade carriers. */
+export interface ConnectionPrincipalRequest extends ConnectionTrustRequest {
+  /** Carrier method, when the active representation exposes it. */
+  readonly method?: string | undefined
+  /** Carrier URL, when the active representation exposes it. */
+  readonly url?: string | undefined
+}
+
+/** Optional Host authentication provider invoked on transport-owned request facts. */
+export interface RequestPrincipalProvider {
+  /** Verify the carrier authentication data and return its caller identity. */
+  authenticate(
+    request: ConnectionPrincipalRequest,
+  ): AuthenticatedPrincipal | undefined | Promise<AuthenticatedPrincipal | undefined>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Optional deployment-owned request authentication provider. */
+    requestPrincipal: RequestPrincipalProvider
+  }
+}
+
 /** HTTP status returned before dispatch, or undefined when the request may proceed. */
 export type ConnectionRequestRejection = 401 | 403 | undefined
+
+/** Result of the Host/Origin and transport-authentication checks for one request. */
+export type ConnectionRequestAuthorization =
+  | { readonly accepted: true; readonly principal?: AuthenticatedPrincipal }
+  | { readonly accepted: false; readonly status: 401 | 403 }
 
 /** Root/index request facts used by the browser-token exchange. */
 export interface ConnectionIndexRequest extends ConnectionTrustRequest {
@@ -101,6 +130,7 @@ export type ConnectionRpcHandler = (
   endpoint: string,
   payload: unknown,
   signal: AbortSignal,
+  principal: AuthenticatedPrincipal | undefined,
 ) => Promise<ConnectionRpcResult<unknown>>
 
 /** Synchronous ownership test for one endpoint on a shared RPC channel. */
@@ -116,7 +146,10 @@ export interface ConnectionFetchRoute {
   /** Methods this route owns. Other methods continue through normal shared-channel dispatch. */
   readonly methods: readonly ConnectionFetchMethod[]
   /** Handle one request after the physical carrier has applied its trust and authentication policy. */
-  readonly fetch: (request: Request) => Promise<Response>
+  readonly fetch: (
+    request: Request,
+    principal: AuthenticatedPrincipal | undefined,
+  ) => Promise<Response>
 }
 
 /** Host registry for exact Fetch routes that cannot use JSON Remote invocation. */
@@ -171,6 +204,22 @@ export interface HostConnectionHandle {
   createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
 
   /**
+   * Apply the Host/Origin fence and accept either a verified deployment
+   * principal or an authenticated browser session.
+   * @param request - carrier request facts owned by the HTTP or upgrade route.
+   * @returns the accepted caller identity or a rejection status.
+   */
+  authorizeRequest(request: ConnectionPrincipalRequest): Promise<ConnectionRequestAuthorization>
+
+  /**
+   * Authenticate, validate, detach, and freeze one deployment principal.
+   * @param request - carrier request facts owned by the transport.
+   * @returns the verified caller, or undefined when the provider declines the request.
+   * @throws when the configured provider fails or returns invalid identity data.
+   */
+  authenticateRequest(request: ConnectionPrincipalRequest): Promise<AuthenticatedPrincipal | undefined>
+
+  /**
    * Apply Connection's Host/Origin checks and browser authentication to
    * another Web route.
    * @param request - request headers from the HTTP or upgrade request.
@@ -201,7 +250,10 @@ export interface ConnectionFetchHandler {
    * @param request - Fetch request below the shared channel.
    * @returns the registered response or a 404 response.
    */
-  fetch(request: Request): Promise<Response>
+  fetch(
+    request: Request,
+    authorization?: { readonly principal?: AuthenticatedPrincipal },
+  ): Promise<Response>
 }
 
 /** Client caller for logical RPC channels carried by the current transport. */

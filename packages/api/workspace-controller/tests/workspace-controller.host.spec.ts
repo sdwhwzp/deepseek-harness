@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -73,6 +74,31 @@ async function nextFrame(
 }
 
 describe('WorkspaceController commands', () => {
+  it('hides and rejects another principal\'s existing Workspace before mutation', async () => {
+    const { controller, ctx, root } = await harness()
+    const created = await controller.create({ path: stageDir(root, 'private') })
+    const principal: AuthenticatedPrincipal = {
+      source: 'fixture', id: 'alice', username: 'alice', role: 'user',
+    }
+    ctx.provide('typertGateway', { currentPrincipal: () => principal } as never)
+    ctx.provide('principalAccess', {
+      resolve: () => Promise.resolve({
+        readableSessionIds: new Set(),
+        readableWorkspaceIds: new Set(),
+      }),
+    } as never)
+
+    await expect(controller.rename({
+      workspaceId: created.workspace.workspaceId, title: 'leaked',
+    })).rejects.toMatchObject({ code: 'workspace/not-found' })
+    await expect(controller.delete({
+      workspaceId: created.workspace.workspaceId,
+    })).rejects.toMatchObject({ code: 'workspace/not-found' })
+    await expect(controller.create({ path: created.workspace.path }))
+      .rejects.toMatchObject({ code: 'workspace/invalid-path' })
+    expect(ctx.workspaceRegistry.get(created.workspace.workspaceId)?.title).toBe('private')
+  })
+
   it('serializes concurrent path adoption and preserves an existing title', async () => {
     const { controller, root } = await harness()
     const path = stageDir(root, 'alpha')

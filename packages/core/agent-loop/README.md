@@ -72,6 +72,8 @@ const handle = await ctx.agents.create({
 
 Each step sends the agent's rendered system prompt, its visible tool schemas, and the session's derived history; the model's tool calls run through the guarded tool pipeline and every accepted fact is appended to the session log before the next step derives from it. Parallel-safe calls may overlap up to `maxParallelToolCalls`; exclusive calls run alone as ordering barriers. Cancellation is cooperative: `agent.cancel()` aborts the current activity and, unless `keepInbox` is set, clears pending work; a cancelled stream finalizes the text already delivered to the user.
 
+Authenticated user messages are admitted by `(source, id)` group. The first pending caller fixes the complete turn's principal, which is logged on `turn/start` and every `step/start`, supplied to `agent/pre-step` and `agent/request`, and propagated through tool execution. Messages from another authenticated or anonymous user remain queued for a later turn; principal-less plugin context stays neutral and may join the active caller's turn.
+
 -----
 
 <a id="understand-the-implementation"></a>

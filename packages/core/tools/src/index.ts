@@ -8,7 +8,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { AnonymousEntries, NamedEntries, ScopedLayers, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
-import type { ToolCallId, ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, ToolCallId, ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
@@ -316,6 +316,8 @@ export interface ToolExecutionInput {
   readonly arguments: unknown
   /** The agent on whose behalf the call runs (set by the agent loop). */
   readonly agent?: Agent
+  /** Authenticated caller of the model step that requested this call. */
+  readonly principal?: AuthenticatedPrincipal
   /**
    * Opaque token of the enclosing transport execution, when one exists. PTC
    * mode sets this on SDK sub-dispatches so commit-style observers can wait for
@@ -1359,6 +1361,7 @@ export class ToolRuntime extends Service {
     const rootCallId = exec.rootCallId ?? callId
     const name = exec.name
     const agent = exec.agent
+    const principal = exec.principal
     const parent = exec.parent
     const signal = exec.signal
     // Distinguish a mode-collapsed call (visible in the scope, denied only by
@@ -1378,6 +1381,7 @@ export class ToolRuntime extends Service {
       name,
       signal,
       ...agent !== undefined ? { agent } : {},
+      ...principal !== undefined ? { principal } : {},
       ...parent !== undefined ? { parent } : {},
       deferContext(context: UserMessage): void {
         deferredContexts.push(context)

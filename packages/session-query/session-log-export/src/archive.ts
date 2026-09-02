@@ -214,6 +214,7 @@ export function sessionLogZipFilename(sessionId: string): string {
  * @param sessionId - the root session id.
  * @param includeDescendants - whether to include every subagent descendant.
  * @param signal - optional cancellation forwarded to lineage, persistence, and attachment reads.
+ * @param authorizedDescendants - caller-authorized lineage forest, when already resolved.
  * @returns the export entries in zip order.
  */
 export async function* sessionLogZipEntries(
@@ -222,6 +223,7 @@ export async function* sessionLogZipEntries(
   sessionId: SessionId,
   includeDescendants: boolean,
   signal?: AbortSignal,
+  authorizedDescendants?: readonly SessionLineageNode[],
 ): AsyncGenerator<SessionLogZipEntry> {
   const media = new Map<string, ImageAttachmentRef>()
   const rememberMedia = (content: string): void => {
@@ -253,9 +255,9 @@ export async function* sessionLogZipEntries(
         yield* collect(node.descendants)
       }
     }
-    const lineage = await deps.sessionQuery.traceSession(sessionId, signal)
+    const descendants = authorizedDescendants ?? (await deps.sessionQuery.traceSession(sessionId, signal)).descendants
     signal?.throwIfAborted()
-    yield* collect(lineage.descendants)
+    yield* collect(descendants)
   }
   for (const ref of media.values()) {
     signal?.throwIfAborted()
@@ -383,6 +385,7 @@ async function pushArtifactChunks(
  * @param includeDescendants - whether to include every subagent descendant.
  * @param compressionLevel - validated fflate DEFLATE level for every ZIP entry.
  * @param signal - request cancellation combined with response-consumer cancellation.
+ * @param authorizedDescendants - caller-authorized lineage forest, when already resolved.
  * @returns the zip byte stream.
  */
 export function streamSessionLogZip(
@@ -392,6 +395,7 @@ export function streamSessionLogZip(
   includeDescendants: boolean,
   compressionLevel: SessionLogCompressionLevel,
   signal: AbortSignal,
+  authorizedDescendants?: readonly SessionLineageNode[],
 ): ReadableStream<Uint8Array> {
   const consumerAbort = new AbortController()
   const producerSignal = AbortSignal.any([signal, consumerAbort.signal])
@@ -422,7 +426,14 @@ export function streamSessionLogZip(
       zip = archive
       void (async () => {
         try {
-          for await (const entry of sessionLogZipEntries(deps, root, sessionId, includeDescendants, producerSignal)) {
+          for await (const entry of sessionLogZipEntries(
+            deps,
+            root,
+            sessionId,
+            includeDescendants,
+            producerSignal,
+            authorizedDescendants,
+          )) {
             const deflate = new ZipDeflate(entry.path, { level: compressionLevel })
             archive.add(deflate)
             if ('content' in entry) {

@@ -1,11 +1,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
-import SessionStore from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import {
   createSessionTestController,
   createSessionTestRemote,
 } from './test-remote.ts'
+
+const sessionId = SessionId('session-open-path')
 
 async function context(): Promise<Context> {
   const ctx = new Context()
@@ -58,7 +60,7 @@ describe('session/openWorkspacePath', () => {
     })
     const signal = new AbortController().signal
 
-    await expect(remote.openWorkspacePath({ path: '/workspace/project/src/a.ts' }, signal))
+    await expect(remote.openWorkspacePath({ sessionId, path: '/workspace/project/src/a.ts' }, signal))
       .resolves.toEqual({ ok: true, value: { opened: true } })
     expect(openPath).toHaveBeenCalledWith('/workspace/project/src/a.ts', signal)
     expect(ctx.agents.list()).toEqual([])
@@ -73,8 +75,8 @@ describe('session/openWorkspacePath', () => {
       openPath,
     })
 
-    await remote.openWorkspacePath({ path: '/tmp/result.html' })
-    await remote.openWorkspacePath({ path: 'result.html' })
+    await remote.openWorkspacePath({ sessionId, path: '/tmp/result.html' })
+    await remote.openWorkspacePath({ sessionId, path: 'result.html' })
     expect(openPath.mock.calls.map(call => call[0])).toEqual(['/tmp/result.html', 'result.html'])
   })
 
@@ -87,7 +89,7 @@ describe('session/openWorkspacePath', () => {
       openPath,
     })
 
-    await expect(remote.openWorkspacePath({ path: '' }))
+    await expect(remote.openWorkspacePath({ sessionId, path: '' }))
       .resolves.toMatchObject({ ok: false, error: { code: 'gateway/bad-request' } })
     expect(openPath).not.toHaveBeenCalled()
   })
@@ -102,7 +104,7 @@ describe('session/openWorkspacePath', () => {
       openPath,
     })
 
-    await expect(remote.openWorkspacePath({ path: 'result.html' }))
+    await expect(remote.openWorkspacePath({ sessionId, path: 'result.html' }))
       .resolves.toMatchObject({
         ok: false,
         error: { code: 'gateway/internal', message: 'path open failed: desktop unavailable' },
@@ -110,7 +112,7 @@ describe('session/openWorkspacePath', () => {
 
     const aborted = new AbortController()
     aborted.abort(new Error('gateway/cancelled'))
-    await expect(remote.openWorkspacePath({ path: 'result.html' }, aborted.signal))
+    await expect(remote.openWorkspacePath({ sessionId, path: 'result.html' }, aborted.signal))
       .resolves.toMatchObject({ ok: false, error: { code: 'gateway/cancelled' } })
   })
 
@@ -129,9 +131,10 @@ describe('session/openWorkspacePath', () => {
       openPath,
     })
 
-    await expect(controller.openWorkspacePath({ path: 'first.html' }, aborted.signal))
+    await expect(controller.openWorkspacePath({ sessionId, path: 'first.html' }, aborted.signal))
       .rejects.toMatchObject({ code: 'gateway/cancelled' })
     await expect(controller.openWorkspacePath({
+      sessionId,
       path: 'second.html',
     }, new AbortController().signal)).rejects.toMatchObject({
       code: 'gateway/internal', message: 'path open failed: desktop unavailable',

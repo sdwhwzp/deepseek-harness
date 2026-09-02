@@ -12,7 +12,12 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { createToolResultMessage, type ToolCallBlock } from '@deepseek-ai/dsh-llm'
+import {
+  createToolResultMessage,
+  freezeMessage,
+  type AuthenticatedPrincipal,
+  type ToolCallBlock,
+} from '@deepseek-ai/dsh-llm'
 import type { Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
 import { TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, type ToolExecutionInput, type ToolExecutionMode, type ToolExecutionResult, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
@@ -54,6 +59,7 @@ interface GroupOutcome {
  * @param turn - current turn number.
  * @param step - current step number.
  * @param toolCalls - assistant calls in model order.
+ * @param principal - authenticated caller owning this model step.
  * @param signal - abort signal shared by the step.
  * @param acceptContext - accepts committed result context for the next step boundary.
  */
@@ -62,6 +68,7 @@ export async function executeToolCalls(
   turn: number,
   step: number,
   toolCalls: ToolCallBlock[],
+  principal: AuthenticatedPrincipal | undefined,
   signal: AbortSignal,
   acceptContext: (context: UserMessage) => void,
 ): Promise<{ concluded: boolean }> {
@@ -76,6 +83,7 @@ export async function executeToolCalls(
       name: block.name,
       arguments: parseArguments(block.arguments),
       agent,
+      ...principal === undefined ? {} : { principal },
       signal,
     },
   }))
@@ -154,7 +162,11 @@ async function runGroup(
         : ctx.tools[TOOL_RUNTIME_SCHEDULER].finish(slot.exec, slot.result)
       // oxlint-disable-next-line typescript/no-non-null-assertion -- bounded index
       appendToolResult(session, turn, step, call!.block, result, callSeqs[committed]!)
-      for (const context of result.additionalContexts ?? []) acceptContext(context)
+      for (const context of result.additionalContexts ?? []) {
+        acceptContext(slot.exec.principal === undefined
+          ? context
+          : freezeMessage({ ...context, principal: slot.exec.principal }))
+      }
       concluded ||= result.concludesTurn === true
       committed++
     }

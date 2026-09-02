@@ -1,10 +1,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {
   RemoteEventHostInfo,
   TypertRemoteEventInvocation,
   TypertRemoteEventSource,
 } from '@deepseek-ai/dsh-api-gateway'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import { describe, expect, it } from 'vitest'
 import { apply, inject } from '../src/index.ts'
@@ -13,6 +16,8 @@ interface GatewayProbe {
   source: TypertRemoteEventSource | undefined
   host: RemoteEventHostInfo | undefined
   removals: number
+  principal: AuthenticatedPrincipal | undefined
+  currentPrincipal(): AuthenticatedPrincipal | undefined
   registerRemoteEvents(
     source: TypertRemoteEventSource,
     host: RemoteEventHostInfo,
@@ -29,6 +34,8 @@ async function setup(): Promise<{
     source: undefined,
     host: undefined,
     removals: 0,
+    principal: undefined,
+    currentPrincipal() { return gateway.principal },
     registerRemoteEvents(source, host) {
       gateway.source = source
       gateway.host = host
@@ -78,7 +85,92 @@ function invocationOf(value: unknown): TypertRemoteEventInvocation {
   return value as TypertRemoteEventInvocation
 }
 
+function fakeAgent(
+  ctx: Context,
+  events: readonly Record<string, unknown>[] = [],
+): Agent {
+  return {
+    id: SessionId('fixture-agent'),
+    ctx,
+    session: { snapshotEvents: () => events },
+  } as unknown as Agent
+}
+
 describe('Remote event Host source', () => {
+  it('carries transport attribution and Session read subjects only in process', async () => {
+    const { ctx, gateway } = await setup()
+    const alice: AuthenticatedPrincipal = {
+      source: 'gateway', id: 'alice', username: 'Alice', role: 'user',
+    }
+    gateway.principal = alice
+    const abort = new AbortController()
+    const iterator = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
+
+    emitRaw(ctx, 'commands/change', [])
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { event: 'commands/change', args: [], principal: alice },
+    })
+    const sessionId = SessionId('session-owned')
+    emitRaw(ctx, 'api-session/status', [sessionId, true])
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: {
+        event: 'api-session/status',
+        args: [sessionId, true],
+        principal: alice,
+        readSubjects: { sessionIds: [sessionId] },
+      },
+    })
+
+    const done = iterator.next()
+    abort.abort()
+    await expect(done).resolves.toEqual({ done: true, value: undefined })
+    await ctx.fiber.dispose()
+  })
+
+  it('attributes waterfalls to the active step, then its open turn', async () => {
+    const { ctx, gateway } = await setup()
+    const abort = new AbortController()
+    const iterator = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
+    const alice: AuthenticatedPrincipal = {
+      source: 'gateway', id: 'alice', username: 'Alice', role: 'user',
+    }
+    const bob: AuthenticatedPrincipal = {
+      source: 'gateway', id: 'bob', username: 'Bob', role: 'user',
+    }
+    const agentCtx = ctx.extend()
+    const events: Record<string, unknown>[] = [
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1, principal: alice } },
+      { type: 'step/start', seq: 1, time: 2, data: { turn: 1, step: 1, principal: bob } },
+    ]
+    const agent = fakeAgent(agentCtx, events)
+    const target = scopeTarget(ctx, agent)
+    const request = { questions: [], agent }
+
+    const stepOwned = waterfallRaw(
+      ctx, target, 'user-questions/request', [request], () => Promise.resolve('next'),
+    )
+    const stepDispatch = invocationOf((await iterator.next()).value)
+    expect(stepDispatch.principal).toEqual(bob)
+    stepDispatch.resolve({ kind: 'next' })
+    await expect(stepOwned).resolves.toBe('next')
+
+    events.push({ type: 'step/end', seq: 2, time: 3, data: { turn: 1, step: 1 } })
+    const turnOwned = waterfallRaw(
+      ctx, target, 'user-questions/request', [request], () => Promise.resolve('next'),
+    )
+    const turnDispatch = invocationOf((await iterator.next()).value)
+    expect(turnDispatch.principal).toEqual(alice)
+    turnDispatch.resolve({ kind: 'next' })
+    await expect(turnOwned).resolves.toBe('next')
+
+    const done = iterator.next()
+    abort.abort()
+    await expect(done).resolves.toEqual({ done: true, value: undefined })
+    await ctx.fiber.dispose()
+  })
+
   it('registers the Host home used by Client connection generations', async () => {
     const { gateway, fiber } = await setup()
     expect(gateway.host?.home).toBeTypeOf('string')
@@ -154,7 +246,7 @@ describe('Remote event Host source', () => {
     const abort = new AbortController()
     const iterator = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
     const agentCtx = ctx.extend()
-    const agent = { ctx: agentCtx }
+    const agent = fakeAgent(agentCtx)
     const target = scopeTarget(ctx, agent)
     const request = { questions: [], agent }
 
@@ -211,7 +303,7 @@ describe('Remote event Host source', () => {
     const abort = new AbortController()
     const iterator = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
     const delivery = iterator.next()
-    const agent = { ctx: ctx.extend() }
+    const agent = fakeAgent(ctx.extend())
     const reason = new Error('forwarded event source removed')
     const pending = waterfallRaw(
       ctx,

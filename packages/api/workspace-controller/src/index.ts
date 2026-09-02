@@ -1,10 +1,13 @@
 /** Host Workspace Remote owner: explicit commands and reconnect-safe state. */
 
 import { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-gateway/types'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceCommands } from './commands.ts'
 import { DirectoryPickerController } from './directory-picker.ts'
 import { WorkspaceFeed } from './feed.ts'
+import { principalWorkspaceFollow } from './principal-feed.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
@@ -56,7 +59,7 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('create')
   create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
-    return this.commands.create(request)
+    return this.commands.create(request, this.currentPrincipal())
   }
 
   /**
@@ -66,7 +69,7 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('rename')
   rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue> {
-    return this.commands.rename(request)
+    return this.commands.rename(request, this.currentPrincipal())
   }
 
   /**
@@ -76,7 +79,7 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('delete')
   delete(request: WorkspaceDeleteRequest): Promise<WorkspaceDeleteValue> {
-    return this.commands.delete(request)
+    return this.commands.delete(request, this.currentPrincipal())
   }
 
   /**
@@ -86,7 +89,7 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('insertBefore')
   insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue> {
-    return this.commands.insertBefore(request)
+    return this.commands.insertBefore(request, this.currentPrincipal())
   }
 
   /**
@@ -96,7 +99,7 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('insertSessionBefore')
   insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue> {
-    return this.commands.insertSessionBefore(request)
+    return this.commands.insertSessionBefore(request, this.currentPrincipal())
   }
 
   /**
@@ -106,7 +109,7 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('archiveSession')
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
-    return this.commands.archiveSession(request)
+    return this.commands.archiveSession(request, this.currentPrincipal())
   }
 
   /**
@@ -116,7 +119,11 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote({ mode: 'stream' })
   follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame> {
-    return this.feed.follow(signal)
+    return principalWorkspaceFollow(this.ctx, this.currentPrincipal(), this.feed.follow(signal), signal)
+  }
+
+  private currentPrincipal(): AuthenticatedPrincipal | undefined {
+    return this.ctx.get('typertGateway')?.currentPrincipal()
   }
 }
 

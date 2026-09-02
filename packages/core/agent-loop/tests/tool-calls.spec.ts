@@ -373,6 +373,126 @@ describe('tool-call scheduler: rolling pool honors maxParallelToolCalls', () => 
 })
 
 describe('tool-call scheduler: ordered middleware and additional contexts', () => {
+  it('separates racing authenticated principals into distinct turns and tool executions', async () => {
+    const adapter = new MockAdapter([
+      multiCall([{ id: 'alice-call', name: 'owned', args: { id: 'alice' } }]),
+      textResponse('alice done'),
+      multiCall([{ id: 'bob-call', name: 'owned', args: { id: 'bob' } }]),
+      textResponse('bob done'),
+    ])
+    const ctx = await harness(adapter)
+    const alice = { source: 'gateway', id: 'alice', username: 'alice', role: 'user' as const }
+    const bob = { source: 'gateway', id: 'bob', username: 'bob', role: 'user' as const }
+    const agent = ctx.agentLoop.create(SessionId('shared-principals'), { provider: 'mock', model: 'mock' })
+    ctx.tools.register(defineContentToolFixture({
+      name: 'owned',
+      description: 'principal observation fixture',
+      parameters: { id: { type: 'string', required: true } },
+      async execute(args) {
+        if (args.id === 'alice') {
+          agent.steer(createUserMessage({
+            content: [{ type: 'text', text: 'request from bob' }],
+            source: { kind: 'user' },
+            principal: bob,
+          }))
+        }
+        return [{ type: 'text', text: args.id }]
+      },
+    }))
+    const observed: unknown[] = []
+    ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
+      observed.push(exec.principal)
+      return next()
+    })
+    const idle = waitForIdle(ctx, agent)
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'request from alice' }],
+      source: { kind: 'user' },
+      principal: alice,
+    }))
+    await idle
+
+    expect(observed).toEqual([alice, bob])
+    expect(events(agent).filter(event => event.type === 'turn/start').map(event => event.data.principal))
+      .toEqual([alice, bob])
+    expect(events(agent).filter(event => event.type === 'step/start').map(event => event.data.principal))
+      .toEqual([alice, alice, bob, bob])
+  })
+
+  it('does not admit anonymous steering into an authenticated turn or inherit its tool identity', async () => {
+    const adapter = new MockAdapter([
+      multiCall([{ id: 'alice-call', name: 'race', args: {} }]),
+      textResponse('alice done'),
+      multiCall([{ id: 'anonymous-call', name: 'observe', args: {} }]),
+      textResponse('anonymous done'),
+    ])
+    const ctx = await harness(adapter)
+    const alice = { source: 'gateway', id: 'alice', username: 'alice', role: 'user' as const }
+    const toolPrincipals: unknown[] = []
+    const requestPrincipals: unknown[] = []
+    const agent = ctx.agentLoop.create(SessionId('anonymous-steering'), { provider: 'mock', model: 'mock' })
+    ctx.tools.register(defineContentToolFixture({
+      name: 'race',
+      description: 'enqueue anonymous input during an authenticated tool',
+      parameters: {},
+      async execute() {
+        agent.steer(createUserMessage({
+          content: [{ type: 'text', text: 'anonymous steering' }],
+          source: { kind: 'user' },
+        }))
+        return [{ type: 'text', text: 'race done' }]
+      },
+    }))
+    ctx.tools.register(defineContentToolFixture({
+      name: 'observe', description: 'observe principal', parameters: {},
+      async execute() { return [{ type: 'text', text: 'observed' }] },
+    }))
+    ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
+      toolPrincipals.push(exec.principal)
+      return next()
+    })
+    ctx.on('tools/post-execute', async (exec, _result, next): Promise<PostToolDecision> => {
+      const decision = await next()
+      if (exec.name !== 'race') return decision
+      return {
+        ...decision,
+        additionalContexts: [createUserMessage({
+          content: [{ type: 'text', text: 'authenticated tool context' }],
+          source: { kind: 'plugin', plugin: 'principal-test' },
+        })],
+      }
+    })
+    ctx.on('agent/request', async ({ principal }, next) => {
+      requestPrincipals.push(principal)
+      return next()
+    })
+    const idle = waitForIdle(ctx, agent)
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'alice starts' }],
+      source: { kind: 'user' },
+      principal: alice,
+    }))
+    await idle
+
+    expect(events(agent).filter(event => event.type === 'turn/start').map(event => event.data.principal))
+      .toEqual([alice, undefined])
+    expect(events(agent).filter(event => event.type === 'step/start').map(event => event.data.principal))
+      .toEqual([alice, alice, undefined, undefined])
+    expect(requestPrincipals).toEqual([alice, alice, undefined, undefined])
+    expect(toolPrincipals).toEqual([alice, undefined])
+    expect(JSON.stringify(adapter.requests[1]?.messages)).toContain('authenticated tool context')
+    expect(JSON.stringify(adapter.requests[1]?.messages)).not.toContain('anonymous steering')
+    expect(JSON.stringify(adapter.requests[2]?.messages)).toContain('anonymous steering')
+    const toolContext = events(agent).find(event =>
+      event.type === 'user/message' && event.data.source.kind === 'plugin')
+    expect(toolContext?.type === 'user/message' ? toolContext.data.principal : undefined).toEqual(alice)
+    const anonymous = events(agent).find(event =>
+      event.type === 'user/message'
+      && event.data.source.kind === 'user'
+      && JSON.stringify(event.data.content).includes('anonymous steering'))
+    expect(anonymous?.type === 'user/message' ? anonymous.data.principal : undefined).toBeUndefined()
+  })
+
   it('tools/pre-execute and tools/post-execute observe model call order', async () => {
     const adapter = new MockAdapter([
       multiCall([{ id: 'c1', name: 'p', args: { id: '1' } }, { id: 'c2', name: 'p', args: { id: '2' } }, { id: 'c3', name: 'p', args: { id: '3' } }]),

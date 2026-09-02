@@ -25,7 +25,7 @@ With `dsh-tools`, tool plugins register schemas and executors, and every model t
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount `dsh-tools` wherever agents call tools: it provides `ctx.tools`, the registry every tool plugin registers into and the loop dispatches through. Registering a tool is enough to make it visible — the registry feeds its schemas into the system-prompt assembly automatically.
+Mount `dsh-tools` wherever agents call tools: it provides `ctx.tools`, the registry every tool plugin registers into and the loop dispatches through. Registering a tool is enough to make it visible — the registry feeds its schemas into the system-prompt assembly automatically. `ToolExecutionInput.principal` carries the authenticated owner of the admitted turn through policy, execution, PTC nested calls, and additional tool-generated context; it is undefined for local-anonymous work.
 
 ### Register a tool
 

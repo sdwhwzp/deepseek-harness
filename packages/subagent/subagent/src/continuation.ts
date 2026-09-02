@@ -31,7 +31,7 @@ import type {
   CreateAgentOptions,
 } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId, boundContextSummary, contentHasImage, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionId, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
@@ -130,12 +130,15 @@ export type SubagentInterruptAuthority =
 export interface SubagentSendMessageOptions {
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
+  /** Authenticated owner of the follow-up tool step. */
+  readonly principal?: AuthenticatedPrincipal
 }
 
 /** Inputs shared by model steering and the human Queue adapter. */
-type ChildDeliveryOptions =
+type ChildDeliveryOptions = ({ readonly principal?: AuthenticatedPrincipal } & (
   | { readonly delivery: 'steer'; readonly signal: AbortSignal }
   | { readonly delivery: 'queue'; readonly source: MessageSource; readonly signal: AbortSignal }
+))
 
 /**
  * The residency state of one continuable child, derived from Agent quiescence
@@ -224,6 +227,8 @@ interface Activation {
    * not exist, so its teardown owes the parent no settlement account.
    */
   announced: boolean
+  /** Owner of the latest accepted child turn, used for child-generated parent messages. */
+  principal: AuthenticatedPrincipal | undefined
   /** Renewed whenever a settlement watcher must re-observe quiescence. */
   poke: PromiseWithResolvers<void>
 }
@@ -282,13 +287,18 @@ function agentMessageSource(sender: Agent): AgentMessageSource {
 }
 
 /** Build the model-visible and durable representation of one adjacent-Agent message. */
-function agentMessage(sender: Agent, content: ContentBlock[]) {
+function agentMessage(
+  sender: Agent,
+  content: ContentBlock[],
+  principal: AuthenticatedPrincipal | undefined,
+) {
   return createUserMessage({
     content: [
       { type: 'text' as const, text: `Agent ${sender.id} sent a message:` },
       ...content,
     ],
     source: agentMessageSource(sender),
+    ...principal === undefined ? {} : { principal },
   })
 }
 
@@ -497,7 +507,12 @@ export class SubagentContinuationManager {
         isAdjacentAgentSendMessageTool(this.ctx.get('tools')?.get('send_message', activation.handle.agent))
           ? continuableInitialPrompt(parent.id, request.prompt)
           : request.prompt,
-        { source: { kind: 'user' }, signal: spec.signal, delivery: 'queue' },
+        {
+          source: { kind: 'user' },
+          signal: spec.signal,
+          delivery: 'queue',
+          ...request.principal === undefined ? {} : { principal: request.principal },
+        },
         parent,
       )
     })
@@ -542,7 +557,7 @@ export class SubagentContinuationManager {
       && senderActivation.handle.agent === sender
       && senderActivation.parentSession === targetId) {
       options.signal.throwIfAborted()
-      return this.sendToParent(senderActivation, sender, content)
+      return this.sendToParent(senderActivation, sender, content, options.principal)
     }
     if (sender.session.header.parentSession === targetId) {
       throw new SubagentError(
@@ -553,6 +568,7 @@ export class SubagentContinuationManager {
     return this.deliverToChild(sender, targetId, content, {
       signal: options.signal,
       delivery: 'steer',
+      ...options.principal === undefined ? {} : { principal: options.principal },
     })
   }
 
@@ -563,6 +579,7 @@ export class SubagentContinuationManager {
    * @param content - human-authored content to deliver.
    * @param source - durable host-protocol provenance.
    * @param signal - caller cancellation before inbox acceptance.
+   * @param principal - transport-verified identity attached to the accepted prompt.
    * @returns the accepted message's inbox id.
    */
   async queuePrompt(
@@ -571,8 +588,14 @@ export class SubagentContinuationManager {
     content: ContentBlock[],
     source: MessageSource,
     signal: AbortSignal,
+    principal?: AuthenticatedPrincipal,
   ): Promise<MessageId> {
-    return this.deliverToChild(parent, childId, content, { source, signal, delivery: 'queue' })
+    return this.deliverToChild(parent, childId, content, {
+      source,
+      signal,
+      delivery: 'queue',
+      ...principal === undefined ? {} : { principal },
+    })
   }
 
   /** Route one parent-originated delivery through residency and cold resume. */
@@ -688,6 +711,7 @@ export class SubagentContinuationManager {
     activation: Activation,
     sender: Agent,
     content: ContentBlock[],
+    principal: AuthenticatedPrincipal | undefined,
   ): MessageId {
     /* v8 ignore next 6 -- only synchronous re-entrant teardown can open this
      * transaction between exact-agent authorization and this no-await span. */
@@ -704,7 +728,7 @@ export class SubagentContinuationManager {
         'PARENT_UNAVAILABLE',
       )
     }
-    const message = agentMessage(sender, content)
+    const message = agentMessage(sender, content, principal)
     this.sendWaking(parent, message, () => { this.sendAgentMessage(parent, message) })
     return message.id
   }
@@ -1169,6 +1193,7 @@ export class SubagentContinuationManager {
       disposal: undefined,
       accepted: new Set(),
       announced: false,
+      principal: undefined,
       poke: Promise.withResolvers<void>(),
     }
     // After transfer, any failure must dispose the created handle, remove the
@@ -1270,8 +1295,12 @@ export class SubagentContinuationManager {
     // establish it before the message can enter the child's inbox.
     this.acquireOwnership(parent, activation.childId)
     const message = options.delivery === 'steer'
-      ? agentMessage(parent, content)
-      : createUserMessage({ content, source: options.source })
+      ? agentMessage(parent, content, options.principal)
+      : createUserMessage({
+        content,
+        source: options.source,
+        ...options.principal === undefined ? {} : { principal: options.principal },
+      })
     const accepted = this.admitWaking(activation, message.id, () => {
       if (options.delivery === 'steer') activation.handle.agent.steer(message)
       else activation.handle.agent.followup(message)
@@ -1279,6 +1308,7 @@ export class SubagentContinuationManager {
     // Past this point the caller has an id for this child, so its eventual
     // settlement is something the parent is owed an account of.
     activation.announced = true
+    activation.principal = options.principal
     return accepted
   }
 
@@ -1551,6 +1581,7 @@ export class SubagentContinuationManager {
           summary: boundContextSummary(summary),
           senderSessionId: activation.childId,
         },
+        ...activation.principal === undefined ? {} : { principal: activation.principal },
       })
       // A parent whose own teardown already began must not be woken. Waking is
       // not a queue operation: `followup()` on a quiescent Agent starts a turn,

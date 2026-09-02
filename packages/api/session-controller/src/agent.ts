@@ -14,6 +14,7 @@ import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-typert-registry'
+import { currentRequestPrincipal, requireReadableSession } from './principal-access.ts'
 import type { ModelSelection } from './types.ts'
 
 /** Cold Session identity absent from persistence. */
@@ -145,20 +146,20 @@ export class ApiSessionAgentController {
 
   /** @param ctx - Host context carrying Agent, model, persistence, and Typert services. */
   constructor(private readonly ctx: Context) {
-    ctx.typert.lookups.configure('agent', async (sessionId: SessionId) => {
+    const resolveReadableAgent = async (sessionId: SessionId): Promise<Agent> => {
+      await requireReadableSession(ctx, sessionId, currentRequestPrincipal(ctx))
       const found = await this.resolveAgent(sessionId)
       if ('error' in found) throw found.error
       return found.agent
+    }
+    ctx.typert.lookups.configure('agent', async (sessionId: SessionId) => {
+      return resolveReadableAgent(sessionId)
     })
     ctx.typert.lookups.configure('session', async (sessionId: SessionId) => {
-      const found = await this.resolveAgent(sessionId)
-      if ('error' in found) throw found.error
-      return found.agent.session
+      return (await resolveReadableAgent(sessionId)).session
     })
     ctx.typert.contexts.configureHost('agent', async (sessionId: SessionId) => {
-      const found = await this.resolveAgent(sessionId)
-      if ('error' in found) throw found.error
-      return found.agent.ctx
+      return (await resolveReadableAgent(sessionId)).ctx
     })
   }
 

@@ -12,7 +12,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
-import type { ContentBlock, GenerateOptions, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, ContentBlock, GenerateOptions, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { ToolCallId, createUserMessage, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
@@ -106,11 +106,20 @@ async function setup(script: Script, options: { persistence?: boolean } = {}) {
 
 const testSignal = new AbortController().signal
 
-function startSpec(parent: Agent, provider = 'spawn', signal: AbortSignal = testSignal) {
+function startSpec(
+  parent: Agent,
+  provider = 'spawn',
+  signal: AbortSignal = testSignal,
+  principal?: AuthenticatedPrincipal,
+) {
   return {
     provider,
     label: 'child task',
-    request: { prompt: [{ type: 'text' as const, text: 'child task' }], parent },
+    request: {
+      prompt: [{ type: 'text' as const, text: 'child task' }],
+      parent,
+      ...principal === undefined ? {} : { principal },
+    },
     signal,
   }
 }
@@ -140,6 +149,7 @@ function queuePrompt(
   childId: SessionId,
   content: ContentBlock[],
   signal: AbortSignal = testSignal,
+  principal?: AuthenticatedPrincipal,
 ) {
   const manager = (ctx.subagents as unknown as {
     continuations?: {
@@ -149,11 +159,12 @@ function queuePrompt(
         content: ContentBlock[],
         source: { kind: 'user' },
         signal: AbortSignal,
+        principal?: AuthenticatedPrincipal,
       ): Promise<string>
     }
   }).continuations
   if (manager === undefined) throw new Error('expected a bound continuation manager')
-  return manager.queuePrompt(parent, childId, content, { kind: 'user' }, signal)
+  return manager.queuePrompt(parent, childId, content, { kind: 'user' }, signal, principal)
 }
 
 /**
@@ -201,6 +212,28 @@ function observeCancel(agent: Agent, callback: () => void): void {
 }
 
 describe('SubagentRuntime.startContinuable', () => {
+  it('preserves each authenticated owner through initial and cold-resumed child turns', async () => {
+    const { ctx, parent } = await setup([
+      textResponse('first answer'),
+      textResponse('second answer'),
+    ])
+    parkParent(ctx, parent)
+    const alice = { source: 'gateway', id: 'alice', username: 'alice', role: 'user' as const }
+    const bob = { source: 'gateway', id: 'bob', username: 'bob', role: 'user' as const }
+    const started = await ctx.subagents.startContinuable(startSpec(parent, 'spawn', testSignal, alice))
+    await waitNoActivation(ctx, started.childId)
+
+    await queuePrompt(ctx, parent, started.childId, message('second task'), testSignal, bob)
+    await waitNoActivation(ctx, started.childId)
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    expect(loaded.events.flatMap(event => event.type === 'user/message'
+      && event.data.source.kind === 'user' ? [event.data.principal] : [])).toEqual([alice, bob])
+    expect(loaded.events.flatMap(event => event.type === 'turn/start'
+      ? [event.data.principal] : [])).toEqual([alice, bob])
+    expect(loaded.events.flatMap(event => event.type === 'step/start'
+      ? [event.data.principal] : [])).toEqual([alice, bob])
+  })
+
   it('returns both identities at inbox acceptance, without waiting for the turn or the log', async () => {
     const { ctx, parent, adapter } = await setup([textResponse('first answer')])
     const enqueued: { id: MessageId; loggedYet: boolean }[] = []

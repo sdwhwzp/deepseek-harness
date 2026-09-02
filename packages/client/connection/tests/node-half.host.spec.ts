@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { API_PATH, RpcId, apply, inject, type ClientRequest, type HostConnectionHandle } from '../src/index.ts'
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from '../src/http-bridge.ts'
@@ -287,11 +288,15 @@ describe('connection node half', () => {
     expect(routes).toHaveLength(0)
   })
 
-  it('dispatches claimed /api endpoints and withdraws the claim', async () => {
+  it('dispatches disjoint /api claims, rejects overlaps, and withdraws each claim', async () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
     provideBrowserCredentials(ctx)
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+    const alice: AuthenticatedPrincipal = {
+      source: 'gateway', id: '42', username: 'alice', role: 'user',
+    }
+    ctx.provide('requestPrincipal', { authenticate: () => alice })
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })
     await fiber.await()
     const connection = ctx.get('connection') as HostConnectionHandle
@@ -299,16 +304,20 @@ describe('connection node half', () => {
     const remove = connection.rpc.intercept(
       '/api',
       endpoint => endpoint === 'goals/create',
-      async (endpoint, payload) => {
-        calls.push({ endpoint, payload })
+      async (endpoint, payload, _signal, principal) => {
+        calls.push({ endpoint, payload, principal })
         return { ok: true, value: { accepted: true } }
       },
     )
-    expect(() => connection.rpc.intercept(
+    const statusCalls: unknown[] = []
+    const removeStatus = connection.rpc.intercept(
       '/api',
-      () => true,
-      async () => ({ ok: true, value: null }),
-    )).toThrow('already has an interceptor')
+      endpoint => endpoint === 'goals/status',
+      async (endpoint, payload, _signal, principal) => {
+        statusCalls.push({ endpoint, payload, principal })
+        return { ok: true, value: { state: 'active' } }
+      },
+    )
     expect(() => connection.rpc.intercept(
       '/rpc' as '/api',
       () => true,
@@ -335,7 +344,50 @@ describe('connection node half', () => {
     expect(calls).toEqual([{
       endpoint: 'goals/create',
       payload: { args: { agentId: 'agent-1' } },
+      principal: alice,
     }])
+
+    const statusRequest: ClientRequest = {
+      type: 'client-request',
+      rpcId: RpcId('rpc-shared-status'),
+      method: 'goals/status',
+      payload: { args: { goalId: 'goal-1' } },
+    }
+    const status = fakeResponse()
+    await route.handler(fakePost({
+      host: '127.0.0.1:3080', cookie: loopbackCookie,
+    }, '/api/goals/status', statusRequest), status.response)
+    expect(JSON.parse(String(status.state.body))).toEqual({
+      type: 'server-response',
+      rpcId: 'rpc-shared-status',
+      result: { ok: true, value: { state: 'active' } },
+    })
+    expect(statusCalls).toEqual([{
+      endpoint: 'goals/status',
+      payload: { args: { goalId: 'goal-1' } },
+      principal: alice,
+    }])
+
+    const overlapCalls: unknown[] = []
+    const removeOverlap = connection.rpc.intercept(
+      '/api',
+      endpoint => endpoint === 'goals/create',
+      async (endpoint) => {
+        overlapCalls.push(endpoint)
+        return { ok: true, value: null }
+      },
+    )
+    const overlapping = fakeResponse()
+    await route.handler(fakePost({
+      host: '127.0.0.1:3080', cookie: loopbackCookie,
+    }, '/api/goals/create', request), overlapping.response)
+    expect(overlapping.state).toMatchObject({
+      status: 500,
+      body: 'connection: shared RPC endpoint "goals/create" has multiple interceptors',
+    })
+    expect(calls).toHaveLength(1)
+    expect(overlapCalls).toHaveLength(0)
+    await removeOverlap()
 
     const denied = fakeResponse()
     await route.handler(fakePost({ host: 'other.example' }, '/api/goals/create', request), denied.response)
@@ -355,6 +407,14 @@ describe('connection node half', () => {
     }, '/api/goals/create', request), withdrawn.response)
     expect(withdrawn.state.status).toBe(404)
     expect(calls).toHaveLength(1)
+
+    const retained = fakeResponse()
+    await route.handler(fakePost({
+      host: '127.0.0.1:3080', cookie: loopbackCookie,
+    }, '/api/goals/status', statusRequest), retained.response)
+    expect(retained.state.status).toBe(200)
+    expect(statusCalls).toHaveLength(2)
+    await removeStatus()
 
     const removeAuthenticated = connection.rpc.intercept(
       '/api',

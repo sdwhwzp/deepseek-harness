@@ -2,6 +2,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import {
   RpcId,
   type ClientRequest,
@@ -15,6 +16,8 @@ import type { BrowserAuth } from './browser-auth.ts'
 import type {
   ConnectionIndexRequest,
   ConnectionIndexResponse,
+  ConnectionPrincipalRequest,
+  ConnectionRequestAuthorization,
   ConnectionFetchRoute,
   ConnectionFetchHandler,
   HostConnectionFetch,
@@ -34,7 +37,7 @@ const ENDPOINT_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/
 
 interface ConnectionRpcInterceptor {
   readonly matches: ConnectionRpcEndpointMatcher
-  readonly fetchHandler: FetchHandler
+  readonly handler: ConnectionRpcHandler
 }
 
 interface RegisteredFetchRoute {
@@ -57,7 +60,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
-  private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
+  private readonly interceptors = new Map<string, Set<ConnectionRpcInterceptor>>()
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
 
   /**
@@ -98,6 +101,30 @@ export class HostConnectionService extends Service implements HostConnectionHand
     return this.browserAuth.isAuthenticated(request) ? undefined : 401
   }
 
+  /** Apply request trust and accept deployment or browser authentication. */
+  async authorizeRequest(request: ConnectionPrincipalRequest): Promise<ConnectionRequestAuthorization> {
+    if (!isTrustedApiRequest(request, this.trustedHosts)) return { accepted: false, status: 403 }
+    try {
+      const principal = await this.authenticateRequest(request)
+      if (principal !== undefined) return { accepted: true, principal }
+    } catch (_authenticationFailure) {
+      return { accepted: false, status: 401 }
+    }
+    return this.browserAuth.isAuthenticated(request)
+      ? { accepted: true }
+      : { accepted: false, status: 401 }
+  }
+
+  /** Validate and detach the optional deployment-owned identity for one carrier request. */
+  async authenticateRequest(
+    request: ConnectionPrincipalRequest,
+  ): Promise<AuthenticatedPrincipal | undefined> {
+    const provider = this.ctx.get('requestPrincipal')
+    if (provider === undefined) return undefined
+    const principal = await provider.authenticate(request)
+    return principal === undefined ? undefined : authenticatedPrincipal(principal)
+  }
+
   /** Authenticate an index request through the process-token exchange or cookie. */
   authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
     return this.browserAuth.authorizeIndex(request, response)
@@ -117,16 +144,38 @@ export class HostConnectionService extends Service implements HostConnectionHand
     channel: '/api',
   ): ConnectionFetchHandler {
     return {
-      fetch: (request) => {
+      fetch: async (request, authorization) => {
+        let principal: AuthenticatedPrincipal | undefined
+        if (authorization === undefined) {
+          try {
+            principal = await this.authenticateRequest(request)
+          } catch (_authenticationFailure) {
+            return new Response('unauthorized', { status: 401 })
+          }
+        } else {
+          principal = authorization.principal
+        }
         const pathname = new URL(request.url).pathname
         const route = this.fetchRoutes.get(pathname)
-        if (route?.methods.has(request.method) === true) return route.fetch(request)
+        if (route?.methods.has(request.method) === true) return route.fetch(request, principal)
         const endpoint = endpointFromPath(channel, pathname)
-        const interceptor = this.interceptors.get(channel)
-        if (endpoint === undefined || interceptor === undefined || !interceptor.matches(endpoint)) {
-          return Promise.resolve(new Response('not found', { status: 404 }))
+        const registered = this.interceptors.get(channel)
+        if (endpoint === undefined || registered === undefined) {
+          return new Response('not found', { status: 404 })
         }
-        return interceptor.fetchHandler.fetch(request)
+        let interceptor: ConnectionRpcInterceptor | undefined
+        for (const candidate of registered) {
+          if (!candidate.matches(endpoint)) continue
+          if (interceptor !== undefined) {
+            return new Response(
+              `connection: shared RPC endpoint ${JSON.stringify(endpoint)} has multiple interceptors`,
+              { status: 500 },
+            )
+          }
+          interceptor = candidate
+        }
+        if (interceptor === undefined) return new Response('not found', { status: 404 })
+        return rpcFetchHandler(channel, interceptor.handler, principal).fetch(request)
       },
     }
   }
@@ -155,18 +204,19 @@ export class HostConnectionService extends Service implements HostConnectionHand
     handler: ConnectionRpcHandler,
   ): () => Promise<void> {
     assertChannel(channel)
-    const fetchHandler = rpcFetchHandler(channel, handler)
     const route: WebRoute = {
       kind: 'prefix',
       path: channel,
       handler: async (req, res) => {
-        const rejection = this.requestRejection(req)
-        if (rejection !== undefined) {
-          res.writeHead(rejection)
-          res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+        const authorization = await this.authorizeRequest(req)
+        if (!authorization.accepted) {
+          res.writeHead(authorization.status)
+          res.end(authorization.status === 401 ? 'unauthorized' : 'forbidden')
           return
         }
-        await bridge(req, res, fetchHandler)
+        await bridge(req, res, {
+          fetch: request => rpcFetchHandler(channel, handler, authorization.principal).fetch(request),
+        })
       },
     }
     return owner.effect(
@@ -186,15 +236,15 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
     const interceptor: ConnectionRpcInterceptor = {
       matches,
-      fetchHandler: rpcFetchHandler(channel, handler),
+      handler,
     }
     return owner.effect(() => {
-      if (this.interceptors.has(channel)) {
-        throw new Error(`connection: shared RPC channel ${JSON.stringify(channel)} already has an interceptor`)
-      }
-      this.interceptors.set(channel, interceptor)
+      const registered = this.interceptors.get(channel) ?? new Set<ConnectionRpcInterceptor>()
+      registered.add(interceptor)
+      this.interceptors.set(channel, registered)
       return () => {
-        this.interceptors.delete(channel)
+        registered.delete(interceptor)
+        if (registered.size === 0) this.interceptors.delete(channel)
       }
     }, `client-connection: ${channel} rpc interceptor`)
   }
@@ -203,6 +253,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
 function rpcFetchHandler(
   channel: string,
   handler: ConnectionRpcHandler,
+  principal: AuthenticatedPrincipal | undefined,
 ): FetchHandler {
   return {
     async fetch(request: Request): Promise<Response> {
@@ -237,13 +288,33 @@ function rpcFetchHandler(
       }
 
       try {
-        const result = await handler(endpoint, message.payload, request.signal)
+        const result = await handler(endpoint, message.payload, request.signal, principal)
         return fullResponse(message.rpcId, result)
       } catch (error) {
         return new Response(`handler failure: ${String(error)}`, { status: 500 })
       }
     },
   }
+}
+
+/** Validate, detach, and freeze one authentication-provider result. */
+function authenticatedPrincipal(value: unknown): AuthenticatedPrincipal {
+  if (value === null || typeof value !== 'object') throw new Error('authenticated principal must be an object')
+  const candidate = value as Record<string, unknown>
+  if (!nonEmpty(candidate.source, 64)) throw new Error('authenticated principal source is invalid')
+  if (!nonEmpty(candidate.id, 256)) throw new Error('authenticated principal id is invalid')
+  if (!nonEmpty(candidate.username, 256)) throw new Error('authenticated principal username is invalid')
+  if (candidate.role !== 'admin' && candidate.role !== 'user') throw new Error('authenticated principal role is invalid')
+  return Object.freeze({
+    source: candidate.source,
+    id: candidate.id,
+    username: candidate.username,
+    role: candidate.role,
+  })
+}
+
+function nonEmpty(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= max
 }
 
 function invalidEnvelopeResponse(body: unknown, issues: readonly object[]): Response {

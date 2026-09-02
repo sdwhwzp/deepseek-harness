@@ -15,8 +15,8 @@ import type {
   PreStepDecision,
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
-import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+import { Inbox, agentEvents, assembleContextFor, messageBelongsToPrincipal } from '@deepseek-ai/dsh-agent'
+import type { AuthenticatedPrincipal, GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   BlockAssembler,
   LlmError,
@@ -56,6 +56,20 @@ type PreparedStep =
     startsRequestSeries?: true
     assembly: PromptAssembly
   }
+
+/** Resolve the owner of the next durable turn before its inbox claim. */
+function nextTurnPrincipal(inbox: Inbox): AuthenticatedPrincipal | undefined {
+  return inbox.nextPrincipal('next-turn')
+}
+
+/** Whether the next-step FIFO prefix belongs to the open turn. */
+function hasNextStepForPrincipal(
+  inbox: Inbox,
+  principal: AuthenticatedPrincipal | undefined,
+): boolean {
+  const next = inbox.nextStep[0]
+  return next !== undefined && messageBelongsToPrincipal(next, principal)
+}
 
 /** Remove adapter-derived values before plugins propose the next request config. */
 function requestProposal(header: EpochHeader): LlmCallConfig {
@@ -231,24 +245,34 @@ export class ReactLoopAgent implements Agent {
     }
   }
 
-  private async preStep(target: InboxTarget, position: { turn: number; step: number }): Promise<PreparedStep> {
+  private async preStep(
+    target: InboxTarget,
+    position: { turn: number; step: number },
+    principal: AuthenticatedPrincipal | undefined,
+  ): Promise<PreparedStep> {
     /* v8 ignore next -- private callers establish the running phase before proposing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
     const signal = this.phase.abort.signal
-    const claimed = this.inbox.claim(target, position.turn)
+    const claimed = this.inbox.claim(target, position.turn, { principal })
     const assembly = await this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal))
     signal.throwIfAborted()
     const sections = renderContextSections(assembly)
     const context = this.runtimeContext.project(joinContextSections(sections), sections)
     const decision = await this.dispatch.waterfall(
-      'agent/pre-step', { messages: claimed, ...position, signal },
+      'agent/pre-step', {
+        messages: claimed,
+        ...principal === undefined ? {} : { principal },
+        ...position,
+        signal,
+      },
       (): Promise<PreStepDecision> => Promise.resolve<PreStepDecision>({
         kind: 'enter',
         messages: context === undefined ? claimed : [...claimed, context],
       }),
     )
     signal.throwIfAborted()
-    return decision.kind === 'reject' ? decision : { ...decision, assembly }
+    if (decision.kind === 'reject') return decision
+    return { ...decision, assembly }
   }
 
   /** Open one turn before claiming its first proposed step. */
@@ -260,8 +284,12 @@ export class ReactLoopAgent implements Agent {
     const { signal } = phase.abort
     signal.throwIfAborted()
     const turn = phase.turn + 1
+    const principal = nextTurnPrincipal(this.inbox)
     try {
-      this.session.append('turn/start', { turn })
+      this.session.append('turn/start', {
+        turn,
+        ...principal === undefined ? {} : { principal },
+      })
     } catch (error: unknown) {
       this.throwError(error)
     }
@@ -272,7 +300,7 @@ export class ReactLoopAgent implements Agent {
       while (true) {
         signal.throwIfAborted()
         const step = phase.step + 1
-        const decision = await this.preStep(target, { turn, step })
+        const decision = await this.preStep(target, { turn, step }, principal)
         if (decision.kind === 'reject') {
           turnEnds = { kind: 'blocked' }
           return false
@@ -285,7 +313,11 @@ export class ReactLoopAgent implements Agent {
           return false
         }
         signal.throwIfAborted()
-        this.session.append('step/start', { turn, step })
+        this.session.append('step/start', {
+          turn,
+          step,
+          ...principal === undefined ? {} : { principal },
+        })
         phase.step = step
         try {
           for (const message of decision.messages) {
@@ -293,7 +325,11 @@ export class ReactLoopAgent implements Agent {
           }
           // max-tokens is sticky: once any step hits the ceiling, later steps
           // that complete normally must not downgrade the turn outcome.
-          const stepEnd = await this.step(decision.assembly, decision.startsRequestSeries === true)
+          const stepEnd = await this.step(
+            decision.assembly,
+            decision.startsRequestSeries === true,
+            principal,
+          )
           // max-tokens stays sticky: a later completed step must not
           // downgrade the turn outcome.
           if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
@@ -301,11 +337,11 @@ export class ReactLoopAgent implements Agent {
           this.session.append('step/end', { turn, step })
         }
         signal.throwIfAborted()
-        if (turnEnds && this.inbox.nextStep.length === 0) {
+        if (turnEnds && !hasNextStepForPrincipal(this.inbox, principal)) {
           await this.dispatch.serial('agent/turn-stopping', { turn, signal })
           signal.throwIfAborted()
         }
-        if (turnEnds && this.inbox.nextStep.length === 0) break
+        if (turnEnds && !hasNextStepForPrincipal(this.inbox, principal)) break
         target = 'next-step'
       }
     } catch (error: unknown) {
@@ -338,7 +374,11 @@ export class ReactLoopAgent implements Agent {
     return true
   }
 
-  private async step(assembly: PromptAssembly, startsRequestSeries: boolean): Promise<StepEndReason | null> {
+  private async step(
+    assembly: PromptAssembly,
+    startsRequestSeries: boolean,
+    principal: AuthenticatedPrincipal | undefined,
+  ): Promise<StepEndReason | null> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
     const { turn, step, abort: { signal } } = this.phase
@@ -355,6 +395,7 @@ export class ReactLoopAgent implements Agent {
         this.session.deriveMessages(),
         startsRequestSeries,
         surfaceGeneration,
+        principal,
         signal,
       )
       startsRequestSeries = false
@@ -430,8 +471,13 @@ export class ReactLoopAgent implements Agent {
       const toolCalls = message.content.filter(block => block.type === 'tool-call')
       if (toolCalls.length === 0) return { kind: 'completed' }
       const { concluded } = await executeToolCalls(
-        this.loopCtx, turn, step, toolCalls, signal,
-        context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
+        this.loopCtx, turn, step, toolCalls, principal, signal,
+        (context) => {
+          const foreignIndex = this.inbox.nextStep.findIndex(message =>
+            !messageBelongsToPrincipal(message, principal))
+          const index = foreignIndex < 0 ? this.inbox.nextStep.length : foreignIndex
+          this.inbox.splice('next-step', index, 0, [context])
+        },
       )
       return concluded ? { kind: 'completed' } : null
     }
@@ -449,6 +495,7 @@ export class ReactLoopAgent implements Agent {
     boundaryMessages: Message[],
     startsRequestSeries: boolean,
     surfaceGeneration: number,
+    principal: AuthenticatedPrincipal | undefined,
     signal: AbortSignal,
   ): Promise<{ request: GenerateOptions; preparedCall?: PreparedLlmCall }> {
     const { session } = this
@@ -476,7 +523,12 @@ export class ReactLoopAgent implements Agent {
         },
     ))
     const proposedConfig = await this.dispatch.waterfall(
-      'agent/request', { turn, step, signal },
+      'agent/request', {
+        turn,
+        step,
+        ...principal === undefined ? {} : { principal },
+        signal,
+      },
       () => Promise.resolve(seedConfig),
     )
     signal.throwIfAborted()

@@ -4,6 +4,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
+import type { PrincipalAccessSubjects } from '@deepseek-ai/dsh-principal-access'
 import type { RemoteEventHostInfo } from './stream-protocol.ts'
 
 /** One Remote method request after a carrier has decoded its envelope. */
@@ -16,6 +18,8 @@ export interface InvokeRemoteRequest {
   readonly args: Readonly<Record<string, unknown>>
   /** Carrier or direct-caller cancellation injected only into cancellation-aware methods. */
   readonly signal?: AbortSignal
+  /** Host-only verified identity; browser payloads never populate this field. */
+  readonly principal?: AuthenticatedPrincipal
 }
 
 /** One Host Cordis notification forwarded unchanged to Client Remote subscribers. */
@@ -24,6 +28,10 @@ export interface TypertRemoteEventFrame {
   readonly event: string
   /** Original event argument list after the owner validates it for JSON transport. */
   readonly args: readonly unknown[]
+  /** Process-local caller attribution, when the producer can recover it safely. */
+  readonly principal?: AuthenticatedPrincipal
+  /** Process-local resources that every receiving principal must be authorized to read. */
+  readonly readSubjects?: PrincipalAccessSubjects
 }
 
 /** Live Host values used to project one scoped Remote Event. */
@@ -50,6 +58,8 @@ export interface TypertRemoteEventInvocation {
   /** Sole request argument before the waterfall's `next()` callback. */
   readonly request: object
   readonly context: TypertRemoteEventContext
+  /** Process-local owner recovered from the Agent's active durable turn or step. */
+  readonly principal: AuthenticatedPrincipal | undefined
   /** Resume the source's Cordis listener with a Client result or `next()`. */
   readonly resolve: (outcome: TypertRemoteEventOutcome) => void
   /** Reject the source's Cordis listener after cancellation, transport failure, or Client rejection. */
@@ -83,6 +93,7 @@ export interface TypertGatewayWireStream {
     endpoint: string,
     payload: unknown,
     signal: AbortSignal,
+    principal?: AuthenticatedPrincipal,
   ) => Promise<AsyncIterable<unknown>>
 
   /**
@@ -119,6 +130,12 @@ export type TypertGatewayErrorCode =
 
 /** Host dispatcher consumed by Connection adapters. */
 export interface TypertGateway {
+  /**
+   * Return the transport-verified principal for the active Remote call.
+   * @returns the scoped caller, or undefined outside authenticated dispatch.
+   */
+  currentPrincipal(): AuthenticatedPrincipal | undefined
+
   /** Carrier adapter shared by WebSocket and in-process transports. */
   readonly wireStream: TypertGatewayWireStream
 

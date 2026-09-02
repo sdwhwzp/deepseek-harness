@@ -39,6 +39,38 @@ function stubAgent(rawId: string, overrides: Partial<Agent> = {}): Agent {
 }
 
 describe('Inbox', () => {
+  it('claims authenticated and anonymous principal groups separately and preserves them on replay', () => {
+    const session = Session.create(SessionId('principal-inbox'))
+    const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+    const message = (username: string) => createUserMessage({
+      content: [{ type: 'text' as const, text: username }],
+      source: { kind: 'user' as const },
+      principal: { source: 'gateway', id: username, username, role: 'user' as const },
+    })
+    const a = message('a')
+    const internal = createUserMessage({
+      content: [{ type: 'text', text: 'internal' }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })
+    const anonymous = createUserMessage({
+      content: [{ type: 'text', text: 'anonymous' }],
+      source: { kind: 'user' },
+    })
+    const b = message('b')
+    inbox.append('next-step', internal)
+    inbox.append('next-step', a)
+    inbox.append('next-step', anonymous)
+    inbox.append('next-step', b)
+
+    expect(inbox.claim('next-step', 1)).toEqual([internal, a])
+    expect(inbox.nextStep).toEqual([anonymous, b])
+
+    const restored = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+    expect(restored.nextStep).toEqual([anonymous, b])
+    expect(restored.claim('next-step', 1)).toEqual([anonymous])
+    expect(restored.claim('next-step', 1)).toEqual([b])
+  })
+
   it('rejects an invalid durable splice during reconstruction', () => {
     const session = Session.create(SessionId('invalid-inbox-replay'))
     session.append('agent/inbox/spliced', {
