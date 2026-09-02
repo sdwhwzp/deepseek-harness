@@ -83,4 +83,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No runtime relationship is asserted. Providers own authorization data and expose no independent observation stream.
+**Runtime invariant:** No runtime invariant companion is published because providers own authorization data and expose no independent observation stream.
