@@ -9,7 +9,7 @@ import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtim
 import ToolRuntime, { CodeRunFailedError, RUN_CODE_NAME, TOOL_ABORTED_BEFORE_DISPATCH, defineContentToolFixture, defineTool } from '@deepseek-ai/dsh-tools'
 import type { Config, JsonSchemaNode, PostToolDecision, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
@@ -104,7 +104,7 @@ function fakeAgent(): { agent: Agent; events: { type: string; data: unknown }[] 
 async function runCode(
   ctx: Context,
   code: string,
-  extras: { agent?: Agent; signal?: AbortSignal; description?: string } = {},
+  extras: { agent?: Agent; signal?: AbortSignal; description?: string; rootCallSeq?: SessionSeq } = {},
 ): Promise<ToolExecutionResult> {
   return ctx.tools.execute({
     signal: testToolSignal,
@@ -113,6 +113,7 @@ async function runCode(
     arguments: { code, description: extras.description ?? 'Run the test program' },
     ...extras.agent ? { agent: extras.agent } : {},
     ...extras.signal ? { signal: extras.signal } : {},
+    ...extras.rootCallSeq !== undefined ? { rootCallSeq: extras.rootCallSeq } : {},
   })
 }
 
@@ -810,6 +811,27 @@ describe('the sub-dispatch scheduler (native concurrency contract)', () => {
 })
 
 describe('the run_code dispatch bridge', () => {
+  it('propagates the durable root call seq through nested executions and dispatch events', async () => {
+    const { ctx, runtime } = await setup({ mode: 'ptc' })
+    registerEcho(ctx)
+    const { agent, events } = fakeAgent()
+    runtime.behavior = async (request) => {
+      await request.bindings[0]!.functions.echo!({ value: 'nested' })
+      return { logs: [], value: 'done' }
+    }
+
+    await runCode(ctx, 'return tools.echo({ value: "nested" })', {
+      agent,
+      rootCallSeq: SessionSeq(42),
+    })
+
+    expect(events.filter(event => event.type === 'tool/code-dispatch-start'
+      || event.type === 'tool/code-dispatch').map(event => event.data)).toMatchObject([
+      { rootCallSeq: 42 },
+      { rootCallSeq: 42 },
+    ])
+  })
+
   it('bridges tool calls, returns only the curated output, and logs one event per dispatch', async () => {
     const { ctx, runtime } = await setup({ mode: 'ptc' })
     const calls = registerEcho(ctx)

@@ -76,14 +76,14 @@ kind: "package-reference"
 
 ### 数据模型
 
-折叠状态保存八个总计外加进行中的边界：`lastTurn`（最近一次被计数 `step/end` 的轮次）、`openStep`（打开步的边界事实，由其 `assistant/message` 关闭）与 `pendingCalls`（按 callId 记录的工具分发时间）。wire 视图是严格子集——八个总计——因此持久缓存的状态 schema 以边界字段扩展视图 schema。
+折叠状态保存八个总计外加进行中的边界：`lastTurn`（最近一次被计数 `step/end` 的轮次）、`openStep`（打开步的边界事实，由其 `assistant/message` 关闭）与 `pendingCalls`（按根 `tool/call` seq 记录的工具分发时间）。wire 视图是严格子集——八个总计——因此持久缓存的状态 schema 以边界字段扩展视图 schema。
 
 ### 折叠规则
 
 - 不相关事件返回同一状态引用；注册表的 `Object.is` 门禁保持变更流安静。
 - 首 token 延迟记录首个非空 delta chunk，并在步内 `llm/retry` 后保留。
 - 解码时间与 token 只在同时携带首 token 与有效提供方用量报告的步上累加；与窗口折叠守卫节点用量一样忽略畸形用量。
-- 工具时间按 callId 配对 `tool/call` → `tool/result`；未解决的调用在 `turn/end` 时丢弃，因为结果总在其轮内落地，而撞上 `Object` 原型名的 callId 读作未匹配。
+- 工具时间通过 result 的首个 `sourceEventSeqs` 条目配对 `tool/call` → `tool/result`；缺少引用时保持未匹配，重复的 provider call id 仍彼此独立。未解决的调用在 `turn/end` 时丢弃，因为结果总在其轮内落地。
 
 </details>
 

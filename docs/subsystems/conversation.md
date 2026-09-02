@@ -12,8 +12,8 @@ The Session Controller owns the contiguous loaded logical-event window. Each `Se
 
 | Concept | Owner and purpose |
 |---|---|
-| Event Definition | A business package matches one standard event or packed Assistant run at a time, correlates it by stable `(kind, id)`, folds deterministic State, and optionally materializes one target node. |
-| Context | The engine-owned ordered Matches and current State for one `(kind, id)`. A packed run occupies one update Match; update-only evidence may remain pending until pagination supplies its unique scalar start. |
+| Event Definition | A business package matches one standard event or packed Assistant run at a time, correlates it by stable `(kind, id, lifecycle?)`, folds deterministic State, and optionally materializes one target node. |
+| Context | The engine-owned ordered Matches and current State for one `(kind, id, lifecycle?)`. A packed run occupies one update Match; update-only evidence may remain pending until pagination supplies its unique scalar start. |
 | Location | The engine-owned Session, Turn, or Step coordinates derived from durable boundary events. Definitions may publish typed data onto one Turn or Step. |
 | View Definition | A target package creates one incremental builder per Session and owns the final snapshot type for that target. |
 | View | A Slot entry such as Chat or Trajectory reads only its target snapshot and renders target-owned nodes. |
@@ -28,7 +28,7 @@ The shell owns View selection and resolves the registered preferred View or Chat
 
 ## Replayable event families
 
-Choose one stable business id before writing the Definition. Every event that contributes to the same Node must carry that id or derive it independently from its own payload; the client must never assign an update to “the latest unfinished” Context.
+Choose one stable business id before writing the Definition. If the producer may reuse that id, also choose a stable lifecycle identity for each occurrence. Every event that contributes to the same Node must carry or independently derive the same id and optional lifecycle from its own payload; the client must never assign an update to “the latest unfinished” Context.
 
 For a review job, the event contract could be:
 
@@ -38,7 +38,7 @@ For a review job, the event contract could be:
 | `review/progress` | update | the same `reviewId`, coordinates, replayable progress |
 | `review/end` | update | the same `reviewId`, coordinates, final summary |
 
-Use the producer-owned branded id type across the process boundary. Put the `SessionEventMap` merge and payload types on the producer's type-only export, then import that export for side effects from the client package. Each `(kind, id)` may have at most one start event. A single-event business can use the event's stable identity, such as `event.seq`, as its Definition-local id.
+Use the producer-owned branded id type across the process boundary. Put the `SessionEventMap` merge and payload types on the producer's type-only export, then import that export for side effects from the client package. Each `(kind, id, lifecycle?)` may have at most one start event. A single-event business can use the event's stable identity, such as `event.seq`, as its Definition-local id or lifecycle.
 
 Incremental events are supported. Prefer whole-value checkpoints when the producer can emit them cheaply, because they remain useful when the start is outside the loaded window. Each delta must carry the stable id and produce deterministic State when replayed in ascending log `seq`; it must not depend on live-only memory. If the current history window contains only updates, the assembler keeps a pending Context and builds no State until an older page supplies the start. If the product must render before the start is loaded, a terminal or checkpoint event must carry enough whole fallback state for the Definition to build that result directly; do not recover it by scanning unrelated events.
 
@@ -216,7 +216,7 @@ export function apply(ctx: ClientContext): void {
 }
 ```
 
-`match(event)` is an identity extractor, not a fold: it receives only the current `SessionEventLike` and returns the Definition-local id and lifecycle role. After a match, the assembler locates the Context by `(kind, id)` and calls `start` once for a standard event or `update` for a standard or packed event. Both functions return the State that the engine adopts; returning a new immutable value is preferred, but a function that mutates and returns the same object has the same adoption semantics.
+`match(event)` is an identity extractor, not a fold: it receives only the current `SessionEventLike` and returns the Definition-local id, optional lifecycle identity, and lifecycle role. After a match, the assembler locates the Context by `(kind, id, lifecycle?)` and calls `start` once for a standard event or `update` for a standard or packed event. Both functions return the State that the engine adopts; returning a new immutable value is preferred, but a function that mutates and returns the same object has the same adoption semantics.
 
 `buildLocationData(context, scope)` optionally publishes Definition-owned data onto an engine-owned Turn or Step. Use declaration merging to give each key a precise value type. Another Node in the same Location can consume that value through its constrained slot hook, such as `useTurnData(key)`, without receiving the Session or scanning `snapshot.chat.nodes`.
 
@@ -235,7 +235,7 @@ History may be requested from the tail backward one page at a time. The Session 
 | Path | Engine work | Definition-visible behavior |
 |---|---|---|
 | Replace on open, resync, or gap repair | Rebuild the loaded window, match every standard event or packed run once per Definition, then replay each started Context | `start`, followed by its updates in ascending logical `seq`; pending update-only Contexts remain without State |
-| Prepend one older page | Match only fresh older inputs, merge them into Contexts by `(kind, id)`, preserve existing keyed nodes, and replay only affected Contexts and dependencies | A newly found scalar start activates its collected scalar and packed updates; a changed Location or predecessor may rerun the Context |
+| Prepend one older page | Match only fresh older inputs, merge them into Contexts by `(kind, id, lifecycle?)`, preserve existing keyed nodes, and replay only affected Contexts and dependencies | A newly found scalar start activates its collected scalar and packed updates; a changed Location or predecessor may rerun the Context |
 | Append one live event | Call each Definition's `match` once, look up the matched Context by key, and update only that Context | One scalar `update` and one requested publication for a matching post-start event; no existing Context scan |
 
 With `D` registered Definitions, one incoming scalar event or packed run performs `D` current-input matches and constant-time Context-key lookup after a match. Definition code must preserve that property: do not traverse the complete event window, every Context, `context.matches`, or the rendered Node collection on the normal append path. Use State for accumulated facts, Location data for same-Turn/Step sharing, and `reader.previous()` for indexed predecessor dependencies.

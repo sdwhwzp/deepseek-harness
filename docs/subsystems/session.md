@@ -68,8 +68,9 @@ interface SessionEventMap {
   'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
   /**
    * The model requested one tool invocation: `name` with the raw `arguments`
-   * JSON string exactly as the model produced it (unparsed). `callId` pairs the
-   * call with its `tool/result`.
+   * JSON string exactly as the model produced it (unparsed). `callId` preserves
+   * the provider-supplied value; consumers use this event's `seq` to identify
+   * this call occurrence because a provider may reuse a call id.
    */
   'tool/call': { turn: number; step: number; callId: ToolCallId; name: string; arguments: string }
   /**
@@ -81,7 +82,9 @@ interface SessionEventMap {
    * `meta` is rejected at the source, and the durable log reproduces the
    * identical card on replay. Absent
    * unless the tool attaches one (e.g. `dsh-tool-fs` carries its result-time
-   * contextual diff here).
+   * contextual diff here). An appended result cites its originating
+   * `tool/call` event first in `sourceEventSeqs`, so the occurrence remains
+   * unambiguous when a provider reuses `callId`.
    */
   'tool/result': {
     turn: number
@@ -636,7 +639,7 @@ Consumers that order Sessions by human activity exclude this boundary: picking a
 
 A plugin may declaration-merge extra `SessionEventMap` types. These are **log-only**: NOT `SurfaceEventType`s (they carry no `surfaceOp` and contribute nothing to derived history). Their owner decides whether they belong to an open execution turn or may stand between turns, and enforces any relation in its own invariant companion. The generated [persistence log event catalog](../persistence-catalog.md) enumerates every core and plugin-contributed event; the compaction seam's `compaction/*` semantics are discussed on [compaction.md](compaction.md).
 
-When several events in one plugin-owned family assemble into one Web Client Conversation Node, every start, update, result, resource, or interruption event in that family carries or independently derives the same stable business id. This requirement applies to correlated Node families, not to every Session event; it lets the client group each event without guessing from adjacency or scanning history. See the [Conversation subsystem](conversation.md).
+When several events in one plugin-owned family assemble into one Web Client Conversation Node, every start, update, result, resource, or interruption event in that family carries or independently derives the same stable business id and, when the id may repeat, the same lifecycle identity. This requirement applies to correlated Node families, not to every Session event; it lets the client group each event without guessing from adjacency or scanning history. See the [Conversation subsystem](conversation.md).
 
 The hook bridges' `hook/invoked` / `hook/result` pairs (from `@deepseek-ai/dsh-hook-protocol`) correlate by `handlerId`. `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, and `Stop` fire inside the loop's open turn, so their `hook/*` records are turn-enclosed by construction. `SessionStart` gets no `hook/*` record because it runs before turn 1; its context remains pending in the inbox until a waking delivery opens a turn (see [the hook-bridges Agent Note](../../.agents/notes/implemented/feature/2026-06-30-hook-bridges.md)).
 

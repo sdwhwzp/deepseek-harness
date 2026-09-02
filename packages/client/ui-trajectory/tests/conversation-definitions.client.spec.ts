@@ -357,6 +357,7 @@ describe('Trajectory conversation Definitions', () => {
       }),
       at(5, 'tool/code-dispatch-start', {
         rootCallId: 'root-a',
+        rootCallSeq: 3,
         parentCallId: 'root-a',
         subCallId: 'child',
         name: 'read',
@@ -364,6 +365,7 @@ describe('Trajectory conversation Definitions', () => {
       }),
       at(6, 'tool/code-dispatch', {
         rootCallId: 'root-a',
+        rootCallSeq: 3,
         parentCallId: 'root-a',
         subCallId: 'child',
         name: 'read',
@@ -386,7 +388,7 @@ describe('Trajectory conversation Definitions', () => {
         },
         error: { name: 'ToolError', code: 'failed' },
         meta: { presentation: 'raw' },
-      }, { surfaceOp: 'append' }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [3] }),
       at(8, 'step/end', { turn: 1, step: 1 }),
     ]))
 
@@ -408,6 +410,44 @@ describe('Trajectory conversation Definitions', () => {
       isError: true,
       error: { name: 'Interrupted', code: 'interrupted' },
     })
+  })
+
+  it('keeps repeated provider tool-call ids as separate result nodes', () => {
+    const result = (text: string) => ({
+      id: `result-${text}`,
+      role: 'user',
+      source: { kind: 'tool', callId: 'provider-duplicate' },
+      content: [{
+        type: 'tool-result',
+        toolCallId: 'provider-duplicate',
+        content: [{ type: 'text', text }],
+        isError: false,
+      }],
+    })
+    const current = snapshot(assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', {
+        turn: 1, step: 1, callId: 'provider-duplicate', name: 'read', arguments: '{"path":"first"}',
+      }),
+      at(4, 'tool/result', {
+        turn: 1, step: 1, message: result('first result'),
+      }, { surfaceOp: 'append', sourceEventSeqs: [3] }),
+      at(5, 'tool/call', {
+        turn: 1, step: 1, callId: 'provider-duplicate', name: 'read', arguments: '{"path":"second"}',
+      }),
+      at(6, 'tool/result', {
+        turn: 1, step: 1, message: result('second result'),
+      }, { surfaceOp: 'append', sourceEventSeqs: [5] }),
+      at(7, 'step/end', { turn: 1, step: 1 }),
+    ]))
+
+    const tools = current.eventNodes.filter(node => node.kind === 'tool-result')
+    expect(tools).toHaveLength(2)
+    expect(tools.map(node => node.call)).toEqual([
+      { name: 'read', argsRaw: '{"path":"first"}' },
+      { name: 'read', argsRaw: '{"path":"second"}' },
+    ])
   })
 
   it('assembles compaction lifecycle, checkpoint replacement, and orphan interruption', () => {

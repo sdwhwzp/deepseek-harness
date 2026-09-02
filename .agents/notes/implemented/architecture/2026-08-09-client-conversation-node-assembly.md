@@ -41,21 +41,21 @@ One input may be claimed by several ordinary Definitions. For example, an Assist
 
 A Definition holds no mutable business data across Sessions. Each Session's Assembler isolates that Session's Contexts, State, dependencies, and View Builders.
 
-#### `kind`, business ID, and Context key
+#### `kind`, business ID, lifecycle, and Context key
 
-The `id` returned by `match()` only needs to be stable within its Definition. A Tool ID can be a call ID, an Assistant ID can be `turn:step`, and an Inbox ID can be the splice Event seq.
+The `id` returned by `match()` only needs to be stable within its Definition. A Tool ID can be a call ID, an Assistant ID can be `turn:step`, and an Inbox ID can be the splice Event seq. A producer that may reuse one business ID also supplies `lifecycle`; every Event in that lifecycle derives the same value locally.
 
-The Assembler uses `conversationContextKey(kind, id)` to make a collision-free key. Definitions that return the same `id` still do not share a Context. The final view Node must retain this engine-owned key and cannot use `seq` or render position as identity.
+The Assembler uses `conversationContextKey(kind, id, lifecycle?)` to make a collision-free key. Definitions that return the same `id` still do not share a Context, and repeated lifecycles under one ID remain independent. The final view Node must retain this engine-owned key and cannot use render position as identity.
 
-Each `(kind, id)` has at most one start Match. A second start fails immediately; a Definition must return a new ID to represent a new lifecycle.
+Each `(kind, id, lifecycle?)` has at most one start Match. A second start fails immediately; a Definition must return a new ID or lifecycle identity to represent another lifecycle.
 
 #### `match(event)`
 
-`match(event)` reads only the current `SessionEventLike` and returns `{ id, role: 'start' | 'update' }` or `null`. It cannot access a Context, history, a Reader, a Location, or the view envelope. A `chunkrow/*` event can only be an update; the Assembler rejects it as a start, and `start()` receives a `ConversationStartMatch` containing a standard `SessionEvent`.
+`match(event)` reads only the current `SessionEventLike` and returns `{ id, lifecycle?, role: 'start' | 'update' }` or `null`. It cannot access a Context, history, a Reader, a Location, or the view envelope. A `chunkrow/*` event can only be an update; the Assembler rejects it as a start, and `start()` receives a `ConversationStartMatch` containing a standard `SessionEvent`.
 
 This restriction makes one scalar event or packed run's routing cost depend only on the number of registered Definitions. The Assembler never scans a Definition's historical Contexts to decide which one owns an update.
 
-Start, result, resource, checkpoint, and business-owned terminal Events must carry or directly imply the same ID. If one Event cannot yield that ID, its producer extends the Event protocol; the Client does not guess from the "nearest unfinished object."
+Start, result, resource, checkpoint, and business-owned terminal Events must carry or directly imply the same ID and lifecycle identity. If one Event cannot yield them, its producer extends the Event protocol; the Client does not guess from the "nearest unfinished object."
 
 The `role` describes the State lifecycle, not visibility. A start may produce a terminal Node immediately, while an update may enter a pending Context before its start has loaded.
 
@@ -71,8 +71,9 @@ Location can change when prepend fills a boundary or append closes one. The Asse
 
 | Field | Owner | Semantics visible to the Definition |
 |---|---|---|
-| `key` | Assembler | Stable final identity derived from `kind + id` |
+| `key` | Assembler | Stable final identity derived from `kind + id + lifecycle?` |
 | `kind` / `id` | Definition + Assembler | Current business namespace and business ID |
+| `lifecycle` | Definition + Assembler | Reused business ID's lifecycle identity, or `undefined` when the ID is complete |
 | `matches` | Assembler | Complete scalar and packed business evidence loaded in the current window and sorted by first `seq` |
 | `start` | Assembler | Unique scalar start Match, or `undefined` before it loads |
 | `state` | Returned by Definition, held by Assembler | Most recent `start`/`update` return value, or `undefined` before initialization |
@@ -110,7 +111,7 @@ Dependencies point strictly from earlier starts to later starts, so transitive r
 
 #### `update(context, match)`
 
-`update()` handles a post-start scalar or packed Match that `match()` has already routed exactly to the current `(kind, id)`. It does not decide which Context owns the input. A Definition that consumes Assistant deltas folds each matching `chunkrow/*` value as one batch without constructing member events.
+`update()` handles a post-start scalar or packed Match that `match()` has already routed exactly to the current `(kind, id, lifecycle?)`. It does not decide which Context owns the input. A Definition that consumes Assistant deltas folds each matching `chunkrow/*` value as one batch without constructing member events.
 
 The Assembler invokes `update()` in ascending `seq` order. A live tail update can apply incrementally; any non-tail insertion, newly loaded start, or invalidated dependency causes a complete replay from `start()`.
 
@@ -158,7 +159,7 @@ The engine exposes no fixed `end()` lifecycle. A single-Event business completes
 
 Step and Turn closure are external Location facts and do not mutate business State. A boundary change replays and builds affected Contexts; each business combines its own completion State with whether its Location is closed to produce normal, running, or interrupted presentation.
 
-IDs are never reused. Completed Contexts remain in the current window, providing stable render identity and possible predecessor evidence for later Readers.
+An ID may be reused only with a distinct lifecycle identity. Completed Contexts remain in the current window, providing stable render identity and possible predecessor evidence for later Readers.
 
 ### Location is a first-class engine fact
 
@@ -191,7 +192,7 @@ The Assembler also passes a reference-stable timeline to each View Builder. Busi
 3. It sorts every entry by its first logical `seq` and stores the resulting current window.
 4. LocationIndex rebuilds Turn and Step facts for that window.
 5. The Assembler visits standard events and packed runs in ascending order and invokes every ordinary Definition's `match(event)`.
-6. Each result gets or creates its `(kind, id)` Context and enters that Context's ordered Match array.
+6. Each result gets or creates its `(kind, id, lifecycle?)` Context and enters that Context's ordered Match array.
 7. A start runs `start()`; a tail update on initialized State runs `update()` directly.
 8. If the page contains only a result or resource and omits its start, the ID still creates a Context and collects Matches, while State remains `undefined`.
 9. After matching all inputs, the Assembler rechecks Reader dependencies so earlier instantaneous states in the same window stabilize before later consumers read them.
@@ -231,7 +232,7 @@ Reader gap repair is the largest algorithmic difference between prepend and ordi
 1. Session accepts only a standard live Event immediately after the current logical tail seq; it deduplicates overlap and runs tail-page repair before accepting a gap.
 2. A non-boundary Event enters the current Turn and Step coordinates incrementally; a boundary Event updates Location facts for its owning Turn.
 3. The Assembler invokes `match()` once on every ordinary Definition for this Event and scans no Definition's Context set.
-4. Each successful result directly locates one Context through `(kind, id)`.
+4. Each successful result directly locates one Context through `(kind, id, lifecycle?)`.
 5. A new ID creates a Context; a normal tail update for an existing ID invokes `update()` once.
 6. A start or any evidence inserted before the tail uses complete `replayContext()` and retains the same forward-order semantics.
 7. After a Context revision changes, only recorded Reader dependents replay.
@@ -247,7 +248,7 @@ A structural Chat `order` change can still reorder the current visible keys. A d
 
 ### Consistency across replace, prepend, and append
 
-All three paths preserve the same invariants: Context Matches are seq-ordered, State folds forward from one unique start, Reader sees only strictly preceding active Contexts, Location data publishes in Step→Turn order, and Node key depends only on kind and ID.
+All three paths preserve the same invariants: Context Matches are seq-ordered, State folds forward from one unique start, Reader sees only strictly preceding active Contexts, Location data publishes in Step→Turn order, and Node key depends only on kind, ID, and optional lifecycle identity.
 
 `replaceWindow` is the low-frequency complete replacement for initial open, resync, gap repair, and registry changes; it does not implement ordinary load older. Both `prepend` and `append` retain existing Builder and Context identity.
 
@@ -263,7 +264,7 @@ Page size, record packing, the number of history loads, and RAF coalescing affec
 | Message / `input-message` | Message ID | Append-surface `user/message` | None | Use source for a context message, or read the nearest next-step Inbox to distinguish user from steering |
 | Request Prompt / `request-prompt` | Header Event seq | Each `request/header` | None | Read the preceding Request Prompt through Reader, retain the full prompt state, and classify system/tool changes |
 | Assistant / `assistant-step` | `turn:step` | `step/start` | Scalar or packed `assistant/chunk`, final `assistant/message`, and same-step Retry | Aggregate blocks, usage, first-token time, final evidence, and retry-hidden state, then publish same-key Step data |
-| Tool / `tool-call` | Root call ID | Root `tool/call` | Root result and Code Dispatch start/result | Aggregate the root, children, and parent Map; Dispatch Events route exactly through `rootCallId` |
+| Tool / `tool-call` | Root call ID plus root `tool/call` seq lifecycle | Root `tool/call` | Root result and Code Dispatch start/result | Aggregate the root, children, and parent Map; results cite the call seq and Dispatch Events carry `rootCallSeq` |
 | Command / `command` | Command ID | `command/run` | `command/done` and compact lifecycle/checkpoint Events carrying a source command ID | Aggregate command outcome and manual-compaction evidence |
 | Automatic Compaction / `compaction` | Compaction ID | `compaction/start` without a source command ID | Summary, end, and replacement checkpoint | Aggregate summary/checkpoint; sufficient checkpoint evidence supports fallback without a start |
 | Retry / `model-retry` | Retry ID | Attempt 1 `llm/retry` | Later `llm/retry` and `llm/retry-started` | Aggregate one RetryId's attempts and scheduled/started state |
@@ -346,7 +347,7 @@ The target-specific Trajectory Definitions, retained stage model, Steering adapt
 ```text
 SessionEventLike window
   -> ConversationNodeAssembler
-       -> Definition.match(event) -> (kind, id, start/update)
+       -> Definition.match(event) -> (kind, id, lifecycle?, start/update)
        -> Context matches + State + Location
        -> Definition.buildLocationData(step -> turn)
             -> StepLocation.data / TurnLocation.data
@@ -358,7 +359,7 @@ SessionEventLike window
 
 ## Verification
 
-Runtime tests pin Definition lifecycle registration, exact-ID append, update-before-start collection followed by forward replay after start, prepend identity, Reader window-gap repair, transitive dependencies, Location closure, Step→Turn data phase order, Location data replacement, publication cadence, illegal withdrawal, first-subscription activation, monotonic active targets, and per-target Builders.
+Runtime tests pin Definition lifecycle registration, exact-ID append, reused-ID lifecycle separation, update-before-start collection followed by forward replay after start, prepend identity, Reader window-gap repair, transitive dependencies, Location closure, Step→Turn data phase order, Location data replacement, publication cadence, illegal withdrawal, first-subscription activation, monotonic active targets, and per-target Builders.
 
 Conversation tests cover every built-in Chat Definition, Assistant Step data, Turn Tail and Deliverables Turn data, Chat ordering and structural sharing, selector isolation, Assistant and Tool running-to-settled identity, nested Code Dispatch, steering, Compaction, Retry, interruption, load-older anchoring, and slot dispatch. Trajectory tests cover its independently registered Message, Assistant, Tool, Compaction, Request-header, and boundary Definitions together with the preserved stage-oriented view model.
 

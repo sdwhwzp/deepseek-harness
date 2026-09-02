@@ -6,10 +6,13 @@
 
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
 
 /** Payload recorded when one nested PTC mode Tool dispatch starts. */
 export interface PtcDispatchStartEventData {
   rootCallId: ToolCallId
+  /** Session seq of the root model-requested `tool/call`, when it was logged. */
+  rootCallSeq?: SessionSeq
   parentCallId: ToolCallId
   subCallId: ToolCallId
   name: string
@@ -26,7 +29,8 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
      * One sub-dispatch STARTING inside a `run_code` program: the parent
-     * `run_code` call id, the deterministic sub-call id (`<parent>:code:<n>`,
+     * `run_code` call id, its durable root call seq when available, the
+     * deterministic sub-call id (`<parent>:code:<n>`,
      * numbered in submission order), and the tool `name` with its
      * JSON-normalized `arguments` — the exact value dispatched, normalized
      * BEFORE dispatch, so this append can never fail on payload shape.
@@ -39,7 +43,8 @@ declare module '@deepseek-ai/dsh-session/types' {
      */
     'tool/code-dispatch-start': PtcDispatchStartEventData
     /**
-     * One bridged sub-dispatch SETTLING: the pairing ids (matching the
+     * One bridged sub-dispatch SETTLING: the pairing ids and optional durable
+     * root call seq (matching the
      * `tool/code-dispatch-start` with the same `subCallId`), the tool `name`
      * with the same JSON-normalized `arguments`, and the sub-call's complete
      * model-facing outcome in `tool/result`'s own vocabulary

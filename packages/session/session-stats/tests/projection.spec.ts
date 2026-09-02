@@ -148,8 +148,8 @@ describe('sessionStats projection unit (registry drive)', () => {
 })
 
 /** Build one synthetic committed event with a controlled timestamp. */
-function at(time: number, type: string, data: unknown): SessionEvent {
-  return { type, seq: time, time, data } as unknown as SessionEvent
+function at(time: number, type: string, data: unknown, envelope: Record<string, unknown> = {}): SessionEvent {
+  return { type, seq: time, time, data, ...envelope } as unknown as SessionEvent
 }
 
 /** Fold a synthetic event list through the definition and view the result. */
@@ -241,17 +241,17 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
     ])).toEqual(totals({ turns: 1, steps: 1 }))
   })
 
-  it('pairs tool wall time by callId, ignores orphan results, and prunes leftovers at turn/end', () => {
+  it('pairs tool wall time by cited call seq, tolerates repeated provider ids, and prunes leftovers', () => {
     const result = (callId: string): unknown =>
       ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId } } })
     const paired = fold([
       at(1_000, 'step/start', { turn: 1, step: 1 }),
-      at(1_100, 'tool/call', { turn: 1, step: 1, callId: 'a', name: 'read', arguments: '{}' }),
-      at(1_200, 'tool/call', { turn: 1, step: 1, callId: 'b', name: 'read', arguments: '{}' }),
-      // Out-of-order settlement pairs by id, not adjacency.
-      at(4_200, 'tool/result', result('b')),
-      at(1_600, 'tool/result', result('a')),
-      at(5_000, 'tool/result', result('ghost')),
+      at(1_100, 'tool/call', { turn: 1, step: 1, callId: 'reused', name: 'read', arguments: '{"path":"a"}' }),
+      at(1_200, 'tool/call', { turn: 1, step: 1, callId: 'reused', name: 'read', arguments: '{"path":"b"}' }),
+      // Out-of-order settlement remains unambiguous despite the repeated provider id.
+      at(4_200, 'tool/result', result('reused'), { sourceEventSeqs: [1_200] }),
+      at(1_600, 'tool/result', result('reused'), { sourceEventSeqs: [1_100] }),
+      at(5_000, 'tool/result', result('ghost'), { sourceEventSeqs: [4_999] }),
       at(5_100, 'step/end', { turn: 1, step: 1 }),
     ])
     expect(paired).toEqual(totals({ turns: 1, steps: 1, toolMs: 3_500 }))
@@ -261,18 +261,15 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
       at(1_100, 'tool/call', { turn: 1, step: 1, callId: 'orphan', name: 'read', arguments: '{}' }),
       at(2_000, 'step/end', { turn: 1, step: 1 }),
       at(2_100, 'turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'legacy' } } }),
-      at(9_000, 'tool/result', result('orphan')),
+      at(9_000, 'tool/result', result('orphan'), { sourceEventSeqs: [1_100] }),
     ])
     expect(pruned).toEqual(totals({ turns: 1, steps: 1 }))
   })
 
-  it('pairs only own pendingCalls keys: a prototype-name callId without a recorded call stays unmatched', () => {
+  it('pairs only own pendingCalls keys and ignores results without a cited call seq', () => {
     const result = (callId: string): unknown =>
       ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId } } })
-    // Crash recovery (TOOL_NOT_STARTED) emits results with no preceding
-    // tool/call; a provider-minted callId colliding with an Object prototype
-    // property must read as absent, not as an inherited function that would
-    // fold toolMs to NaN and fail the value schema.
+    // Crash recovery can emit a result with no preceding tool/call.
     expect(fold([
       at(1_000, 'step/start', { turn: 1, step: 1 }),
       at(1_500, 'tool/result', result('toString')),
@@ -282,7 +279,7 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
     expect(fold([
       at(1_000, 'step/start', { turn: 1, step: 1 }),
       at(1_100, 'tool/call', { turn: 1, step: 1, callId: 'constructor', name: 'read', arguments: '{}' }),
-      at(1_600, 'tool/result', result('constructor')),
+      at(1_600, 'tool/result', result('constructor'), { sourceEventSeqs: [1_100] }),
       at(2_000, 'step/end', { turn: 1, step: 1 }),
     ])).toEqual(totals({ turns: 1, steps: 1, toolMs: 500 }))
   })

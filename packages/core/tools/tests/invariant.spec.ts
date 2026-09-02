@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { ToolExecution, ToolExecutionResult, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import * as ToolsInvariant from '@deepseek-ai/dsh-tools/invariant'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
@@ -182,6 +182,36 @@ describe('tool-pipeline invariants', () => {
       name: 'echo',
       arguments: {},
     })).toThrow(/changed rootCallId for subCallId child/)
+  })
+
+  it('requires a supplied root call seq to identify the durable root call', async () => {
+    const ctx = await setup()
+    const session = ctx.sessions.create()
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    const rootCall = session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId: ToolCallId('root'),
+      name: 'run_code',
+      arguments: '{}',
+    })
+    expect(() => session.append('tool/code-dispatch-start', {
+      rootCallId: ToolCallId('root'),
+      rootCallSeq: rootCall.seq,
+      parentCallId: ToolCallId('root'),
+      subCallId: ToolCallId('child'),
+      name: 'echo',
+      arguments: {},
+    })).not.toThrow()
+    expect(() => session.append('tool/code-dispatch-start', {
+      rootCallId: ToolCallId('root'),
+      rootCallSeq: SessionSeq(Number(rootCall.seq) + 1),
+      parentCallId: ToolCallId('root'),
+      subCallId: ToolCallId('invalid-child'),
+      name: 'echo',
+      arguments: {},
+    })).toThrow(/rootCallSeq .* does not identify rootCallId root/)
   })
 
   it('indexes dispatch records emitted for a bare session', async () => {

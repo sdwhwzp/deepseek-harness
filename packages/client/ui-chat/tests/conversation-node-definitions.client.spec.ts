@@ -296,7 +296,7 @@ describe('built-in conversation node Definitions', () => {
     }))
     value.append(at(8, 'tool/result', {
       turn: 1, step: 1, message: toolResult('call-1', 'done'),
-    }, { surfaceOp: 'append' }))
+    }, { surfaceOp: 'append', sourceEventSeqs: [7] }))
     value.append(at(9, 'step/end', { turn: 1, step: 1 }))
     value.append(at(10, 'step/start', { turn: 1, step: 2 }))
     value.append(at(11, 'assistant/chunk', {
@@ -377,13 +377,13 @@ describe('built-in conversation node Definitions', () => {
       }),
       at(5, 'tool/result', {
         turn: 1, step: 1, message: toolResult('call-read', 'read done'),
-      }, { surfaceOp: 'append' }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [4] }),
       at(6, 'tool/call', {
         turn: 1, step: 1, callId: 'call-subagent', name: 'subagent_fork', arguments: '{}',
       }),
       at(7, 'tool/result', {
         turn: 1, step: 1, message: toolResult('call-subagent', 'delegation done'),
-      }, { surfaceOp: 'append' }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [6] }),
       at(8, 'step/end', { turn: 1, step: 1 }),
       at(9, 'step/start', { turn: 1, step: 2 }),
       at(10, 'assistant/message', {
@@ -544,7 +544,7 @@ describe('built-in conversation node Definitions', () => {
       }),
       at(4, 'tool/result', {
         turn: 1, step: 1, message: toolResult('call-1', 'done'),
-      }, { surfaceOp: 'append' }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [3] }),
       at(5, 'agent/inbox/spliced', {
         target: 'next-step', start: 0, inserted: [steering],
       }),
@@ -1042,7 +1042,7 @@ describe('built-in conversation node Definitions', () => {
       message: toolResult('root', 'done', true),
       error: { name: 'ToolError', code: 'failed' },
       meta: { presentation: 'raw' },
-    }, { surfaceOp: 'append' }))
+    }, { surfaceOp: 'append', sourceEventSeqs: [3] }))
     value.flush()
 
     const settledSnapshot = snapshot(value)
@@ -1062,6 +1062,7 @@ describe('built-in conversation node Definitions', () => {
     const history = assembler([
       at(14, 'tool/code-dispatch-start', {
         rootCallId: 'history-root',
+        rootCallSeq: 13,
         parentCallId: 'history-root',
         subCallId: 'child',
         name: 'read',
@@ -1069,6 +1070,7 @@ describe('built-in conversation node Definitions', () => {
       }),
       at(15, 'tool/code-dispatch', {
         rootCallId: 'history-root',
+        rootCallSeq: 13,
         parentCallId: 'history-root',
         subCallId: 'child',
         name: 'read',
@@ -1080,7 +1082,7 @@ describe('built-in conversation node Definitions', () => {
         turn: 2,
         step: 1,
         message: toolResult('history-root', 'root done'),
-      }, { surfaceOp: 'append' }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [13] }),
     ], true)
     const before = node(snapshot(history), 'tool-call')
     expect((before?.data as ToolChatData).root.subCalls).toMatchObject([
@@ -1109,6 +1111,7 @@ describe('built-in conversation node Definitions', () => {
     const firstChild = (after?.data as ToolChatData).root.subCalls[0]
     history.append(at(17, 'tool/code-dispatch-start', {
       rootCallId: 'history-root',
+      rootCallSeq: 13,
       parentCallId: 'history-root',
       subCallId: 'second-child',
       name: 'write',
@@ -1117,6 +1120,48 @@ describe('built-in conversation node Definitions', () => {
     history.flush()
     const withSecondChild = node(snapshot(history), 'tool-call')
     expect((withSecondChild?.data as ToolChatData).root.subCalls[0]).toBe(firstChild)
+  })
+
+  it('replays repeated provider tool-call ids as independent lifecycles', () => {
+    const current = snapshot(assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', {
+        turn: 1, step: 1, callId: 'provider-duplicate', name: 'bash', arguments: '{"command":"first"}',
+      }),
+      at(4, 'tool/result', {
+        turn: 1, step: 1, message: toolResult('provider-duplicate', 'first result'),
+      }, { surfaceOp: 'append', sourceEventSeqs: [3] }),
+      at(5, 'tool/call', {
+        turn: 1, step: 1, callId: 'provider-duplicate', name: 'bash', arguments: '{"command":"second"}',
+      }),
+      at(6, 'tool/result', {
+        turn: 1, step: 1, message: toolResult('provider-duplicate', 'second result'),
+      }, { surfaceOp: 'append', sourceEventSeqs: [5] }),
+      at(7, 'step/end', { turn: 1, step: 1 }),
+      at(8, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(9, 'turn/start', { turn: 2 }),
+      at(10, 'step/start', { turn: 2, step: 1 }),
+      at(11, 'assistant/message', {
+        turn: 2,
+        step: 1,
+        message: assistantMessage('answer-after-duplicate', 'still visible after reopen'),
+      }, { surfaceOp: 'append' }),
+      at(12, 'step/end', { turn: 2, step: 1 }),
+      at(13, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ]))
+
+    const tools = current.nodes.values().filter(candidate => candidate.kind === 'tool-call')
+    expect(tools.map(candidate => candidate.anchorSeq)).toEqual([3, 5])
+    expect(new Set(tools.map(candidate => candidate.key)).size).toBe(2)
+    expect(tools.map(candidate => (candidate.data as ToolChatData).root)).toMatchObject([
+      { kind: 'tool-result', call: { argsRaw: '{"command":"first"}' } },
+      { kind: 'tool-result', call: { argsRaw: '{"command":"second"}' } },
+    ])
+    const assistant = current.nodes.values().find(candidate => candidate.kind === 'assistant-step')
+    expect((assistant?.data as AssistantChatData).blocks).toMatchObject([
+      { kind: 'text', text: 'still visible after reopen' },
+    ])
   })
 
   it('prepends an older turn without replacing already materialized nodes', () => {
@@ -1204,7 +1249,7 @@ describe('built-in conversation node Definitions', () => {
         turn: 1,
         step: 1,
         message: toolResult('late-tool', 'done'),
-      }, { surfaceOp: 'append' }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [4] }),
       at(6, 'step/end', { turn: 1, step: 1 }),
       at(7, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
     ])
@@ -2079,17 +2124,17 @@ describe('built-in conversation node Definitions', () => {
   it('preserves nested Tools and manual compaction evidence when their start events are outside the window', () => {
     const value = assembler([
       at(12, 'tool/code-dispatch-start', {
-        rootCallId: 'root', parentCallId: 'root', subCallId: 'child', name: 'read_file', arguments: { path: 'a' },
+        rootCallId: 'root', rootCallSeq: 10, parentCallId: 'root', subCallId: 'child', name: 'read_file', arguments: { path: 'a' },
       }),
       at(13, 'tool/code-dispatch', {
-        rootCallId: 'root', parentCallId: 'root', subCallId: 'child', name: 'read_file', arguments: { path: 'a' },
+        rootCallId: 'root', rootCallSeq: 10, parentCallId: 'root', subCallId: 'child', name: 'read_file', arguments: { path: 'a' },
         isError: false, content: [{ type: 'text', text: 'child result' }],
       }),
       at(14, 'tool/result', {
         turn: 1,
         step: 1,
         message: toolResult('root', 'root result'),
-      }, { surfaceOp: 'append' }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [10] }),
       at(20, 'compaction/summary', {
         compactionId: 'manual-1',
         sourceCommandId: 'command-1',
