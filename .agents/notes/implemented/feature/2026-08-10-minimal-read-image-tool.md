@@ -29,4 +29,4 @@ Both image-reading operations live in `dsh-tool-fs` and publish ordinary logged 
 
 - A text-only route still commits the image result; the Web conversation renders it while model input contains the request-local placeholder.
 - Repeated image results accumulate request cost on image-capable routes until request projection or compaction removes them; content addressing deduplicates durable bytes.
-- The Tool-result card renders pixels through the conversation's session-authorized attachment loader, shared cache, and lightbox; see [Tool-result image display](2026-08-26-tool-result-image-display.md).
+- The tool-result card now renders the image itself through the browser's `tool.call.images` slot (see [the tool-card image results note](2026-08-20-tool-card-image-results.md)); a UI without the attachment presentation plugin shows the result's envelope text.

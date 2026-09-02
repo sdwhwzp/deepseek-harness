@@ -13,8 +13,8 @@ English | [中文](2026-08-26-tool-result-image-display.zh.md)
 Image-bearing Tool results are durable conversation content independently of the current model's input modality.
 
 - `read_image` remains conditional on the durable attachment service, a supported PNG/JPEG/WebP/GIF source, and deployment image limits. It saves the image and appends the standard text-and-image Tool result under image-capable, text-only, unknown, and unresolved model routes. A path without an extension retains content-signature detection.
-- `ToolCallTree` extracts standard image blocks from each settled root and nested Tool result and renders them directly below the owning Tool row. `read_image` uses the existing read-row presentation.
-- Tool-result images use the conversation-owned historical image renderer with `start` alignment. The attachment presentation plugin remains responsible for session-authorized loading, shared per-session object-URL caching, thumbnail sizing, retry behavior, and the original-image lightbox.
+- The dedicated `read_image` view validates its envelope and durable reference, then renders the image through `tool.call.images` inside the expandable read-family card. `ToolCallTree` extracts standard image blocks from every other settled root and nested Tool result and renders them directly below the owning Tool row.
+- Both presentation paths use the conversation-owned, session-authorized image loader with `start` alignment. The attachment presentation plugin remains responsible for shared per-session object-URL caching, thumbnail sizing, retry behavior, and the original-image lightbox.
 - Model request projection remains authoritative for modality. Image-capable routes receive request pixels; exact text-only routes receive the stable attachment placeholder while the event log and Web preview retain the image reference.
 
 The default Web composition displays a generated or filesystem image in the conversation after `read_image`, even when the active model is text-only. Any other Tool that appends standard image blocks receives the same presentation for root and nested calls.
@@ -27,7 +27,7 @@ The default Web composition displays a generated or filesystem image in the conv
 
 **Let the Web client load the local filesystem path directly.** The browser cannot safely or consistently read an arbitrary host path, and such a URL would bypass durable attachment authorization and integrity checks. Rendering the logged attachment reference reuses the existing authorized path.
 
-**Add a `read_image`-specific UI component.** Image blocks are part of the standard Tool-result content vocabulary and may come from root calls, Code Dispatch children, MCP tools, or later image producers. Rendering by content type keeps presentation independent of the producing Tool name.
+**Require every image-bearing Tool to register a dedicated UI component.** `read_image` benefits from a specialized card because its validated envelope and filesystem path form one interaction. Standard image blocks can also come from Code Dispatch children, MCP tools, or later image producers that have no such card, so the tree retains a content-based fallback for every other Tool name.
 
 ## Consequences
 

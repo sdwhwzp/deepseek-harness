@@ -50,6 +50,7 @@ function props(
     inspectCall: vi.fn(),
     renderMessageImages,
     forkAt: vi.fn(),
+    loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
     fileMentions: vi.fn(),
     useHostInfo: ((selector: (info: { home: string | undefined }) => unknown) => selector({ home })) as ToolTreeProps['useHostInfo'],
     t,
@@ -103,7 +104,7 @@ describe('ToolCallTree', () => {
     expect(view.getByText('~/docs/a.ts')).toBeTruthy()
   })
 
-  it('renders every settled root and nested Tool image through the shared history gallery', () => {
+  it('renders every settled generic root and nested Tool image through the shared history gallery', () => {
     const attachment = {
       attachmentId: 'sha256:image' as never,
       mediaType: 'image/png' as const,
@@ -113,7 +114,7 @@ describe('ToolCallTree', () => {
       name: 'result.png',
     }
     const child = {
-      ...root('parent:code:1', { name: 'read_image', argsRaw: '{"file_path":"result.png"}' }),
+      ...root('parent:code:1', { name: 'generate_image', argsRaw: '{}' }),
       content: [{ type: 'image' as const, attachment }],
     }
     const block = {
@@ -133,7 +134,5 @@ describe('ToolCallTree', () => {
       { images: [{ attachment }], align: 'start' },
       { images: [{ attachment }], align: 'start' },
     ])
-    expect(view.container.querySelector('[data-tool="read_image"]')).not.toBeNull()
-    expect(view.getByText('读取')).toBeTruthy()
   })
 })

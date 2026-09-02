@@ -29,4 +29,4 @@ Status: implemented
 
 - 纯文本路由仍会提交图片结果；Web 对话渲染图片，而模型输入包含请求期占位符。
 - 重复的图片结果会在支持图片的路由上累积请求成本，直到请求投影或压缩将其移除；内容寻址只去重持久字节。
-- 工具结果卡片通过 conversation 的会话授权附件 loader、共享缓存与灯箱渲染像素；参见[工具结果图片显示](2026-08-26-tool-result-image-display.zh.md)。
+- 工具结果卡片现在经由浏览器的 `tool.call.images` 槽位渲染图像本身（见 [tool-card image results 笔记](2026-08-20-tool-card-image-results.zh.md)）；未组合附件呈现插件的 UI 显示结果的信封文本。

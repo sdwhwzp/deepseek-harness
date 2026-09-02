@@ -13,7 +13,7 @@ import SubagentRuntime, {
   type SubagentListEntry,
   type SubagentPromptRequestId,
 } from '@deepseek-ai/dsh-subagent'
-import { queueSubagentPrompt, type HostPromptQueue } from '@deepseek-ai/dsh-subagent/internal'
+import { deliverSubagentPrompt, type HostPromptDeliverer } from '@deepseek-ai/dsh-subagent/internal'
 
 const PARENT = SessionId('parent')
 const CHILD = SessionId('child')
@@ -36,7 +36,7 @@ async function bench(live?: Record<string, { status: 'running' | 'idle' }>) {
 
 /** Spy on the private human-Queue adapter without widening the public service. */
 function promptDelivery(subagents: SubagentRuntime) {
-  return vi.spyOn(subagents as unknown as HostPromptQueue, queueSubagentPrompt)
+  return vi.spyOn(subagents as unknown as HostPromptDeliverer, deliverSubagentPrompt)
 }
 
 function childRow(id: SessionId, activity: 'running' | 'inactive'): SubagentListEntry {
@@ -254,6 +254,7 @@ describe('subagent prompt Remote', () => {
       [{ type: 'text', text: 'continue' }],
       { kind: 'user', rpcId: REQUEST_ID, clientTimeZone: 'Asia/Shanghai' },
       signal,
+      'queue',
     )
   })
 
@@ -340,8 +341,8 @@ describe('subagent interrupt Remote', () => {
       [CHILD, SessionId('')],
     ] as const) {
       const field = childSessionId.length === 0 ? 'childSessionId' : 'parentSessionId'
-      expect(() => subagents.interruptByParent(childSessionId, parentSessionId, 'continuable'))
-        .toThrow(expect.objectContaining(emptyIdFailure('subagent.interrupt', field)))
+      await expect(subagents.interruptByParent(childSessionId, parentSessionId, 'continuable'))
+        .rejects.toMatchObject(emptyIdFailure('subagent.interrupt', field))
     }
     expect(interrupt).not.toHaveBeenCalled()
   })
@@ -350,7 +351,7 @@ describe('subagent interrupt Remote', () => {
     const { subagents } = await bench()
     const interrupt = vi.spyOn(subagents, 'interrupt').mockReturnValue()
 
-    expect(subagents.interruptByParent(CHILD, PARENT, 'continuable')).toEqual({ accepted: true })
+    await expect(subagents.interruptByParent(CHILD, PARENT, 'continuable')).resolves.toEqual({ accepted: true })
     expect(interrupt).toHaveBeenCalledWith(CHILD, { kind: 'user', parentSessionId: PARENT })
   })
 
@@ -359,17 +360,17 @@ describe('subagent interrupt Remote', () => {
     const interrupt = vi.spyOn(subagents, 'interrupt')
 
     interrupt.mockImplementation(() => { throw new SubagentError('not yours', 'UNAUTHORIZED') })
-    expect(() => subagents.interruptByParent(CHILD, PARENT, 'continuable')).toThrow(
-      expect.objectContaining({
+    await expect(subagents.interruptByParent(CHILD, PARENT, 'continuable')).rejects.toMatchObject(
+      {
         code: 'subagent/unauthorized',
         message: expect.any(String) as unknown as string,
         details: { childSessionId: CHILD },
-      }),
+      },
     )
 
     interrupt.mockImplementation(() => { throw new Error('boom') })
-    expect(() => subagents.interruptByParent(CHILD, PARENT, 'continuable')).toThrow(
-      expect.objectContaining({ code: 'gateway/internal', message: 'subagent interrupt failed', details: {} }),
+    await expect(subagents.interruptByParent(CHILD, PARENT, 'continuable')).rejects.toMatchObject(
+      { code: 'gateway/internal', message: 'subagent interrupt failed', details: {} },
     )
   })
 })

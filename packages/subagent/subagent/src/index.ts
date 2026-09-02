@@ -77,7 +77,7 @@ import { listChildren as listSubagentChildren, listDescendants as listSubagentDe
 import type { SubagentDescendantListEntry, SubagentListEntry } from './list-children.ts'
 import { snapshotSubagentDescriptor } from './descriptor.ts'
 import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
-import { queueSubagentPrompt } from './internal.ts'
+import { deliverSubagentPrompt, type HostPromptDeliveryMode } from './internal.ts'
 
 export * from './out-of-process.ts'
 export { AssistantOutputFold, finalAssistantOutput } from './assistant-output.ts'
@@ -257,7 +257,7 @@ export class SubagentRuntime extends TypertRemoteService {
   }
 
   /**
-   * Queue one host-protocol message as a distinct direct-child turn.
+   * Deliver one host-protocol message to a direct continuable child.
    * Symbol-keyed so host adapters can preserve their own provenance without
    * widening the public Service Definition or impersonating an Agent sender.
    * @param parent - exact live direct parent authorizing delivery.
@@ -265,18 +265,22 @@ export class SubagentRuntime extends TypertRemoteService {
    * @param content - host-authored content to deliver.
    * @param source - durable host-protocol provenance.
    * @param signal - caller cancellation before inbox acceptance.
+   * @param delivery - Queue as a distinct turn or Steer at the nearest step.
    * @param principal - authenticated owner of the Host request.
    * @returns the accepted message's inbox id.
    */
-  private [queueSubagentPrompt](
+  private [deliverSubagentPrompt](
     parent: Agent,
     childId: SessionId,
     content: ContentBlock[],
     source: MessageSource,
     signal: AbortSignal,
+    delivery: HostPromptDeliveryMode,
     principal?: AuthenticatedPrincipal,
   ): Promise<MessageId> {
-    return this.requireContinuations().queuePrompt(parent, childId, content, source, signal, principal)
+    return delivery === 'steer'
+      ? this.requireContinuations().steerPrompt(parent, childId, content, source, signal, principal)
+      : this.requireContinuations().queuePrompt(parent, childId, content, source, signal, principal)
   }
 
   /**
@@ -387,10 +391,11 @@ export class SubagentRuntime extends TypertRemoteService {
   @Remote('list')
   async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog> {
     validateControlRequest('subagent.list', { parentSessionId })
-    await this.requireReadableParent(parentSessionId, signal)
     try {
+      await this.requireReadableParent(parentSessionId, signal)
       return catalogView(this.ctx, parentSessionId, await this.listChildren(parentSessionId, signal))
     } catch (error: unknown) {
+      if (error instanceof RemoteError) throw error
       return rejectCatalogRead(error, signal)
     }
   }
@@ -451,16 +456,10 @@ export class SubagentRuntime extends TypertRemoteService {
         if (attachments === undefined) throw new Error('subagent image prompt requires an attachment store')
         content = await admitPromptContent(attachments, request.content)
       }
-      return {
-        messageId: await this[queueSubagentPrompt](
-          parent,
-          childSessionId,
-          content,
-          source,
-          signal,
-          principal,
-        ),
-      }
+      const messageId = principal === undefined
+        ? await this[deliverSubagentPrompt](parent, childSessionId, content, source, signal, 'queue')
+        : await this[deliverSubagentPrompt](parent, childSessionId, content, source, signal, 'queue', principal)
+      return { messageId }
     } catch (error: unknown) {
       return rejectPrompt(error, childSessionId, signal)
     }

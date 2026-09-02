@@ -56,6 +56,7 @@ const PEER_REQUIRED_HOST_EXPORTS = {
     'resolvePrincipalAccess',
   ],
   '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'scopeOf', 'scopeTarget'],
+  '@deepseek-ai/dsh-session-persistence': ['SessionPersistenceNotFoundError'],
 } as const satisfies HostDependencyExports
 
 /** Exact import specifier to reviewed runtime exports. */
