@@ -206,7 +206,45 @@ describe('candidates', () => {
     const { source, listCalls } = await bench()
     const list = await source.candidates(proj('s1'), req('g'))
     expect(listCalls).toEqual([{ sessionId: sid('s1') }])
-    expect(list).toEqual([{ name: 'goal', description: 'leadingInput kind', hint: 'goal text' }])
+    expect(list).toEqual([{
+      name: 'goal', description: 'leadingInput kind', hint: 'goal text',
+    }])
+  })
+
+  it('localizes every known Host command and preserves extension descriptions', async () => {
+    const commands: CommandDescriptor[] = [
+      { name: 'compact', description: 'Compact older conversation history' },
+      { name: 'export', description: 'Download this Session log as a ZIP archive' },
+      { name: 'feedback', description: 'record feedback about this session' },
+      { name: 'goal', description: 'set or view the goal for a long-running task' },
+      { name: 'image', description: 'Generate an image from a text prompt' },
+      { name: 'permission', description: 'Switch the permission preset (sandbox mode + approval policy)' },
+      { name: 'plan', description: 'Enter or leave plan mode' },
+      { name: 'read-image', description: 'Read and analyze a workspace image' },
+      { name: 'extension', description: '扩展自定义说明' },
+      { name: 'constructor', description: 'prototype-named extension' },
+    ]
+    const { source } = await bench({ commands: () => Promise.resolve({ commands }) })
+    expect(await source.candidates(proj('s1'), req(''))).toEqual([
+      { name: 'compact', description: 'command:catalog.compact.description' },
+      { name: 'export', description: 'command:catalog.export.description' },
+      { name: 'feedback', description: 'command:catalog.feedback.description' },
+      { name: 'goal', description: 'command:catalog.goal.description' },
+      { name: 'image', description: 'command:catalog.image.description' },
+      { name: 'permission', description: 'command:catalog.permission.description' },
+      { name: 'plan', description: 'command:catalog.plan.description' },
+      { name: 'read-image', description: 'command:catalog.readImage.description' },
+      { name: 'extension', description: '扩展自定义说明' },
+      { name: 'constructor', description: 'prototype-named extension' },
+    ])
+  })
+
+  it('preserves a scoped command that shadows a known name with a different description', async () => {
+    const commands: CommandDescriptor[] = [{ name: 'goal', description: 'Custom goal workflow' }]
+    const { source } = await bench({ commands: () => Promise.resolve({ commands }) })
+    await expect(source.candidates(proj('s1'), req(''))).resolves.toEqual([
+      { name: 'goal', description: 'Custom goal workflow' },
+    ])
   })
 
   it('matches case-insensitive subsequences and ranks prefixes, boundaries, adjacency, gaps, then source order', async () => {

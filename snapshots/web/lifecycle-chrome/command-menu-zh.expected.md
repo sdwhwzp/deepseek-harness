@@ -1,0 +1,11 @@
+- listbox "触发候选建议":
+  - text: 指令
+  - option "compact 压缩较早的对话历史" [selected]
+  - option "export 下载本会话日志的 ZIP 压缩包"
+  - option "feedback 记录对本会话的反馈"
+  - option "goal 设置或查看长期任务目标"
+  - option "image 根据文字描述生成图片"
+  - option "permission 切换权限预设（沙箱模式和审批策略）"
+  - option "plan 进入或退出计划模式"
+  - option "read-image 读取并分析工作区图片"
+  - option "model 选择本会话使用的模型"

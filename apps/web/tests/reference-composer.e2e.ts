@@ -1,6 +1,6 @@
-// Web e2e scenario: the shipped composition discovers local files and cold
-// sessions through the real Host, groups both domains in the shared @ menu,
-// and projects each pick as a complete inline range without issuing a model call.
+// Web e2e scenario: the shipped composition discovers files under the current
+// workspace through the real Host, keeps sessions out of the @ menu, and still
+// renders durable cross-session recall records created by supported clients.
 import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -30,6 +30,7 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDr
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/reference-composer', import.meta.url))
 const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
+const CARET_EXPECTED = join(SNAPSHOT_DIR, 'caret-edits.expected.md')
 const ORDER_EXPECTED = join(SNAPSHOT_DIR, 'order.expected.md')
 const MODE = webSnapshotMode()
 const SOURCE_SESSION_ID = 'reference-source-session'
@@ -111,7 +112,34 @@ function targetSessionFixture(): string {
   ].join('\n')
 }
 
-describe.skipIf(MODE === 'record')('web e2e: file and session references through the real host', () => {
+/**
+ * Project the editable draft into stable plain-text and atomic-chip rows.
+ * @param page - assembled application page.
+ * @returns the visible draft followed by leaf segments in document order.
+ */
+async function composerSegments(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const surface = document.querySelector<HTMLElement>('[data-composer-input]')
+    if (surface === null) return 'composer absent'
+    const rows: string[] = []
+    const visit = (node: Node): void => {
+      if (node instanceof HTMLElement && node.hasAttribute('data-composer-chip')) {
+        const source = node.dataset['composerChip'] ?? 'unknown'
+        rows.push(`chip     ${JSON.stringify(node.textContent ?? '')} source=${source} icons=${node.querySelectorAll('svg').length}`)
+        return
+      }
+      if (node.nodeType === Node.TEXT_NODE && node.textContent !== '') {
+        rows.push(`plain    ${JSON.stringify(node.textContent)}`)
+        return
+      }
+      node.childNodes.forEach(visit)
+    }
+    surface.childNodes.forEach(visit)
+    return [`draft ${JSON.stringify(surface.textContent ?? '')}`, ...rows].join('\n')
+  })
+}
+
+describe.skipIf(MODE === 'record')('web e2e: workspace-file references through the real host', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -146,28 +174,20 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await scaffold?.close()
   })
 
-  it('groups both sources and projects files and sessions as structured inline icon labels', async () => {
+  it('offers only workspace files and projects a pick as a structured inline icon label', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-composer'))
     const input = page.locator('[data-composer-input]').first()
     const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
 
     await input.fill('@')
-    await expect.poll(() => menu.getByRole('option').count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
-    // Session rows are dated from the live Host list, so their age bucket
-    // advances while the suite runs.
-    const snapshot = await captureStableAria(
-      page, '[role="listbox"]', scaffold.workspaceCwd, { normalizeAge: true },
-    )
+    await expect.poll(() => menu.getByRole('option').count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
+    const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MENU_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('Files & folders')
-    expect(snapshot).toContain('Sessions')
+    expect(snapshot).not.toContain('Sessions')
     expect(snapshot).not.toContain('text: reference Files & folders')
     expect(snapshot).toContain('reference.txt')
-    // A seed reaches disk as a log alone, and the Host labels a session from
-    // its projections: no checkpoint, so the row is its id. The fixture's own
-    // title (`Research notes`) is unreachable here by construction, and the
-    // package suite owns the titled paths.
-    expect(snapshot).toContain(SOURCE_SESSION_ID)
+    expect(snapshot).not.toContain(SOURCE_SESSION_ID)
     expect(snapshot).not.toContain('Research notes')
     expect(snapshot).not.toContain('text: Subagents')
 
@@ -187,13 +207,6 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await expect.poll(() => fileReference.locator('svg').count()).toBe(1)
     await expect.poll(() => input.textContent()).toBe('reference.txt ')
 
-    await input.fill('@reference-source')
-    await menu.getByRole('option', { name: new RegExp(SOURCE_SESSION_ID) }).click()
-    const sessionReference = page.locator('[data-composer-chip]').last()
-    await expect.poll(() => sessionReference.textContent()).toBe(SOURCE_SESSION_ID)
-    await expect.poll(() => sessionReference.locator('svg').count()).toBe(1)
-    await expect.poll(() => input.textContent()).toBe(`${SOURCE_SESSION_ID} `)
-
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })
@@ -212,16 +225,17 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await input.click()
     await page.keyboard.press('ControlOrMeta+A')
     await page.keyboard.press('ArrowLeft')
-    await page.keyboard.type('@reference-source')
-    await menu.getByRole('option', { name: new RegExp(SOURCE_SESSION_ID) }).click()
+    await page.keyboard.type('@folderx/child')
+    await menu.getByRole('option', { name: /child\.txt/ }).click()
 
-    // Both chips survive the boundary insert: the session chip lands ahead of
+    // Both chips survive the boundary insert: the new file chip lands ahead of
     // the intact file chip.
     const chips = input.locator('[data-composer-chip]')
     await expect.poll(() => chips.count()).toBe(2)
-    await expect.poll(() => chips.first().textContent()).toBe(SOURCE_SESSION_ID)
+    await expect.poll(() => chips.first().textContent()).toBe('child.txt')
     await expect.poll(() => chips.last().textContent()).toBe('reference.txt')
-    await expect.poll(() => input.textContent()).toBe(`${SOURCE_SESSION_ID} reference.txt `)
+    await expect.poll(() => input.textContent()).toBe('child.txt reference.txt ')
+    await compareOrRefreshGolden(CARET_EXPECTED, await composerSegments(page), MODE)
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -372,6 +386,6 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     expect(snapshot.indexOf('Research notes what changed?')).toBeLessThan(snapshot.indexOf('Session recall Research notes'))
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['menu.expected.md', 'order.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['caret-edits.expected.md', 'menu.expected.md', 'order.expected.md'])
   })
 })

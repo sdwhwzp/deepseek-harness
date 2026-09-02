@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包为 Web GUI 提供输入触发流水线：检测光标处键入的 `/` 与 `@`，显示分组候选菜单，并把 pick 路由到已注册 source。source 经 `ctx.inputTriggers` 注册——`/` 命令 source（ui-commands）、`@` 文件与会话引用 source（ui-reference），以及任何业务包——对话接线层按会话驱动这条流水线。键入触发器会 seed 为该触发器注册的所有 source；chrome launcher 也可以在当前选区上只打开一个 source。流水线仅做呈现：pick 产出命令声明或引用插入，其后果属于消费它们的宿主与输入包。
+本包为 Web GUI 提供输入触发流水线：检测光标处键入的 `/` 与 `@`，显示分组候选菜单，并把 pick 路由到已注册 source。source 经 `ctx.inputTriggers` 注册——`/` 命令 source（ui-commands）、`@` 工作区文件 source（ui-reference），以及任何业务包——对话接线层按会话驱动这条流水线。键入触发器会 seed 为该触发器注册的所有 source；chrome launcher 也可以在当前选区上只打开一个 source。流水线仅做呈现：pick 产出命令声明或引用插入，其后果属于消费它们的宿主与输入包。
 
 ## 目录
 
@@ -51,7 +51,7 @@ kind: "package-reference"
 当触发流水线不够用时阅读以下页面。它们从流水线进入注册进它的 source，以及拥有输入的会话外壳。
 
 - [ui-commands](../ui-commands/README.zh.md)——把 `/` 命令 source 注册进本流水线并拥有命令弹窗外壳。
-- [ui-reference](../ui-reference/README.zh.md)——注册 `@` 文件与会话引用 source。
+- [ui-reference](../ui-reference/README.zh.md)——注册当前工作区的 `@` 文件 source。
 - [ui-conversation](../ui-conversation/README.zh.md)——声明输入浮层槽位并拥有 composer 与输入状态机。
 - [Web 客户端架构](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.zh.md)——浏览器插件行如何加载并注册槽位。
 

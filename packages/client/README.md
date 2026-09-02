@@ -53,7 +53,7 @@ The kernel packages boot and serve the page; the UI feature packages present it.
 | [`ui-commands/`](ui-commands/README.md) | Provides session-aware command discovery and dispatch | — |
 | [`ui-input-trigger/`](ui-input-trigger/README.md) | Coordinates inline command and reference suggestions | — |
 | [`ui-skill/`](ui-skill/README.md) | Adds skill references to inline suggestions | — |
-| [`ui-reference/`](ui-reference/README.md) | Unified Web `@file` / `@session` reference source | — |
+| [`ui-reference/`](ui-reference/README.md) | Web workspace-file `@` reference source | — |
 | [`ui-subagent/`](ui-subagent/README.md) | Provides subagent navigation, child transcript states, and inline references | — |
 | [`ui-schedule/`](ui-schedule/README.md) | Lists the current Session's active reminders in a read-only header catalog | — |
 | [`ui-jobs/`](ui-jobs/README.md) | Lists this session's background jobs in the conversation header | — |

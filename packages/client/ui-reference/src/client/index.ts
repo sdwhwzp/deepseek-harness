@@ -1,13 +1,10 @@
 /**
- * Unified Web `@` reference source. File and session discovery run through
- * the cancellable generated Remote namespaces in parallel with deterministic
- * ordering and labels.
+ * Web `@` workspace-file source. Discovery runs through the cancellable
+ * generated file-reference Remote namespace rooted at the current session cwd.
  *
  * Rows carry only what distinguishes them: a file names its parent directory
- * (nothing at the workspace root), a directory listing names none because its
- * breadcrumb already does, and a session names its workspace only when that
- * workspace is not the current one. A session is dated from the Host session
- * list, so the `@` menu and the session list never disagree about its age.
+ * (nothing at the workspace root), while a directory listing names none
+ * because its breadcrumb already does.
  *
  * @module @deepseek-ai/dsh-client-ui-reference/client
  */
@@ -16,60 +13,37 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
-import { relativeTime } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   ClientSessionContext, InputTriggerCrumb, InputTriggerServiceContract, InputTriggerSource,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
-import type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
-import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { en, NS, zh, type ReferenceKey } from './locales.ts'
 
-/** Required services: the trigger registry, the Remote namespaces, and the copy. */
+/** Required services: the trigger registry, the file-reference Remote namespace, and the copy. */
 export const inject = [
-  'inputTriggers', 'locale', 'sessions', 'remote', 'remote.fileReferences',
-  'remote.sessionReferenceResolver',
+  'inputTriggers', 'locale', 'remote', 'remote.fileReferences',
 ]
 
 /**
- * Register the combined `@file` / `@session` source.
+ * Register the workspace-file `@` source.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-reference: dictionaries')
   const t = ctx.locale.bind(NS)
-  const sessions = ctx.get('sessions') as ISessions
   const source: InputTriggerSource = {
     trigger: '@',
     name: 'reference',
     showGroupTitle: false,
     async candidates(session: ClientSessionContext, { query, quoted, drilled, signal }) {
-      const fileLookup = ctx.remote.fileReferences.list(session.sessionId, query, signal)
+      const fileItems = await ctx.remote.fileReferences.list(session.sessionId, query, signal)
         .then(result => result.ok ? result.value : [])
-      const sessionLookup = quoted === true
-        ? Promise.resolve([] as SessionReferenceMentionCandidate[])
-        : ctx.remote.sessionReferenceResolver.candidates(session.sessionId, query, signal)
-          .then(result => result.ok ? result.value : [])
-      const [fileItems, sessionItems] = await Promise.all([fileLookup, sessionLookup])
       if (signal.aborted) return []
       // The header already names the directory being listed; rows repeat it only
       // when there is no header to carry it.
       const withLocation = crumbsFor(query, quoted === true, drilled, t) === undefined
-      const now = Date.now()
-      const home = ctx.remote.$host.home
-      const listed = sessions.list.getSnapshot().byId
-      return [
-        ...fileItems.flatMap(candidate => fileCandidate(candidate, quoted === true, withLocation, t)),
-        ...sessionItems.map(candidate => sessionCandidate(
-          candidate,
-          listed[candidate.sessionId]?.updatedAt ?? candidate.createdAt,
-          now,
-          home,
-          t,
-        )),
-      ]
+      return fileItems.flatMap(candidate => fileCandidate(candidate, quoted === true, withLocation, t))
     },
     header(_session: ClientSessionContext, req) {
       return crumbsFor(req.query, req.quoted === true, req.drilled, t)
@@ -94,17 +68,6 @@ export function apply(ctx: ClientContext): void {
           },
         }
       }
-      if (value?.kind === 'session') {
-        return {
-          insert: {
-            source: 'reference',
-            ref: value.mention,
-            label: value.label,
-            appearance: 'session',
-            clipboardText: value.mention,
-          },
-        }
-      }
       return undefined
     },
     codec: {
@@ -118,9 +81,12 @@ export function apply(ctx: ClientContext): void {
 
 type Translate = (key: ReferenceKey, params?: Record<string, unknown>) => string
 
-type ReferenceCandidateValue =
-  | { kind: 'file'; fileKind: FileReferenceCandidate['kind']; label: string; mention: string }
-  | { kind: 'session'; label: string; mention: string }
+interface ReferenceCandidateValue {
+  kind: 'file'
+  fileKind: FileReferenceCandidate['kind']
+  label: string
+  mention: string
+}
 
 /**
  * The breadcrumb of a drilled directory listing, from the workspace root down
@@ -198,34 +164,6 @@ function fileCandidate(
     value: JSON.stringify(value),
     ...(directory ? { drill: true } : {}),
   }]
-}
-
-function sessionCandidate(
-  candidate: SessionReferenceMentionCandidate,
-  updatedAt: number,
-  now: number,
-  home: string | undefined,
-  t: Translate,
-) {
-  const { unit, n } = relativeTime(updatedAt, now)
-  const age = unit === 'now' ? t('time.now') : t(`time.${unit}`, { n })
-  // Candidates are ranked by workspace affinity, so the location only tells
-  // the user something when it is not the workspace they are already in.
-  const location = candidate.sameWorkspace
-    ? undefined
-    : candidate.cwd === undefined ? t('candidate.noCwd') : abbreviateHomePath(candidate.cwd, home)
-  const value: ReferenceCandidateValue = {
-    kind: 'session',
-    label: candidate.label,
-    mention: candidate.mention,
-  }
-  return {
-    name: candidate.label,
-    description: location === undefined ? age : `${location} · ${age}`,
-    icon: 'session' as const,
-    section: t('section.sessions'),
-    value: JSON.stringify(value),
-  }
 }
 
 function parseCandidate(value: string | undefined): ReferenceCandidateValue | undefined {

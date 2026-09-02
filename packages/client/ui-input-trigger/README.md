@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package powers the input trigger pipeline of the Web GUI: it detects `/` and `@` typed under the caret, shows a grouped candidate menu, and routes a pick to the registered source. Sources register through `ctx.inputTriggers` — the `/` command source (ui-commands), the `@` file and session reference sources (ui-reference), and any business package — and the conversation wiring drives the pipeline per session. Typing a trigger seeds every source registered for it; a chrome launcher can also open exactly one source over the current selection. The pipeline is presentation-only: picks produce command claims or reference inserts whose consequences belong to the consuming host and input packages.
+This package powers the input trigger pipeline of the Web GUI: it detects `/` and `@` typed under the caret, shows a grouped candidate menu, and routes a pick to the registered source. Sources register through `ctx.inputTriggers` — the `/` command source (ui-commands), the `@` workspace-file source (ui-reference), and any business package — and the conversation wiring drives the pipeline per session. Typing a trigger seeds every source registered for it; a chrome launcher can also open exactly one source over the current selection. The pipeline is presentation-only: picks produce command claims or reference inserts whose consequences belong to the consuming host and input packages.
 
 ## Table of Contents
 
@@ -51,7 +51,7 @@ The composer surface keeps focus while the menu is open: rows pick on mousedown,
 Read these pages when the trigger pipeline is not enough. They move from the pipeline to the sources that register into it and the shell that owns the input.
 
 - [ui-commands](../ui-commands/README.md) — registers the `/` command source into this pipeline and owns the command popup shell.
-- [ui-reference](../ui-reference/README.md) — registers the `@` file and session reference sources.
+- [ui-reference](../ui-reference/README.md) — registers the current-workspace `@` file source.
 - [ui-conversation](../ui-conversation/README.md) — declares the input overlay slot and owns the composer and input machine.
 - [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — how browser plugin rows load and register slots.
 

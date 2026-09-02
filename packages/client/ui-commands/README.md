@@ -31,6 +31,8 @@ Mount this plugin alongside `ui-input-trigger` and `ui-conversation`; the `/` so
 
 A contribution is a client-owned command — a host-name collision fails loud. A decoration adds a bare-invocation popup to an EXISTING host command: the host command keeps its catalog row, its argument claim, and its lifecycle logging, and a decorated name with no host row in the session's directory never fires. Menu queries fuzzy-match ordered, case-insensitive subsequences of command names; prefixes rank first.
 
+The client localizes the descriptions for the known `compact`, `export`, `feedback`, `goal`, `image`, `permission`, `plan`, and `read-image` Host commands on every candidate read. Each mapping requires both the command name and its canonical English description, so a scoped command that shadows a known name keeps its own copy. The optional `image` and `read-image` rows only appear when the corresponding Host commands are registered; unknown Host commands retain the descriptions supplied by the Host, and client contributions own their own localized copy.
+
 ### Image-carrying submissions
 
 When the composer submits with image attachments, only a host command declaring `input.images` proceeds; every other command route throws the localized `imagesUnsupported` refusal, which renders as a transient toast while the draft and images stay in place — a command can never consume the text and strand the images.

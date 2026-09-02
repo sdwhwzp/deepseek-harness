@@ -16,6 +16,7 @@ import { join } from 'node:path'
 import type { Browser, Page, WebSocketRoute } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import type {} from '@deepseek-ai/dsh-commands'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureExpandedTurnProcessAria,
@@ -23,7 +24,8 @@ import {
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft,
+  ZH_BROWSER_LOCALE, connectFreshWorkspace, connectFreshWorkspaceZh, newEnglishPage,
+  saveFailureShot, writeComposerDraft,
 } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome', import.meta.url))
@@ -31,6 +33,7 @@ const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 const REPLAY_OVERRIDE = join(SNAPSHOT_DIR, 'replay.override.json')
 const HERO_EXPECTED = join(SNAPSHOT_DIR, 'hero.expected.md')
 const COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu.expected.md')
+const COMMAND_MENU_ZH_EXPECTED = join(SNAPSHOT_DIR, 'command-menu-zh.expected.md')
 const FUZZY_COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu-fuzzy.expected.md')
 const PLAN_ACTIVE_EXPECTED = join(SNAPSHOT_DIR, 'plan-active.expected.md')
 const CONNECTION_ERROR_EXPECTED = join(SNAPSHOT_DIR, 'connection-error.expected.md')
@@ -101,6 +104,45 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     await compareOrRefreshGolden(FUZZY_COMMAND_MENU_EXPECTED, fuzzySnapshot, MODE)
     await writeComposerDraft(page, input, '')
     await expect.poll(() => menu.count()).toBe(0)
+  })
+
+  it.skipIf(MODE === 'record')('localizes every known Host command description in the Chinese slash menu', async () => {
+    const localizedScaffold = await launchWebScaffold()
+    localizedScaffold.ctx.commands.register({
+      name: 'image',
+      description: 'Generate an image from a text prompt',
+      input: { hint: '<prompt>', images: true },
+      handler: () => ({ kind: 'success' }),
+    })
+    localizedScaffold.ctx.commands.register({
+      name: 'read-image',
+      description: 'Read and analyze a workspace image',
+      input: { hint: '<image path>', images: true },
+      handler: () => ({ kind: 'success' }),
+    })
+    const localizedPage = await browser.newPage({
+      viewport: { width: 1680, height: 1000 },
+      locale: ZH_BROWSER_LOCALE,
+    })
+    const localizedTripwire = watchConsole(localizedPage)
+    try {
+      await localizedPage.goto(localizedScaffold.authenticatedUrl, { waitUntil: 'load' })
+      await localizedPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      await connectFreshWorkspaceZh(localizedPage, localizedScaffold.workspaceCwd)
+      await localizedPage.getByRole('button', { name: '指令' }).click()
+      const menu = localizedPage.getByRole('listbox', { name: '触发候选建议' })
+      await menu.waitFor({ timeout: 10_000 })
+      const snapshot = await captureStableAria(localizedPage, '[role="listbox"]', localizedScaffold.workspaceCwd)
+      await compareOrRefreshGolden(COMMAND_MENU_ZH_EXPECTED, snapshot, MODE)
+      expect(localizedTripwire.pageErrors).toEqual([])
+      expect(localizedTripwire.warnings).toEqual([])
+    } catch (error) {
+      await saveFailureShot(localizedPage, 'web-e2e-command-menu-zh').catch(() => undefined)
+      throw error
+    } finally {
+      await localizedPage.close()
+      await localizedScaffold.close()
+    }
   })
 
   it.skipIf(MODE === 'record')('shows active Plan as the warn-state status action', async () => {
@@ -391,7 +433,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.jsonl', 'replay.override.json', 'command-menu.expected.md',
+      'session.jsonl', 'replay.override.json', 'command-menu.expected.md', 'command-menu-zh.expected.md',
       'command-menu-fuzzy.expected.md', 'connection-error.expected.md', 'hero.expected.md', 'plan-active.expected.md',
       'reloaded.expected.md', 'reloaded-expanded.expected.md',
     ])

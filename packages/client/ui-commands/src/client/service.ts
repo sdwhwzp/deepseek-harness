@@ -24,6 +24,7 @@ import type {
 import type { CommandContribution, CommandDecoration, CommandUiContract } from './contract.ts'
 import type { CommandDescriptor } from './directory.ts'
 import { CommandDirectory } from './directory.ts'
+import type { CommandKey } from './locales.ts'
 import { PopupSelectController } from './popup.ts'
 import type { TokenSegment } from './popup.ts'
 
@@ -63,6 +64,26 @@ interface RankedCandidate {
   readonly prefix: boolean
   readonly score: number
 }
+
+/** Collision-free identity for one Host name and exact description pair. */
+function hostDescriptionIdentity(name: string, description: string): string {
+  return JSON.stringify([name, description])
+}
+
+/** Exact Host command descriptions with client locale keys. */
+const HOST_DESCRIPTION_KEYS: ReadonlyMap<string, CommandKey> = new Map<string, CommandKey>([
+  [hostDescriptionIdentity('compact', 'Compact older conversation history'), 'catalog.compact.description'],
+  [hostDescriptionIdentity('export', 'Download this Session log as a ZIP archive'), 'catalog.export.description'],
+  [hostDescriptionIdentity('feedback', 'record feedback about this session'), 'catalog.feedback.description'],
+  [hostDescriptionIdentity('goal', 'set or view the goal for a long-running task'), 'catalog.goal.description'],
+  [hostDescriptionIdentity('image', 'Generate an image from a text prompt'), 'catalog.image.description'],
+  [
+    hostDescriptionIdentity('permission', 'Switch the permission preset (sandbox mode + approval policy)'),
+    'catalog.permission.description',
+  ],
+  [hostDescriptionIdentity('plan', 'Enter or leave plan mode'), 'catalog.plan.description'],
+  [hostDescriptionIdentity('read-image', 'Read and analyze a workspace image'), 'catalog.readImage.description'],
+])
 
 /** Extra weight for command-name starts and separator boundaries. */
 function boundaryBonus(name: string, index: number): number {
@@ -125,7 +146,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
 
   private readonly directory: CommandDirectory
   private readonly live: LiveState = { contributions: new Map(), decorations: new Map(), popups: new Map() }
-  /** `command`-namespace translator (composer refusal notices). */
+  /** `command`-namespace translator for catalog descriptions and composer notices. */
   private readonly t: TranslateNS<'command'>
 
   /**
@@ -253,7 +274,12 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     const seen = new Set<string>()
     for (const c of list) {
       seen.add(c.name)
-      rows.push({ name: c.name, description: c.description, ...(c.input !== undefined ? { hint: c.input.hint } : {}) })
+      const descriptionKey = HOST_DESCRIPTION_KEYS.get(hostDescriptionIdentity(c.name, c.description))
+      rows.push({
+        name: c.name,
+        description: descriptionKey === undefined ? c.description : this.t(descriptionKey),
+        ...(c.input !== undefined ? { hint: c.input.hint } : {}),
+      })
     }
     for (const contribution of this.live.contributions.values()) {
       if (!contribution.available(session)) continue
