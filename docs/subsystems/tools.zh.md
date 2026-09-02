@@ -196,6 +196,8 @@ interface ToolExecutionInput {
   readonly arguments: unknown
   /** The agent on whose behalf the call runs (set by the agent loop). */
   readonly agent?: Agent
+  /** Authenticated caller of the model step that requested this call. */
+  readonly principal?: AuthenticatedPrincipal
   /**
    * Opaque token of the enclosing transport execution, when one exists. PTC
    * mode sets this on SDK sub-dispatches so commit-style observers can wait for
