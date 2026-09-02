@@ -41,11 +41,20 @@ export interface WireTextContentPart {
   text: string
 }
 
-/** Base64 data URL part inside a multimodal user message. */
-export interface WireImageContentPart {
+/** Files API reference inside a multimodal user message. */
+export interface WireFileContentPart {
+  type: 'file'
+  file_id: string
+}
+
+/** Inline base64 data URL inside a multimodal user message. */
+export interface WireImageUrlContentPart {
   type: 'image_url'
   image_url: { url: string }
 }
+
+/** One image representation accepted by a multimodal user message. */
+export type WireImageContentPart = WireFileContentPart | WireImageUrlContentPart
 
 /** Ordered input part accepted by a multimodal user message. */
 export type WireUserContentPart = WireTextContentPart | WireImageContentPart
@@ -136,14 +145,17 @@ export interface WireDelta {
 export interface WireToolCallDelta {
   /** Disambiguates parallel tool calls; stable across a call's deltas. */
   index: number
-  /** Present on the first delta of each call only. */
-  id?: string
+  /**
+   * Carried by the first delta of each call. Gateways observed in the wild
+   * repeat it on continuation deltas as `''` or `null`; both mean "unchanged".
+   */
+  id?: string | null
   type?: 'function'
   function?: {
-    /** Present on the first delta of each call only. */
-    name?: string
+    /** Carried by the first delta of each call, with the same `''`/`null` repetition as {@link WireToolCallDelta.id}. */
+    name?: string | null
     /** Argument JSON fragment (concatenate across deltas). */
-    arguments?: string
+    arguments?: string | null
   }
 }
 
@@ -157,6 +169,8 @@ export interface WireToolCallDelta {
 export interface WireUsage {
   prompt_tokens: number
   completion_tokens: number
+  /** Provider-reported aggregate across prompt and completion tokens. */
+  total_tokens?: number
   prompt_cache_hit_tokens?: number
   prompt_cache_miss_tokens?: number
   prompt_tokens_details?: { cached_tokens?: number }
