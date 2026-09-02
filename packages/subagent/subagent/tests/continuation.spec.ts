@@ -226,7 +226,7 @@ describe('SubagentRuntime.startContinuable', () => {
 
     await queuePrompt(ctx, parent, started.childId, message('second task'), testSignal, bob)
     await waitNoActivation(ctx, started.childId)
-    const loaded = await ctx.sessionPersistence.load(started.childId)
+    const loaded = await loadStoredSession(ctx.sessionPersistence, started.childId)
     expect(loaded.events.flatMap(event => event.type === 'user/message'
       && event.data.source.kind === 'user' ? [event.data.principal] : [])).toEqual([alice, bob])
     expect(loaded.events.flatMap(event => event.type === 'turn/start'

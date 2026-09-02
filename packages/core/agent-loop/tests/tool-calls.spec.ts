@@ -383,7 +383,7 @@ describe('tool-call scheduler: ordered middleware and additional contexts', () =
     const ctx = await harness(adapter)
     const alice = { source: 'gateway', id: 'alice', username: 'alice', role: 'user' as const }
     const bob = { source: 'gateway', id: 'bob', username: 'bob', role: 'user' as const }
-    const agent = ctx.agentLoop.create(SessionId('shared-principals'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(SessionId('shared-principals'), { provider: 'mock', model: 'mock' })
     ctx.tools.register(defineContentToolFixture({
       name: 'owned',
       description: 'principal observation fixture',
@@ -430,7 +430,7 @@ describe('tool-call scheduler: ordered middleware and additional contexts', () =
     const alice = { source: 'gateway', id: 'alice', username: 'alice', role: 'user' as const }
     const toolPrincipals: unknown[] = []
     const requestPrincipals: unknown[] = []
-    const agent = ctx.agentLoop.create(SessionId('anonymous-steering'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(SessionId('anonymous-steering'), { provider: 'mock', model: 'mock' })
     ctx.tools.register(defineContentToolFixture({
       name: 'race',
       description: 'enqueue anonymous input during an authenticated tool',
