@@ -11,7 +11,7 @@ import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
 import type { AuthenticatedPrincipal, ToolCallId, ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { UserMessage } from '@deepseek-ai/dsh-session'
+import type { SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
 import { assertNever, deepFreeze, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ToolProviderResult } from '@deepseek-ai/dsh-system-prompt'
 import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
@@ -311,6 +311,8 @@ export interface ToolExecutionInput {
    * a root execution; nested dispatchers propagate the enclosing value.
    */
   readonly rootCallId?: ToolCallId
+  /** Session seq of the root model-requested `tool/call`, when the caller logged it. */
+  readonly rootCallSeq?: SessionSeq
   readonly name: string
   /** Losslessly JSON-serializable parsed arguments (tools validate their own schema). */
   readonly arguments: unknown
@@ -1359,6 +1361,7 @@ export class ToolRuntime extends Service {
     const token = createExecutionToken()
     const callId = exec.callId
     const rootCallId = exec.rootCallId ?? callId
+    const rootCallSeq = exec.rootCallSeq
     const name = exec.name
     const agent = exec.agent
     const principal = exec.principal
@@ -1378,6 +1381,7 @@ export class ToolRuntime extends Service {
       token,
       callId,
       rootCallId,
+      ...rootCallSeq !== undefined ? { rootCallSeq } : {},
       name,
       signal,
       ...agent !== undefined ? { agent } : {},

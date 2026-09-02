@@ -4,6 +4,12 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 /** Definition-local identity and lifecycle role extracted from one event. */
 export interface ConversationMatchResult {
   readonly id: string
+  /**
+   * Stable identity of one lifecycle when the business id may be reused.
+   * Every correlated event independently derives the same value; omission
+   * keeps the business id as the complete Context identity.
+   */
+  readonly lifecycle?: string
   readonly role: 'start' | 'update'
 }
 
@@ -148,6 +154,7 @@ export interface ConversationNodeContext<State = unknown> {
   readonly key: string
   readonly kind: string
   readonly id: string
+  readonly lifecycle: string | undefined
   readonly matches: readonly ConversationMatch[]
   readonly start: ConversationStartMatch | undefined
   readonly state: State | undefined
@@ -159,6 +166,7 @@ export interface ConversationPreviousContext<State = unknown> {
   readonly key: string
   readonly kind: string
   readonly id: string
+  readonly lifecycle: string | undefined
   readonly startSeq: number
   readonly state: Readonly<State>
   readonly matches: readonly ConversationMatch[]
@@ -287,11 +295,13 @@ export interface ConversationViewDefinition<Node extends ConversationViewNode = 
 }
 
 /**
- * Build a stable collision-free key for one Definition-local business identity.
+ * Build a stable collision-free key for one Definition-local business lifecycle.
  * @param kind - Definition kind.
  * @param id - Definition-local business identity.
+ * @param lifecycle - optional lifecycle identity when the business id may be reused.
  * @returns engine-owned Context key.
  */
-export function conversationContextKey(kind: string, id: string): string {
-  return `${kind.length}:${kind}${id}`
+export function conversationContextKey(kind: string, id: string, lifecycle?: string): string {
+  const base = `${kind.length}:${kind}${id}`
+  return lifecycle === undefined ? base : `#${base.length}:${base}${lifecycle}`
 }

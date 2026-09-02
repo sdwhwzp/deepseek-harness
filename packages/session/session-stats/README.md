@@ -76,14 +76,14 @@ The unit is a pure fold over committed session events: `step/end` is the counted
 
 ### Data model
 
-The fold state holds the eight totals plus in-flight boundaries: `lastTurn` (turn of the last counted `step/end`), `openStep` (the open step's boundary facts, closed by its `assistant/message`), and `pendingCalls` (tool dispatch times by callId). The wire view is a strict subset — the eight totals — so the persisted-cache state schema extends the view schema with the boundary fields.
+The fold state holds the eight totals plus in-flight boundaries: `lastTurn` (turn of the last counted `step/end`), `openStep` (the open step's boundary facts, closed by its `assistant/message`), and `pendingCalls` (tool dispatch times by root `tool/call` seq). The wire view is a strict subset — the eight totals — so the persisted-cache state schema extends the view schema with the boundary fields.
 
 ### Fold rules
 
 - Uninteresting events return the same state reference; the registry's `Object.is` gate keeps the change feed quiet.
 - First-token latency records the first non-empty delta chunk and survives an in-step `llm/retry`.
 - Decode time and tokens accrue only over steps carrying both a first token and a valid provider usage report; malformed usage is ignored like the window fold guards node usage.
-- Tool time pairs `tool/call` → `tool/result` by callId; unresolved calls are dropped at `turn/end` because results land within their turn, and a callId colliding with an `Object` prototype name reads as unmatched.
+- Tool time pairs `tool/call` → `tool/result` by the result's first `sourceEventSeqs` entry; a missing citation remains unmatched, and repeated provider call ids remain distinct. Unresolved calls are dropped at `turn/end` because results land within their turn.
 
 </details>
 

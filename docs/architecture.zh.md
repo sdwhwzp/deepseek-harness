@@ -111,6 +111,8 @@ turn/end
 
 **模型可见即已记录。** 抵达模型请求的一切都必须能从日志重建，并由一项运行时不变量断言这一点。因此，新增一项模型可见输入就需要新增一个会话事件：扩展 `SessionEventMap` 并从日志渲染。
 
+**工具 occurrence 使用日志身份。** provider `callId` 仍是不透明 payload 数据，并且可以重复。原始 `tool/call` event 的 branded `SessionSeq` 标识一次 occurrence；对应 `tool/result` 首先引用该 seq，嵌套 PTC dispatch 记录则让相同的 `rootCallSeq` 贯穿 agent loop 与工具 runtime。
+
 **投影 seam。** `dsh-session-projection` 提供 `ctx.sessionProjections`：已注册单元增量折叠已提交事件，host 消费方通过 `stateOf()` 读取单个类型化状态，载体通过 `snapshot()` 批量取得裁剪后的客户端视图。host 读取方要么在激活时要求该服务，要么在注册表或必需 key 缺席时明确失败。贡献方可以保留 `ctx.inject(['sessionProjections'], ...)` 注册，但不能为缺失的 host 值静默提供默认值。agent loop 为读取方注册共享的 `turnBoundary` 状态（[决策](../.agents/notes/implemented/architecture/2026-08-19-session-projection-mandatory-seam.zh.md)）。
 
 ## 能力 seam

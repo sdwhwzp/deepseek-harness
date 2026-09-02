@@ -9,6 +9,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import {
   ConversationLocationIndex,
   ConversationNodeAssembler as RuntimeConversationNodeAssembler,
+  conversationContextKey,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   ConversationMatch, ConversationNodeContext,
@@ -165,6 +166,13 @@ function fallbackDefinition(start: () => string): ConversationNodeDefinition<str
 }
 
 describe('ConversationNodeAssembler', () => {
+  it('builds disjoint keys for reusable business lifecycles', () => {
+    expect(conversationContextKey('tool', 'ab', 'c'))
+      .not.toBe(conversationContextKey('tool', 'a', 'bc'))
+    expect(conversationContextKey('tool', 'ab'))
+      .not.toBe(conversationContextKey('tool', 'ab', ''))
+  })
+
   it('publishes Location data through stable per-key sources', () => {
     const index = new ConversationLocationIndex()
     const turnStart = at(SessionSeq(1), 'turn/start', { turn: 1 })
@@ -341,6 +349,72 @@ describe('ConversationNodeAssembler', () => {
     expect([...snapshot?.nodes.values() ?? []].map(value => value.data)).toEqual([
       { callSeq: 1, results: 1 },
       { callSeq: 2, results: 0 },
+    ])
+  })
+
+  it('separates repeated business ids by lifecycle identity', () => {
+    const definition: ConversationNodeDefinition<{ args: string; settled: boolean }> = {
+      kind: 'tool',
+      match: (event) => {
+        if (event.type === 'tool/call') {
+          return { id: String(event.data.callId), lifecycle: String(event.seq), role: 'start' }
+        }
+        if (event.type === 'tool/result') {
+          const callSeq = event.sourceEventSeqs?.[0]
+          return {
+            id: String(event.data.message.source.callId),
+            ...callSeq === undefined ? {} : { lifecycle: String(callSeq) },
+            role: 'update',
+          }
+        }
+        return null
+      },
+      start: (_context, match) => ({
+        args: match.event.type === 'tool/call' ? match.event.data.arguments : '',
+        settled: false,
+      }),
+      update: context => ({ ...context.state, settled: true }),
+      target: 'test',
+      buildViewNode: context => node(context, {
+        lifecycle: context.lifecycle,
+        ...context.state,
+      }),
+    }
+    const assembler = new ConversationNodeAssembler(
+      new TestEventDefinitions([definition]),
+      new TestViewDefinitions([testView()]),
+    )
+    assembler.replaceWindow([
+      input(at(SessionSeq(1), 'tool/call', {
+        turn: 1, step: 1, callId: 'duplicate', name: 'read', arguments: 'first',
+      })),
+      input({
+        ...at(SessionSeq(2), 'tool/result', {
+          turn: 1,
+          step: 1,
+          message: { source: { kind: 'tool', callId: 'duplicate' }, content: [] },
+        }),
+        surfaceOp: 'append',
+        sourceEventSeqs: [SessionSeq(1)],
+      } as SessionEvent),
+      input(at(SessionSeq(3), 'tool/call', {
+        turn: 1, step: 1, callId: 'duplicate', name: 'read', arguments: 'second',
+      })),
+      input({
+        ...at(SessionSeq(4), 'tool/result', {
+          turn: 1,
+          step: 1,
+          message: { source: { kind: 'tool', callId: 'duplicate' }, content: [] },
+        }),
+        surfaceOp: 'append',
+        sourceEventSeqs: [SessionSeq(3)],
+      } as SessionEvent),
+    ], false)
+    assembler.flush()
+
+    expect([...testSnapshot(assembler)?.nodes.values() ?? []].map(value => value.data)).toEqual([
+      { lifecycle: '1', args: 'first', settled: true },
+      { lifecycle: '3', args: 'second', settled: true },
     ])
   })
 

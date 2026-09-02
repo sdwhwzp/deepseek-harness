@@ -301,8 +301,9 @@ export interface SessionEventMap {
   'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
   /**
    * The model requested one tool invocation: `name` with the raw `arguments`
-   * JSON string exactly as the model produced it (unparsed). `callId` pairs the
-   * call with its `tool/result`.
+   * JSON string exactly as the model produced it (unparsed). `callId` preserves
+   * the provider-supplied value; consumers use this event's `seq` to identify
+   * this call occurrence because a provider may reuse a call id.
    */
   'tool/call': { turn: number; step: number; callId: ToolCallId; name: string; arguments: string }
   /**
@@ -314,7 +315,9 @@ export interface SessionEventMap {
    * `meta` is rejected at the source, and the durable log reproduces the
    * identical card on replay. Absent
    * unless the tool attaches one (e.g. `dsh-tool-fs` carries its result-time
-   * contextual diff here).
+   * contextual diff here). An appended result cites its originating
+   * `tool/call` event first in `sourceEventSeqs`, so the occurrence remains
+   * unambiguous when a provider reuses `callId`.
    */
   'tool/result': {
     turn: number

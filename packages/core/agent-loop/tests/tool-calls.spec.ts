@@ -502,8 +502,13 @@ describe('tool-call scheduler: ordered middleware and additional contexts', () =
     const gated = gatedParallelTool('p')
     ctx.tools.register(gated.tool)
     const pre: string[] = []
+    const roots: { callId: string; rootCallSeq: number | undefined }[] = []
     const post: string[] = []
-    ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => { pre.push(String(exec.callId)); return next() })
+    ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
+      pre.push(String(exec.callId))
+      roots.push({ callId: String(exec.callId), rootCallSeq: exec.rootCallSeq })
+      return next()
+    })
     ctx.on('tools/post-execute', async (exec, _result, next): Promise<PostToolDecision> => { post.push(String(exec.callId)); return next() })
     const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
 
@@ -513,6 +518,9 @@ describe('tool-call scheduler: ordered middleware and additional contexts', () =
     await waitForIdle(ctx, agent)
 
     expect(pre).toEqual([ToolCallId('c1'), ToolCallId('c2'), ToolCallId('c3')].map(String))
+    expect(roots).toEqual(events(agent)
+      .filter(event => event.type === 'tool/call')
+      .map(event => ({ callId: String(event.data.callId), rootCallSeq: event.seq })))
     expect(post).toEqual([ToolCallId('c1'), ToolCallId('c2'), ToolCallId('c3')].map(String))
   })
 

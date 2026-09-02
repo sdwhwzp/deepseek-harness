@@ -177,9 +177,10 @@ async function runGroup(
   const startCall = async (index: number): Promise<void> => {
     // oxlint-disable-next-line typescript/no-non-null-assertion -- bounded index
     const call = group[index]!
-    callSeqs[index] = appendToolCall(session, turn, step, call.block)
+    const callSeq = appendToolCall(session, turn, step, call.block)
+    callSeqs[index] = callSeq
     started++
-    const prepared = await ctx.tools[TOOL_RUNTIME_SCHEDULER].prepare(call.exec)
+    const prepared = await ctx.tools[TOOL_RUNTIME_SCHEDULER].prepare({ ...call.exec, rootCallSeq: callSeq })
     throwSchedulerFailure()
     switch (prepared.kind) {
       case 'dispatch': {

@@ -32,6 +32,21 @@ interface ProjectedBlockCache {
 
 const projectedBlocks = new WeakMap<ToolCallBlock, ProjectedBlockCache>()
 
+function rootLifecycle(event: Parameters<ConversationNodeDefinition['match']>[0]): string | undefined {
+  if (event.type === 'tool/call') return String(event.seq)
+  if (event.type === 'tool/result') {
+    const callSeq = event.sourceEventSeqs?.[0]
+    return callSeq === undefined ? undefined : String(callSeq)
+  }
+  if (event.type === 'tool/code-dispatch-start' || event.type === 'tool/code-dispatch') {
+    const rootCallSeq: unknown = event.data.rootCallSeq
+    return typeof rootCallSeq === 'number' && Number.isSafeInteger(rootCallSeq)
+      ? String(rootCallSeq)
+      : undefined
+  }
+  return undefined
+}
+
 function jsonArguments(value: unknown): string {
   return JSON.stringify(value)
 }
@@ -232,14 +247,22 @@ export const toolDefinition: ConversationNodeDefinition<ToolState> = {
   kind: 'tool-call',
   target: 'chat',
   match: (event) => {
-    if (event.type === 'tool/call') return { id: String(event.data.callId), role: 'start' }
+    if (event.type === 'tool/call') {
+      return { id: String(event.data.callId), lifecycle: String(event.seq), role: 'start' }
+    }
     if (event.type === 'tool/result' && isAppendSurfaceEvent(event)) {
-      return { id: String(event.data.message.source.callId), role: 'update' }
+      const lifecycle = rootLifecycle(event)
+      return {
+        id: String(event.data.message.source.callId),
+        ...lifecycle === undefined ? {} : { lifecycle },
+        role: 'update',
+      }
     }
     if (event.type === 'tool/code-dispatch-start' || event.type === 'tool/code-dispatch') {
       const rootCallId: unknown = event.data.rootCallId
+      const lifecycle = rootLifecycle(event)
       return typeof rootCallId === 'string' && rootCallId !== ''
-        ? { id: rootCallId, role: 'update' }
+        ? { id: rootCallId, ...lifecycle === undefined ? {} : { lifecycle }, role: 'update' }
         : null
     }
     return null

@@ -470,6 +470,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
         const input = {
           callId: subCallId,
           rootCallId: exec.rootCallId,
+          ...exec.rootCallSeq !== undefined ? { rootCallSeq: exec.rootCallSeq } : {},
           name,
           arguments: normalized.dispatched,
           ...exec.agent ? { agent: exec.agent } : {},
@@ -509,6 +510,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
               })
               agent.session.append('tool/code-dispatch', {
                 rootCallId: exec.rootCallId,
+                ...exec.rootCallSeq !== undefined ? { rootCallSeq: exec.rootCallSeq } : {},
                 parentCallId: exec.callId,
                 subCallId,
                 name,
@@ -534,6 +536,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
             async start(): Promise<void> {
               exec.agent?.session.append('tool/code-dispatch-start', {
                 rootCallId: exec.rootCallId,
+                ...exec.rootCallSeq !== undefined ? { rootCallSeq: exec.rootCallSeq } : {},
                 parentCallId: exec.callId,
                 subCallId,
                 name,

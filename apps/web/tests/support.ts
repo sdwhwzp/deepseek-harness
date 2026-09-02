@@ -191,8 +191,10 @@ export async function saveFailureShot(page: Page, name: string): Promise<void> {
  * the key miss its rendered node, so the assertion fails loudly.
  * @param kind - Definition kind.
  * @param id - Definition-local business identity.
+ * @param lifecycle - optional lifecycle identity when the business id may be reused.
  * @returns the engine-owned Context key.
  */
-export function conversationContextKey(kind: string, id: string): string {
-  return `${kind.length}:${kind}${id}`
+export function conversationContextKey(kind: string, id: string, lifecycle?: string): string {
+  const base = `${kind.length}:${kind}${id}`
+  return lifecycle === undefined ? base : `#${base.length}:${base}${lifecycle}`
 }

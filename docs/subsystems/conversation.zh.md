@@ -12,8 +12,8 @@ Session Controller 拥有连续的已加载逻辑 event window。每个 `Session
 
 | 概念 | Owner 与用途 |
 |---|---|
-| Event Definition | 业务包一次匹配一条标准 event 或一个 packed Assistant run，以稳定 `(kind, id)` 关联输入、折叠确定性 State，并可选择 materialize 一个 target node。 |
-| Context | Engine 为一个 `(kind, id)` 拥有的有序 Match 与当前 State。一个 packed run 只占一个 update Match；只有 update 的证据可以保持 pending，直到分页补齐其唯一 scalar start。 |
+| Event Definition | 业务包一次匹配一条标准 event 或一个 packed Assistant run，以稳定 `(kind, id, lifecycle?)` 关联输入、折叠确定性 State，并可选择 materialize 一个 target node。 |
+| Context | Engine 为一个 `(kind, id, lifecycle?)` 拥有的有序 Match 与当前 State。一个 packed run 只占一个 update Match；只有 update 的证据可以保持 pending，直到分页补齐其唯一 scalar start。 |
 | Location | Engine 根据持久 boundary event 推导的 Session、Turn 或 Step 坐标。Definition 可以向一个 Turn 或 Step 发布类型化数据。 |
 | View Definition | Target 包为每个 Session 创建一个增量 builder，并拥有该 target 的最终 snapshot 类型。 |
 | View | Chat 或 Trajectory 等 Slot entry 只读取自身 target snapshot，并渲染 target 自有 node。 |
@@ -28,7 +28,7 @@ shell 拥有 View 选择，并在 binding 创建、被选为 current 或 View ro
 
 ## 可回放 event family
 
-编写 Definition 前先选定稳定的业务 id。构成同一个 Node 的每条事件都必须携带该 id，或只凭自身 payload 独立推导出该 id；Client 绝不能把 update 猜测为属于“最近一个未完成”的 Context。
+编写 Definition 前先选定稳定的业务 id。如果生产方可能复用该 id，还要为每次出现选定稳定的 lifecycle identity。构成同一个 Node 的每条事件都必须从自身 payload 携带或独立推导出相同的 id 与可选 lifecycle；Client 绝不能把 update 猜测为属于“最近一个未完成”的 Context。
 
 以一个 review job 为例，事件约定可以是：
 
@@ -38,7 +38,7 @@ shell 拥有 View 选择，并在 binding 创建、被选为 current 或 View ro
 | `review/progress` | update | 相同的 `reviewId`、坐标、可回放进度 |
 | `review/end` | update | 相同的 `reviewId`、坐标、最终摘要 |
 
-跨进程边界使用生产方拥有的 branded id 类型。把 `SessionEventMap` 合并和 payload 类型放在生产方的纯类型导出中，再由 Client 包通过仅类型副作用导入该导出。每个 `(kind, id)` 最多只能有一条 start 事件。单事件业务可以把事件自身的稳定身份（例如 `event.seq`）作为 Definition 内部 id。
+跨进程边界使用生产方拥有的 branded id 类型。把 `SessionEventMap` 合并和 payload 类型放在生产方的纯类型导出中，再由 Client 包通过仅类型副作用导入该导出。每个 `(kind, id, lifecycle?)` 最多只能有一条 start 事件。单事件业务可以把事件自身的稳定身份（例如 `event.seq`）作为 Definition 内部 id 或 lifecycle。
 
 系统支持增量事件。如果生产方能以较低成本发出 whole-value checkpoint，应优先采用，因为 start 位于已加载窗口之外时它仍可直接使用。每条 delta 都必须携带稳定 id，并且按照日志 `seq` 升序回放时能够确定性地产生 State；它不能依赖只存在于实时内存中的状态。如果当前历史窗口只有 update，Assembler 会保留一个 pending Context，并在更早分页补齐 start 前不构造 State。如果产品必须在 start 尚未加载时渲染，terminal 或 checkpoint 事件就必须携带足够的完整 fallback 状态，让 Definition 能直接构造结果；不要通过扫描无关事件恢复它。
 
@@ -216,7 +216,7 @@ export function apply(ctx: ClientContext): void {
 }
 ```
 
-`match(event)` 是身份提取器，不是 fold：它只能收到当前 `SessionEventLike`，并返回 Definition 内部 id 与生命周期角色。命中后，Assembler 通过 `(kind, id)` 定位 Context；标准 event 可触发一次 `start`，标准或 packed event 可把当前 State 交给 `update`。两个函数都必须返回引擎随后采用的 State；推荐返回新的 immutable value，但函数原地修改后返回同一对象时，采用语义也相同。
+`match(event)` 是身份提取器，不是 fold：它只能收到当前 `SessionEventLike`，并返回 Definition 内部 id、可选 lifecycle identity 与生命周期角色。命中后，Assembler 通过 `(kind, id, lifecycle?)` 定位 Context；标准 event 可触发一次 `start`，标准或 packed event 可把当前 State 交给 `update`。两个函数都必须返回引擎随后采用的 State；推荐返回新的 immutable value，但函数原地修改后返回同一对象时，采用语义也相同。
 
 `buildLocationData(context, scope)` 可以把 Definition 拥有的数据发布到引擎拥有的 Turn 或 Step 上。通过 declaration merging 为每个 key 指定精确 value 类型。同一 Location 内的另一个 Node 可以使用受限 slot hook（例如 `useTurnData(key)`）读取该值，无须取得 Session，也无须扫描 `snapshot.chat.nodes`。
 
@@ -235,7 +235,7 @@ Assembler 会记录这项依赖。如果后续 older prepend 带来了更近的�
 | 路径 | 引擎工作 | Definition 可观察到的行为 |
 |---|---|---|
 | open、resync 或 gap repair 时 replace | 重建已加载窗口，每条标准 event 或 packed run 对每个 Definition 匹配一次，再回放每个已有 start 的 Context | 先执行 `start`，再按逻辑 `seq` 升序执行其 update；只有 update 的 pending Context 仍没有 State |
-| prepend 一页更早历史 | 只匹配新增的更早 input，按 `(kind, id)` 合并进 Context，保留现有 keyed node，并只重放受影响的 Context 与依赖 | 新发现的 scalar start 会激活已收集的 scalar 与 packed update；Location 或前序依赖变化也可能重跑 Context |
+| prepend 一页更早历史 | 只匹配新增的更早 input，按 `(kind, id, lifecycle?)` 合并进 Context，保留现有 keyed node，并只重放受影响的 Context 与依赖 | 新发现的 scalar start 会激活已收集的 scalar 与 packed update；Location 或前序依赖变化也可能重跑 Context |
 | append 一条实时事件 | 每个 Definition 各调用一次 `match`，按 key 查找命中的 Context，只更新该 Context | 对 start 之后的匹配事件执行一次 scalar `update` 并请求一次发布；不扫描已有 Context |
 
 注册 `D` 个 Definition 时，一条新 scalar event 或 packed run 会进行 `D` 次仅当前 input 匹配；命中后的 Context key 查询是常数时间。Definition 代码必须维持这个性质：正常 append 热路径不得遍历完整事件窗口、所有 Context、`context.matches` 或已渲染 Node 集合。累计事实放进 State，同 Turn/Step 共享信息放进 Location data，有索引的前序依赖使用 `reader.previous()`。

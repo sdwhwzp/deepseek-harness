@@ -41,21 +41,21 @@ Registry 注册是 Cordis effect，Definition 卸载会触发现有 Session 的�
 
 Definition 不持有跨 Session 的可变业务数据。每个 Session 的 Context、State、依赖和 View Builder 都由该 Session 的 Assembler 隔离持有。
 
-#### `kind`、业务 ID 与 Context key
+#### `kind`、业务 ID、lifecycle 与 Context key
 
-`match()` 返回的 `id` 只要求在当前 Definition 内稳定。Tool 的 ID 可以是 call ID，Assistant 的 ID 可以是 `turn:step`，Inbox 的 ID 可以是 splice Event seq。
+`match()` 返回的 `id` 只要求在当前 Definition 内稳定。Tool 的 ID 可以是 call ID，Assistant 的 ID 可以是 `turn:step`，Inbox 的 ID 可以是 splice Event seq。可能复用同一个业务 ID 的生产方还要提供 `lifecycle`；该 lifecycle 中的每条 Event 都必须在本地推导出相同值。
 
-Assembler 使用 `conversationContextKey(kind, id)` 组合无碰撞 key；不同 Definition 即使返回相同 `id` 也不会共享 Context。最终 view Node 必须沿用这个 engine-owned key，不能把 `seq` 或渲染位置当 identity。
+Assembler 使用 `conversationContextKey(kind, id, lifecycle?)` 组合无碰撞 key；不同 Definition 即使返回相同 `id` 也不会共享 Context，同一个 ID 下重复出现的 lifecycle 也彼此独立。最终 view Node 必须沿用这个 engine-owned key，不能把渲染位置当 identity。
 
-每个 `(kind, id)` 最多存在一个 start Match。第二个 start 会立即报错；Definition 需要表达新生命周期时必须返回新 ID。
+每个 `(kind, id, lifecycle?)` 最多存在一个 start Match。第二个 start 会立即报错；Definition 需要表达另一个 lifecycle 时必须返回新 ID 或新的 lifecycle identity。
 
 #### `match(event)`
 
-`match(event)` 只读取当前 `SessionEventLike`，返回 `{ id, role: 'start' | 'update' }` 或 `null`。它拿不到 Context、历史、Reader、Location 或 view envelope。`chunkrow/*` event 只能作为 update；Assembler 会拒绝 packed start，`start()` 接收的 `ConversationStartMatch` 只包含标准 `SessionEvent`。
+`match(event)` 只读取当前 `SessionEventLike`，返回 `{ id, lifecycle?, role: 'start' | 'update' }` 或 `null`。它拿不到 Context、历史、Reader、Location 或 view envelope。`chunkrow/*` event 只能作为 update；Assembler 会拒绝 packed start，`start()` 接收的 `ConversationStartMatch` 只包含标准 `SessionEvent`。
 
 这项限制使单条 scalar event 或 packed run 的路由成本只随已注册 Definition 数量增长。Assembler 不会为了判断一条 update 属于谁而遍历该 Definition 的历史 Context。
 
-start、result、resource、checkpoint 及业务自有终止 Event 必须携带或可直接推导同一 ID。若单个 Event 不能算出 ID，生产 Event 的协议负责补足关联字段，Client 不通过“最近一个未完成对象”猜测。
+start、result、resource、checkpoint 及业务自有终止 Event 必须携带或可直接推导同一 ID 与 lifecycle identity。若单个 Event 不能算出这些值，生产 Event 的协议负责补足关联字段，Client 不通过“最近一个未完成对象”猜测。
 
 `role` 描述 State 生命周期，不描述可见性。start 可以立即生成 terminal Node；update 也可以在 start 尚未加载时先进入 pending Context。
 
@@ -71,8 +71,9 @@ Location 可以随 prepend 补齐边界或 append 关闭边界而改变。Assemb
 
 | 字段 | 所有者 | Definition 可见语义 |
 |---|---|---|
-| `key` | Assembler | `kind + id` 的稳定最终 identity |
+| `key` | Assembler | `kind + id + lifecycle?` 的稳定最终 identity |
 | `kind` / `id` | Definition + Assembler | 当前业务命名空间和业务 ID |
+| `lifecycle` | Definition + Assembler | 复用业务 ID 时的 lifecycle identity；ID 本身完整时为 `undefined` |
 | `matches` | Assembler | 当前窗口已收集且按首 `seq` 排序的完整 scalar 与 packed 业务证据 |
 | `start` | Assembler | 唯一 scalar start Match；尚未加载时为 `undefined` |
 | `state` | Definition 返回、Assembler 持有 | 最近一次 `start`/`update` 返回值；未初始化时为 `undefined` |
@@ -110,7 +111,7 @@ Reader 每次查询都记录 `{ key, revision, windowGap }` 依赖。命中前�
 
 #### `update(context, match)`
 
-`update()` 只处理已经由 `match()` 精确路由到当前 `(kind, id)` 的 post-start scalar 或 packed Match。它不判断 input 属于哪个 Context。消费 Assistant delta 的 Definition 会把每个匹配的 `chunkrow/*` 值作为一个 batch fold，而不构造成员 event。
+`update()` 只处理已经由 `match()` 精确路由到当前 `(kind, id, lifecycle?)` 的 post-start scalar 或 packed Match。它不判断 input 属于哪个 Context。消费 Assistant delta 的 Definition 会把每个匹配的 `chunkrow/*` 值作为一个 batch fold，而不构造成员 event。
 
 Assembler 按 `seq` 升序调用 `update()`。实时尾部 update 可以直接增量应用；任何非尾部证据插入、start 补齐或依赖失效都会从 `start()` 完整 replay。
 
@@ -158,7 +159,7 @@ Assembler 校验 Node `key === context.key` 且 Node `target === target`。业�
 
 Step/Turn 关闭属于外部 Location 事实，不替业务修改 State。边界变化会 replay 并 build 受影响 Context；业务结合“自己的 State 是否完成”和“Location 是否 closed”生成正常、running 或 interrupted 表现。
 
-ID 不复用，完成的 Context 继续存在于当前窗口，既提供稳定渲染 identity，也可以作为后续 Reader 的前序证据。
+只有提供不同 lifecycle identity 时才能复用 ID。完成的 Context 继续存在于当前窗口，既提供稳定渲染 identity，也可以作为后续 Reader 的前序证据。
 
 ### Location 是一级引擎事实
 
@@ -191,7 +192,7 @@ Assembler 还把 reference-stable timeline 交给 View Builder。业务不重复
 3. 全部 entry 按首个逻辑 `seq` 升序排序并写入当前窗口。
 4. LocationIndex 对这个窗口重建 Turn/Step facts。
 5. Assembler 按升序访问标准 event 与 packed run，并逐条调用每个普通 Definition 的 `match(event)`。
-6. 每个命中结果按 `(kind, id)` 取得或创建 Context，并把 Match 插入该 Context 的有序数组。
+6. 每个命中结果按 `(kind, id, lifecycle?)` 取得或创建 Context，并把 Match 插入该 Context 的有序数组。
 7. 遇到 start 时执行 `start()`；已有 State 的尾部 update 直接执行 `update()`。
 8. 当前页只含 result/resource 而缺 start 时，Context 仍会按 ID 创建并收集 Matches，但 State 保持 `undefined`。
 9. 全部 input 匹配后，Assembler 复查 Reader 依赖，使同一窗口内较早瞬间态先稳定、较晚消费者再读取它。
@@ -231,7 +232,7 @@ Reader gap 修复是 prepend 与普通 append 最大的算法差异。新页不�
 1. Session 只接受紧邻当前逻辑 tail seq 的标准 live Event；重叠时去重，出现 gap 时先走 tail-page repair。
 2. 非边界 Event 增量写入当前 Turn/Step 坐标；边界 Event 更新所属 Turn 的 Location facts。
 3. Assembler 对这一个 Event 的每个普通 Definition 调用一次 `match()`，不会遍历任何 Definition 的 Context 集合。
-4. 每个命中结果通过 `(kind, id)` 直接定位一个 Context。
+4. 每个命中结果通过 `(kind, id, lifecycle?)` 直接定位一个 Context。
 5. 新 ID 创建 Context；已有 ID 的正常尾部 update 直接调用一次 `update()`。
 6. start 或任何需要插入非尾部位置的证据会走完整 `replayContext()`，保持同一正序语义。
 7. Context revision 变化后，只沿已登记 Reader 依赖 replay 消费者。
@@ -247,7 +248,7 @@ Chat `order` 的结构性变化仍可能重排当前可见 key；纯 data 更新
 
 ### Replace、prepend 与 append 的一致性
 
-三条链路最终都遵守同一不变量：Context Matches 按 seq 排序，State 从唯一 start 正序 fold，Reader 只看严格前序 active Context，Location data 按 Step→Turn 发布，Node key 只由 kind 和 ID 决定。
+三条链路最终都遵守同一不变量：Context Matches 按 seq 排序，State 从唯一 start 正序 fold，Reader 只看严格前序 active Context，Location data 按 Step→Turn 发布，Node key 只由 kind、ID 与可选 lifecycle identity 决定。
 
 `replaceWindow` 是初始打开、resync、gap repair 和 registry 变化的低频完整替换，不用于实现普通 load older。`prepend` 与 `append` 都保留现有 Builder 和 Context identity。
 
@@ -263,7 +264,7 @@ Chat `order` 的结构性变化仍可能重排当前可见 key；纯 data 更新
 | Message / `input-message` | message ID | append-surface `user/message` | 无 | 根据 source 生成 context message，或读取最近 next-step Inbox 判断 user/steering |
 | Request Prompt / `request-prompt` | header Event seq | 每条 `request/header` | 无 | 通过 Reader 读取前一条 Request Prompt，保留完整 prompt 状态，并判定 system/tool 变化 |
 | Assistant / `assistant-step` | `turn:step` | `step/start` | scalar 或 packed `assistant/chunk`、final `assistant/message`、同 step Retry | 聚合 blocks、usage、首 token 时间、final 和 retry 隐藏状态，并发布同 key Step data |
-| Tool / `tool-call` | root call ID | root `tool/call` | root result、Code Dispatch start/result | 聚合 root、children 和 parent Map；Dispatch Event 用 `rootCallId` 精确路由 |
+| Tool / `tool-call` | root call ID 加 root `tool/call` seq lifecycle | root `tool/call` | root result、Code Dispatch start/result | 聚合 root、children 和 parent Map；result 引用 call seq，Dispatch Event 携带 `rootCallSeq` |
 | Command / `command` | command ID | `command/run` | `command/done`、带 source command ID 的 compact lifecycle/checkpoint | 聚合 command outcome 和手动压缩证据 |
 | Automatic Compaction / `compaction` | compaction ID | 无 source command ID 的 `compaction/start` | summary、end、replacement checkpoint | 聚合 summary/checkpoint；checkpoint 足够时可在缺 start 下 fallback |
 | Retry / `model-retry` | retry ID | attempt 1 的 `llm/retry` | 后续 `llm/retry` 与 `llm/retry-started` | 聚合同一 RetryId 的 attempts 与 scheduled/started 状态 |
@@ -346,7 +347,7 @@ target 专属 Trajectory Definition、保留的 stage model、Steering 适配、
 ```text
 SessionEventLike window
   -> ConversationNodeAssembler
-       -> Definition.match(event) -> (kind, id, start/update)
+       -> Definition.match(event) -> (kind, id, lifecycle?, start/update)
        -> Context matches + State + Location
        -> Definition.buildLocationData(step -> turn)
             -> StepLocation.data / TurnLocation.data
@@ -358,7 +359,7 @@ SessionEventLike window
 
 ## 验证
 
-Runtime tests 固定 Definition 生命周期注册、exact-ID append、update-before-start 收集与 start 后正序 replay、prepend identity、Reader window-gap 修复、传递依赖、Location closure、Step→Turn data phase order、Location data replacement、publication cadence、非法撤回、首次订阅 activation、单调 active target 和 per-target Builder。
+Runtime tests 固定 Definition 生命周期注册、exact-ID append、重复 ID 的 lifecycle 隔离、update-before-start 收集与 start 后正序 replay、prepend identity、Reader window-gap 修复、传递依赖、Location closure、Step→Turn data phase order、Location data replacement、publication cadence、非法撤回、首次订阅 activation、单调 active target 和 per-target Builder。
 
 Conversation tests 覆盖全部内建 Chat Definition、Assistant Step data、Turn Tail 与 Deliverables Turn data、Chat 排序和结构共享、selector isolation、Assistant/Tool running-to-settled identity、nested Code Dispatch、steering、Compaction、Retry、interruption、load-older anchoring 和 slot dispatch。Trajectory tests 则覆盖它独立注册的 Message、Assistant、Tool、Compaction、Request-header 与 boundary Definition，以及继续保留的 stage-oriented view model。
 
