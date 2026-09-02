@@ -1,0 +1,17 @@
+{
+  "patches": [
+    {
+      "at": 1,
+      "entry": {
+        "kind": "chunks",
+        "chunks": [
+          { "type": "block-start", "index": 0, "blockType": "text" },
+          { "type": "text-delta", "index": 0, "text": "{{fromRequest:(\\[image omitted because this model accepts text only; attachment sha256:[0-9a-f]{8}\\])}}" },
+          { "type": "block-end", "index": 0, "block": { "type": "text", "text": "{{fromRequest:(\\[image omitted because this model accepts text only; attachment sha256:[0-9a-f]{8}\\])}}" } },
+          { "type": "usage", "usage": { "inputTokens": 3, "outputTokens": 3 } },
+          { "type": "finish", "reason": { "kind": "stop" } }
+        ]
+      }
+    }
+  ]
+}

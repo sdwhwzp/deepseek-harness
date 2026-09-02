@@ -24,6 +24,7 @@ function props(
   selectedCallId?: string,
   home?: string,
   owners?: ToolCallOwnerProps[],
+  renderMessageImages: ToolTreeProps['renderMessageImages'] = () => null,
 ): ToolTreeProps {
   const snapshot = {} as SessionSnapshot
   const useSession = ((selector: (value: SessionSnapshot) => unknown) => selector(snapshot)) as ToolTreeProps['useSession']
@@ -47,6 +48,7 @@ function props(
     selectedCallId,
     openFile: vi.fn(),
     inspectCall: vi.fn(),
+    renderMessageImages,
     forkAt: vi.fn(),
     fileMentions: vi.fn(),
     useHostInfo: ((selector: (info: { home: string | undefined }) => unknown) => selector({ home })) as ToolTreeProps['useHostInfo'],
@@ -99,5 +101,39 @@ describe('ToolCallTree', () => {
     const block = root('w1', { name: 'read', argsRaw: '{"path":"/h/docs/a.ts"}' })
     const view = render(<ToolCallTree {...props(block, 'w1', '/h')} />)
     expect(view.getByText('~/docs/a.ts')).toBeTruthy()
+  })
+
+  it('renders every settled root and nested Tool image through the shared history gallery', () => {
+    const attachment = {
+      attachmentId: 'sha256:image' as never,
+      mediaType: 'image/png' as const,
+      bytes: 1,
+      width: 1,
+      height: 1,
+      name: 'result.png',
+    }
+    const child = {
+      ...root('parent:code:1', { name: 'read_image', argsRaw: '{"file_path":"result.png"}' }),
+      content: [{ type: 'image' as const, attachment }],
+    }
+    const block = {
+      ...root('parent', { name: 'run_code', argsRaw: '{"code":"return image"}' }),
+      content: [{ type: 'image' as const, attachment }],
+      subCalls: [child],
+    }
+    const imageOwners: Parameters<ToolTreeProps['renderMessageImages']>[0][] = []
+    const renderMessageImages: ToolTreeProps['renderMessageImages'] = (owner) => {
+      imageOwners.push(owner)
+      return <div data-testid="tool-result-image" />
+    }
+    const view = render(<ToolCallTree {...props(block, undefined, undefined, undefined, renderMessageImages)} />)
+
+    expect(view.getAllByTestId('tool-result-image')).toHaveLength(2)
+    expect(imageOwners).toEqual([
+      { images: [{ attachment }], align: 'start' },
+      { images: [{ attachment }], align: 'start' },
+    ])
+    expect(view.container.querySelector('[data-tool="read_image"]')).not.toBeNull()
+    expect(view.getByText('读取')).toBeTruthy()
   })
 })

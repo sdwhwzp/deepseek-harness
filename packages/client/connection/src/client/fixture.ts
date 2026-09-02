@@ -909,8 +909,10 @@ function buildAlphaLog(): SessionEvent[] {
   push({ type: 'step/end', data: { turn: 72, step: 0 } })
   push({ type: 'turn/end', data: { turn: 72, reason: { kind: 'max-tokens' } } })
 
-  // Turn 73: user and assistant images share one durable fixture object.
-  // The todo turn remains last so its standing projection stays visible.
+  // Turn 73: user, assistant, and Tool-result images share one durable fixture
+  // object. The todo turn remains last so its standing projection stays visible.
+  const imageCallId = 'fx-image-call'
+  const imageArgs = '{"file_path":"fixture-image.png"}'
   push({ type: 'turn/start', data: { turn: 73 } })
   push({
     type: 'user/message',
@@ -925,9 +927,30 @@ function buildAlphaLog(): SessionEvent[] {
       turn: 73,
       step: 0,
       message: assistantMessage(
-        [...text('结构化模型图片：'), { type: 'image', attachment: FIXTURE_IMAGE_REF }],
+        [
+          ...text('结构化模型图片：'),
+          { type: 'image', attachment: FIXTURE_IMAGE_REF },
+          { type: 'tool-call', id: imageCallId, name: 'read_image', arguments: imageArgs } as ContentBlock,
+        ],
         'fx-vision',
       ),
+    },
+  })
+  const imageCallSeq = push({
+    type: 'tool/call',
+    data: { turn: 73, step: 0, callId: imageCallId, name: 'read_image', arguments: imageArgs },
+  })
+  push({
+    type: 'tool/result',
+    sourceEventSeqs: [imageCallSeq],
+    surfaceOp: 'append',
+    data: {
+      turn: 73,
+      step: 0,
+      message: toolResultMessage(imageCallId, [
+        { type: 'text', text: '<path>fixture-image.png</path>\n<type>image</type>' },
+        { type: 'image', attachment: FIXTURE_IMAGE_REF },
+      ], false),
     },
   })
   push({ type: 'step/end', data: { turn: 73, step: 0 } })
