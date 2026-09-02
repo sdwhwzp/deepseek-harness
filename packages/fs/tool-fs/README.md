@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-fs` provides the model-facing filesystem tools — `read`, `read_image`, `write`, and `edit` — and their executor. With them the model reads files with line numbers, creates or replaces them atomically, and applies targeted literal edits; results are capped and failures carry stable codes with recovery instructions, all backed by a mounted `ctx.fs` backend. The read-before-edit policy lives in a separate plugin (`dsh-fs-observation-policy`), so omitting it yields unconditional, still-atomic mutations. `read_image` appears while a durable attachment store is mounted and refuses execution unless the routed model declares image input. Choose this package when the model should read, create, replace, or edit UTF-8 text files; discovery (`glob`/`grep`) is a sibling package.
+`dsh-tool-fs` provides the model-facing filesystem tools — `read`, `read_image`, `write`, and `edit` — and their executor. With them the model reads files with line numbers, creates or replaces them atomically, and applies targeted literal edits; results are capped and failures carry stable codes with recovery instructions, all backed by a mounted `ctx.fs` backend. The read-before-edit policy lives in a separate plugin (`dsh-fs-observation-policy`), so omitting it yields unconditional, still-atomic mutations. `read_image` appears while a durable attachment store is mounted and persists its result independently of the routed model's input modality. Choose this package when the model should read, create, replace, or edit UTF-8 text files; discovery (`glob`/`grep`) is a sibling package.
 
 ## Table of Contents
 
@@ -37,14 +37,14 @@ A backend, the policy plugin, then the tools; the attachment store is optional a
 - name: '@deepseek-ai/dsh-tool-fs'
 ```
 
-The policy plugin is optional: without it the tools run against the bare provider (unconditional write, overwrite, and edit with no observed-state). A deployment that loads these tools is expected to also load it, so the behavior is read-before-write/edit. `read_image` registers only while a durable `ctx.attachments` service is mounted; execution additionally refuses on a route whose exact model does not declare image input, so a text route's durable history stays free of image blocks.
+The policy plugin is optional: without it the tools run against the bare provider (unconditional write, overwrite, and edit with no observed-state). A deployment that loads these tools is expected to also load it, so the behavior is read-before-write/edit. `read_image` registers only while a durable `ctx.attachments` service is mounted. It commits the image result under every model route; request projection gives image-capable models the pixels and text-only models a stable placeholder, while the Web conversation retains the preview.
 
 ### The tools
 
 | Tool | Arguments | Behavior |
 |---|---|---|
 | `read` | `file_path`, `offset?`, `limit?` | Line-numbered UTF-8 content with a pagination footer; `offset` is 1-based and `limit` defaults to and caps at the configured `readLimit` |
-| `read_image` | `file_path` | Reads and persists a PNG/JPEG/WebP/GIF source; an extension-less path (normalized attachment object paths included) is identified from its file signature; normalization can downscale it before the next model request, so the model need not create a thumbnail first |
+| `read_image` | `file_path` | Reads and persists a PNG/JPEG/WebP/GIF source; an extension-less path (normalized attachment object paths included) is identified from its file signature; normalization can downscale it before the next model request, and the durable result remains user-visible on every model route |
 | `write` | `file_path`, `content` | Creates or fully replaces a file; with the policy plugin, overwriting requires a prior `read` at the unchanged version, creating does not |
 | `edit` | `file_path`, `old_string`, `new_string`, `replace_all?` | Literal replacement requiring a unique match unless `replace_all` is true; with the policy plugin, requires a prior `read` and an unchanged file |
 
@@ -71,7 +71,7 @@ With the policy plugin mounted, `write` and `edit` obtain their guard from the `
 
 ### Failures and recovery
 
-Failures are normalized as `Error: <message>` with a structured code preserved for callers. Stable messages include `file_path must be a non-empty string`, `limit must be less than or equal to <max>`, `cannot read "<path>": not found`, `cannot read "<path>": not a regular file`, and the image-route refusal `cannot read "<path>" as an image: model "<model>" does not declare image input; switch to an image-capable model to read images`. Guarded-mutation failures append their remedy: `FS_STALE_VERSION` gets `— re-read the file, then retry`, `FS_NOT_OBSERVED` gets `— read the file, then retry`. After the reread confirms absence, `edit` reports `FS_NOT_FOUND` instead of repeating a stale remedy, while `write` uses guarded creation.
+Failures are normalized as `Error: <message>` with a structured code preserved for callers. Stable messages include `file_path must be a non-empty string`, `limit must be less than or equal to <max>`, `cannot read "<path>": not found`, and `cannot read "<path>": not a regular file`. Guarded-mutation failures append their remedy: `FS_STALE_VERSION` gets `— re-read the file, then retry`, `FS_NOT_OBSERVED` gets `— read the file, then retry`. After the reread confirms absence, `edit` reports `FS_NOT_FOUND` instead of repeating a stale remedy, while `write` uses guarded creation.
 
 -----
 
@@ -93,7 +93,7 @@ The tools are the executor; policy is an event gate. The tools inject no policy 
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config`, tool composition, `read_image` attachments gate |
 | [`src/read.ts`](src/read.ts) | `read` executor: one stat, streaming decision, window build, observation |
-| [`src/read-image.ts`](src/read-image.ts) | `read_image` executor: route and media-type gates, bounded bytes, attachment save |
+| [`src/read-image.ts`](src/read-image.ts) | `read_image` executor: format and deployment checks, bounded bytes, attachment save |
 | [`src/write.ts`](src/write.ts) | `write` executor: intent waterfall, atomic write, observation |
 | [`src/edit.ts`](src/edit.ts) | `edit` executor: intent waterfall, literal edit, observation |
 | [`src/read-render.ts`](src/read-render.ts) | Cordis-free windowing and envelope formatting |
@@ -165,7 +165,7 @@ Prefix-stable while the plugin scope and guidance text are unchanged. Tool restr
 
 #### What the model sees
 
-The model sees the generated [`read`, `read_image`, `write`, and `edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs), with snake_case arguments. The image tool appears only while a durable attachment store is mounted; its schema is route-independent, and the strict gate refuses at execution. Scoped tool restrictions can remove any definition for one agent.
+The model sees the generated [`read`, `read_image`, `write`, and `edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs), with snake_case arguments. The image tool appears only while a durable attachment store is mounted and remains available under every model route. Scoped tool restrictions can remove any definition for one agent.
 
 #### Token effect
 
@@ -193,11 +193,11 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-A successful `read_image` returns `<path><displayPath></path>`, `<type>image</type>`, and a `<content>` envelope naming the media type, normalized dimensions, and byte size, followed by the image itself as a native image block. The result is logged with its durable reference before the next model request.
+A successful `read_image` returns `<path><displayPath></path>`, `<type>image</type>`, and a `<content>` envelope naming the media type, normalized dimensions, and byte size, followed by the image itself as a native image block. The result is logged with its durable reference before the next model request and renders below its Tool row in the Web conversation. An image-capable model receives the image; an exact text-only route receives `[image omitted because this model accepts text only; attachment sha256:<digest>]` without changing the logged result or user preview.
 
 #### Token effect
 
-The image is billed on every later request until compaction. Each call is independently bounded by the attachment store's `maxImageBytes`/`maxImagePixels`/`maxImageDimension`; repeated successful calls accumulate history, and content addressing deduplicates only the stored bytes, not the per-request token cost.
+Image-capable routes pay the projected image cost on every later request until compaction; text-only routes pay only for the placeholder. Each call is independently bounded by the attachment store's `maxImageBytes`/`maxImagePixels`/`maxImageDimension`; repeated successful calls accumulate history, and content addressing deduplicates only the stored bytes, not the per-request cost.
 
 #### KV Cache effect
 
@@ -221,7 +221,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-Failures are normalized as `Error: <message>`. This package's stable validation and read messages are `file_path must be a non-empty string`, `limit must be less than or equal to <max>`, `old_string must be a non-empty string`, `old_string and new_string must differ`, `cannot read "<path>": not found`, `cannot read "<path>": not a regular file`, `offset <offset> is out of range for "<path>" (<total> lines)`, `cannot read "<path>": the <ext> extension does not declare a supported image format; read_image accepts PNG/JPEG/WebP/GIF files, including extension-less files in those formats`, `cannot read "<path>": the file content is not a supported image format; read_image accepts PNG/JPEG/WebP/GIF`, `cannot read "<path>": the bytes do not decode as a supported PNG/JPEG/WebP/GIF image; the file may be truncated or corrupt`, `cannot read "<path>" as an image: model "<model>" does not declare image input; switch to an image-capable model to read images`, and the mismatch repair `cannot read "<path>": the <ext> extension declares <type>, but the bytes use a different image format; rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats` (an extension-less mismatch reports `cannot read "<path>": the file signature claims <type>, but the bytes decode as a different image format; the file may be corrupt`). A failed 16-bit conversion reports `cannot read "<path>": the 16-bit PNG could not be converted to the normalized 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`. Provider and policy templates are quoted in their package READMEs. Guarded-mutation failures additionally carry their recovery instruction in the message, appended by this package's model-facing error wrapper: `FS_STALE_VERSION` gets `— re-read the file, then retry`, and `FS_NOT_OBSERVED` gets `— read the file, then retry`; the structured code is preserved. After that reread confirms absence, `edit` reports `FS_NOT_FOUND` instead of repeating a stale remedy, while `write` uses guarded creation.
+Failures are normalized as `Error: <message>`. This package's stable validation and read messages are `file_path must be a non-empty string`, `limit must be less than or equal to <max>`, `old_string must be a non-empty string`, `old_string and new_string must differ`, `cannot read "<path>": not found`, `cannot read "<path>": not a regular file`, `offset <offset> is out of range for "<path>" (<total> lines)`, `cannot read "<path>": the <ext> extension does not declare a supported image format; read_image accepts PNG/JPEG/WebP/GIF files, including extension-less files in those formats`, `cannot read "<path>": the file content is not a supported image format; read_image accepts PNG/JPEG/WebP/GIF`, `cannot read "<path>": the bytes do not decode as a supported PNG/JPEG/WebP/GIF image; the file may be truncated or corrupt`, and the mismatch repair `cannot read "<path>": the <ext> extension declares <type>, but the bytes use a different image format; rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats` (an extension-less mismatch reports `cannot read "<path>": the file signature claims <type>, but the bytes decode as a different image format; the file may be corrupt`). A failed 16-bit conversion reports `cannot read "<path>": the 16-bit PNG could not be converted to the normalized 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`. Provider and policy templates are quoted in their package READMEs. Guarded-mutation failures additionally carry their recovery instruction in the message, appended by this package's model-facing error wrapper: `FS_STALE_VERSION` gets `— re-read the file, then retry`, and `FS_NOT_OBSERVED` gets `— read the file, then retry`; the structured code is preserved. After that reread confirms absence, `edit` reports `FS_NOT_FOUND` instead of repeating a stale remedy, while `write` uses guarded creation.
 
 #### Token effect
 
@@ -242,7 +242,6 @@ These limits define when the tool suite is a poor fit or needs special operation
 - **`read` handles UTF-8 text files only** — images use the separate `read_image` tool; PDF, audio, and video remain deferred. A directory target is `FS_NOT_REGULAR_FILE`.
 - **Extension-declared media type** — an extension selects the declared type and the attachment store's magic-byte validation stays authoritative; a correctly formatted image under a wrong extension is refused with the rename remedy rather than sniffed. Only a path with no extension is identified from its file signature.
 - **Object paths re-enter source admission** — `read_image` on a normalized attachment object re-admits its bytes as a new source, so a deployment whose `maxImageBytes`/`maxMessageImageBytes` sit below the normalized-image byte budget can refuse an object path that `ctx.attachments.readImage` still serves; shipped defaults keep the normalized budget (4 MiB) far under the source caps (20 MiB).
-- **No inline image preview on the tool-result card** — UI surfaces render the image result generically (the durable reference, not pixels); inline rendering is deferred to the UI packages.
 - **No attachment-region tool** — an agent may crop an image through another available tool when it has a filesystem path; a pasted or dragged image without a path cannot be re-read at higher resolution.
 - **No timeout surface** — `read`/`write`/`edit` take no timeout argument and declare no timeout budget; cancellation rides `exec.signal` only ([provider rationale](../README.md)).
 

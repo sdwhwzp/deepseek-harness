@@ -134,7 +134,7 @@ Pi-AI 与直接 DeepSeek 适配器都会在请求时解析 `ctx.attachments`，�
 
 ### 历史渲染与原图预览
 
-历史记录折叠会在用户消息和助手消息中保留 `ImageBlock`。用户图片在文本上方靠尾端对齐；助手图片则保留在靠前端叙述流中的原内容块位置。`MessageImage` 根据记录的尺寸派生稳定的行内边界框，通过会话授权加载器解析字节，使用 `object-fit: contain`，并将对象缺失或损坏转换为可重试的错误控件。
+历史记录折叠会在用户消息、assistant 消息与嵌套工具结果中保留 `ImageBlock`。用户图片在文本上方靠尾端对齐；assistant 图片保留在靠前端叙述流中的原内容块位置；每组已结算 root 或嵌套工具图片都以靠前端对齐方式显示在所属行下方。三种表面都使用同一个 conversation 所属的 renderer、会话授权 loader 与按会话附件缓存。`MessageImage` 根据记录的尺寸派生稳定的行内边界框，通过该 loader 解析字节，使用 `object-fit: contain`，并将对象缺失或损坏转换为可重试的错误控件。
 
 输入区缩略图和每个 `MessageImage` 各自持有临时原图预览状态，并调用同一个纯 `ImageLightbox`。模态框使用已经解析的原始对象 URL，只限制显示尺寸；它会聚焦关闭控件，并在关闭时把焦点恢复到先前的目标。
 
@@ -156,7 +156,7 @@ Pi-AI 与直接 DeepSeek 适配器都会在请求时解析 `ctx.attachments`，�
 | `packages/compaction/compaction-basic` | 在摘要输入中保留图片，并明确拒绝非文本检查点输出。 |
 | `packages/host/apiproxy` 和 `packages/bundle/base` | 范围狭窄的上传协议、共享批量准入、限制和路由模型前置检查、先持久化再追加事件的顺序、会话授权读取，以及默认 profile 组合。 |
 | `packages/client/connection` 和 `packages/client/runtime` | 有界请求缓冲、协议类型、fixture（测试前置数据）图片、提示词上传、附件读取和持久引用折叠。 |
-| `packages/client/ui-conversation` | 每个会话的草稿图片、附件栏、用户与助手图片控件和原图预览。 |
+| `packages/client/ui-conversation`、`packages/client/ui-tool` 和 `packages/client/ui-attachment` | 每个会话的草稿图片、附件栏、用户、assistant 与工具结果图片控件、授权历史加载和原图预览。 |
 | `packages/acp/acp` | 条件式原生图片能力、原子内联图片准入，以及经过校验的助手图片交付。 |
 | `packages/mcp/mcp-client` | 无损规范 MCP 结果、经能力门禁的持久图片投影，以及针对不受支持丰富块的明确诊断。 |
 | `packages/core/tools` | 在外层结果之后通用转发已经结算且含图片的 PTC mode 子结果。 |
@@ -211,7 +211,7 @@ UI 状态可能陈旧，也无法保护直接 SDK、ACP、回放或未收录模�
 
 - 存储测试覆盖内容寻址去重、私有权限、准入失败、对象损坏或缺失时的失败，以及收紧部署限制后读取历史数据。
 - 宿主与协议测试覆盖先持久化再追加事件的顺序、日志中不含 base64、会话作用域授权、能力拒绝、上传限制、大小受限的 HTTP 请求体、图片准入与模型选择的排序、仅文本的队列编辑，以及纯文本请求投影。
-- 客户端单元测试覆盖粘贴与拖放、混合剪贴板文本、仅图片发送、草稿恢复、顺序、草稿、会话作用域和应用层级的对象 URL 清理，以及一项在释放后才完成的延迟历史读取；keyless 的组装后构建产物通道（`apps/web/tests/image-display.expected.e2e.ts`，`pnpm run test:web`）覆盖经授权附件路由渲染的历史用户与助手图片画廊、原图 lightbox，以及 composer 粘贴缩略图条。
+- 客户端单元测试覆盖粘贴与拖放、混合剪贴板文本、仅图片发送、草稿恢复、顺序、草稿、会话作用域和应用层级的对象 URL 清理、root 与嵌套工具结果画廊，以及一项在释放后才完成的延迟历史读取；无密钥的组装后构建产物通道（`apps/web/tests/image-display.expected.e2e.ts`，`pnpm run test:web`）覆盖经授权附件路由与共享缓存渲染的历史用户、assistant 和工具结果图片画廊、原图 lightbox，以及 composer 粘贴缩略图条。
 - 适配器与压缩测试覆盖确定性 Pi-AI 请求版本、DeepSeek Files 上传与复用、陈旧 ID 恢复、纯文本投影、递归嵌套在工具结果中的图片、共享摘要请求版本，以及明确拒绝图片输出。
 - 附件、MCP、ACP 与 PTC mode 测试覆盖写入前校验全部成员、图文混合顺序、持久事件不含内联 base64、确切路由能力门禁、明确的不支持内容诊断、post-execute 替换／阻止优先级、准入期间取消、经过校验的助手图片交付，以及通用嵌套图片转发。组装后的无密钥 ACP 快照发送真实内联 PNG，并在会话日志中只固定其持久引用。
 - 需要凭据的实际 API 测试会覆盖配置的 Anthropic 路由和内置 `deepseek-official` Files 路径。DeepSeek 测试不使用自定义提供方条目。

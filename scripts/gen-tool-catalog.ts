@@ -315,7 +315,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tool-fs',
     dir: 'tool-fs',
     source: 'packages/fs/tool-fs/src/index.ts',
-    requires: ['ctx.tools', 'ctx.fs', 'ctx.systemPrompt', 'ctx.attachments (image-tool registration)', 'ctx.llm + an image-capable route (image-tool execution)'],
+    requires: ['ctx.tools', 'ctx.fs', 'ctx.systemPrompt', 'ctx.attachments (image-tool registration and execution)'],
     writes: ['tool/call', 'fs/write-intent or fs/edit-intent for mutations', 'fs/observed after read presence/absence or successful file operation', 'durable attachment (read_image)', 'tool/result'],
     async mount(ctx) {
       // The tool needs `fs`; the bare provider is sufficient because policy
@@ -326,7 +326,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolFs)
     },
     note:
-      'The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input.',
+      'The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; execution persists its durable result under every model route, and request projection controls pixels versus the text-only placeholder.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-fs-search',

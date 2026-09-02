@@ -1,7 +1,7 @@
-# Text-route image overlay: the attachment store registers read_image, but the
-# strict execution gate refuses on a route that does not declare image input,
-# so a text-only deployment keeps its durable history text-clean. The ACP row
-# re-pins `deepseek-v4-flash` for the authored fixture and header class.
+# Text-route image overlay: the attachment store registers read_image, which
+# commits a durable result independently of model input modality. Request
+# projection gives this text-only route the stable attachment placeholder.
+# The default-model row pins `deepseek-v4-flash` for this authored fixture.
 - id: agent-default-model
   name: '@deepseek-ai/dsh-agent-default-model'
   config:

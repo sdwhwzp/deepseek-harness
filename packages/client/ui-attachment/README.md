@@ -33,7 +33,7 @@ A draft image shows as a fixed 64px thumbnail in one horizontally scrolling row;
 
 ### Message images and the lightbox
 
-A message's lone image renders at 240px on its longer edge (aspect clamped to [0.25, 4], never upscaled); images among several render as fixed 64px squares. A loaded image opens the document-level lightbox on click; a failed load shows a retry control instead. The lightbox closes on Escape, a mask press, or its close control, and restores focus to its opener.
+A user, assistant, or Tool-result group's lone image renders at 240px on its longer edge (aspect clamped to [0.25, 4], never upscaled); images among several render as fixed 64px squares. User content aligns to the trailing edge, while assistant and Tool-result content aligns to the leading edge. A loaded image opens the document-level lightbox on click; a failed load shows a retry control instead. The lightbox closes on Escape, a mask press, or its close control, and restores focus to its opener.
 
 ### Drop overlay
 

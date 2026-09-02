@@ -4,10 +4,9 @@
  * attachment service's full decode stays authoritative. The mounted `ctx.fs`
  * backend owns path resolution and read access; names only declare media type.
  *
- * The route gate is deliberately stricter than the host upload preflight. An
- * image-reading tool is useful only when the exact calling route can inspect
- * its result, so unknown capability refuses instead of relying on an adapter
- * failure after filesystem and attachment work.
+ * Execution is independent of the calling model route: the durable result is
+ * user-visible conversation content, while LLM request projection decides
+ * whether a model receives pixels or a text-only placeholder.
  * @module @deepseek-ai/dsh-tool-fs/src/read-image
  */
 
@@ -17,7 +16,7 @@ import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { GenericCallView, ToolExecution } from '@deepseek-ai/dsh-tools'
+import type { GenericCallView } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-fs'
 import { resolveRegularReadTarget } from './read-target.ts'
 
@@ -108,28 +107,6 @@ export function imageMediaTypeForPath(filePath: string): ImageMediaType | undefi
   return IMAGE_EXTENSIONS[extname(filePath).toLowerCase()]
 }
 
-/**
- * Enforce the strict image-capability gate for the calling route. Resolves the
- * session's latest routed provider/model (request header config, then agent
- * options) and requires the exact resolved route to declare `image` input explicitly.
- * @param ctx - the plugin context used to resolve the optional `llm` service.
- * @param exec - the tool-execution context supplying the calling agent.
- * @param requestedPath - the raw, not-yet-resolved path rendered in refusal messages.
- */
-export async function assertImageCapableRoute(ctx: Context, exec: ToolExecution, requestedPath: string): Promise<void> {
-  const routed = exec.agent?.session.requestHeader()?.config
-  const provider = routed?.provider ?? exec.agent?.options.provider
-  const model = routed?.model ?? exec.agent?.options.model
-  const llm = ctx.get('llm')
-  if (provider === undefined || model === undefined || llm === undefined) {
-    throw new Error(`cannot read "${requestedPath}" as an image: the current model route could not be resolved`)
-  }
-  const active = await llm.resolveModelInfo(provider, model, exec.signal)
-  if (active.inputModalities === undefined || !active.inputModalities.includes('image')) {
-    throw new Error(`cannot read "${requestedPath}" as an image: model "${model}" does not declare image input; switch to an image-capable model to read images`)
-  }
-}
-
 /** Refuse a media type outside the deployment's accepted set, naming the offending path. */
 function assertDeploymentAccepts(attachments: AttachmentStore, mediaType: ImageMediaType, displayPath: string): void {
   if (!attachments.imageLimits.mediaTypes.includes(mediaType)) {
@@ -201,17 +178,18 @@ function imageReadContent(value: ImageReadValue): ContentBlock[] {
  * owns the attachments gate: `src/index.ts` calls this inside
  * `ctx.inject(['attachments'], …)` so the tool exists only while a durable
  * store is mounted. Execution still re-checks `ctx.get('attachments')` for
- * direct callers and gates on the calling route's declared image input.
- * @param ctx - the registration scope; execution uses its `fs` service plus
- *   the optional `attachments`/`llm` services.
+ * direct callers. Text-only model routes receive the existing request-time
+ * placeholder while the Web conversation can display the durable result.
+ * @param ctx - the registration scope; execution uses its `fs` and
+ *   `attachments` services.
  */
 export function applyReadImageTool(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'read_image',
-    description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
+    description: 'Read and attach a PNG/JPEG/WebP/GIF file to the conversation. '
       + 'A path without a file extension is accepted; the format is detected from the file content, so normalized attachment paths can be passed directly without copying or renaming. '
-      + 'Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. '
-      + 'Independent files may be read concurrently in small batches. Requires the current model to accept image input.',
+      + 'Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect or show an image. '
+      + 'An image-capable model can inspect the result; a text-only model receives a placeholder while the user can still preview the image. Independent files may be read concurrently in small batches.',
     parameters: {
       file_path: { type: 'string', required: true, description: 'Path to the image file, resolved by the filesystem backend.' },
     },
@@ -232,7 +210,7 @@ export function applyReadImageTool(ctx: Context): void {
     async execute(args, exec) {
       if (args.file_path.trim().length === 0) throw new Error('file_path must be a non-empty string')
 
-      // Every pre-read gate runs before any filesystem I/O so a refusal never
+      // Format and deployment checks run before filesystem I/O so a refusal never
       // leaks partial reads or attachment writes. An extension-less path
       // declares no format, so only its format and deployment media-type
       // checks wait for the bytes.
@@ -246,8 +224,6 @@ export function applyReadImageTool(ctx: Context): void {
         throw new Error(`cannot read "${args.file_path}" as an image: no attachment service is mounted`)
       }
       if (declared !== undefined) assertDeploymentAccepts(attachments, declared, args.file_path)
-      await assertImageCapableRoute(ctx, exec, args.file_path)
-
       const { target, info } = await resolveRegularReadTarget(ctx, exec, args.file_path)
 
       // The tool result is one message carrying one image, so the per-message

@@ -3,6 +3,8 @@ scenario: read-image-text-route
 profile: headless
 composition: image-text-route
 recording: authored
+replay:
+  override: true
 header:
   class: image-text-route
   pin: true
