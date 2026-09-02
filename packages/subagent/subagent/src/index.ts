@@ -77,7 +77,7 @@ import { listChildren as listSubagentChildren, listDescendants as listSubagentDe
 import type { SubagentDescendantListEntry, SubagentListEntry } from './list-children.ts'
 import { snapshotSubagentDescriptor } from './descriptor.ts'
 import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
-import { queueSubagentPrompt } from './internal.ts'
+import { deliverSubagentPrompt, type HostPromptDeliveryMode } from './internal.ts'
 
 export * from './out-of-process.ts'
 export { AssistantOutputFold, finalAssistantOutput } from './assistant-output.ts'
@@ -257,7 +257,7 @@ export class SubagentRuntime extends TypertRemoteService {
   }
 
   /**
-   * Queue one host-protocol message as a distinct direct-child turn.
+   * Deliver one host-protocol message to a direct continuable child.
    * Symbol-keyed so host adapters can preserve their own provenance without
    * widening the public Service Definition or impersonating an Agent sender.
    * @param parent - exact live direct parent authorizing delivery.
@@ -266,16 +266,21 @@ export class SubagentRuntime extends TypertRemoteService {
    * @param source - durable host-protocol provenance.
    * @param signal - caller cancellation before inbox acceptance.
    * @param principal - authenticated owner of the Host request.
+   * @param delivery - Queue as a distinct turn or Steer at the nearest step.
    * @returns the accepted message's inbox id.
    */
-  private [queueSubagentPrompt](
+  private [deliverSubagentPrompt](
     parent: Agent,
     childId: SessionId,
     content: ContentBlock[],
     source: MessageSource,
     signal: AbortSignal,
+    delivery: HostPromptDeliveryMode,
     principal?: AuthenticatedPrincipal,
   ): Promise<MessageId> {
+    if (delivery === 'steer') {
+      return this.requireContinuations().steerPrompt(parent, childId, content, source, signal)
+    }
     return this.requireContinuations().queuePrompt(parent, childId, content, source, signal, principal)
   }
 
@@ -452,12 +457,13 @@ export class SubagentRuntime extends TypertRemoteService {
         content = await admitPromptContent(attachments, request.content)
       }
       return {
-        messageId: await this[queueSubagentPrompt](
+        messageId: await this[deliverSubagentPrompt](
           parent,
           childSessionId,
           content,
           source,
           signal,
+          'queue',
           principal,
         ),
       }

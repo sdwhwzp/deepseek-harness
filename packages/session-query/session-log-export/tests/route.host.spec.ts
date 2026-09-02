@@ -2,9 +2,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
-import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
+import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
 import { strFromU8, unzipSync } from 'fflate'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -16,28 +15,22 @@ import {
 
 const sid = (value: string): SessionId => value as SessionId
 
-function artifact(id: string): SessionRawArtifact {
+function readHandle(id: string): SessionHandle {
   const header: SessionHeader = {
     version: 0,
     id: sid(id),
     createdAt: 1,
-    cwd: '/workspace',
     isSeeded: false,
+    cwd: '/workspace',
     delegationDepth: 0,
   }
   return {
-    meta: header,
-    inheritedEventCount: SessionLogOffset(0),
-    filename: 'session.jsonl',
-    content: `${JSON.stringify({
-      type: 'session',
-      version: header.version,
-      id: header.id,
-      createdAt: header.createdAt,
-      cwd: header.cwd,
-      delegationDepth: header.delegationDepth,
-    })}\n`,
-  }
+    id: header.id,
+    header,
+    access: 'read',
+    read: async () => [],
+    close: async () => {},
+  } as unknown as SessionHandle
 }
 
 async function mounted(
@@ -45,7 +38,7 @@ async function mounted(
   auth?: { readonly principal: AuthenticatedPrincipal; readonly allowed: ReadonlySet<SessionId> },
 ): Promise<{
   readonly connection: HostConnectionService
-  readonly readRaw: ReturnType<typeof vi.fn>
+  readonly open: ReturnType<typeof vi.fn>
   readonly dispose: () => Promise<void>
 }> {
   const ctx = new Context()
@@ -62,14 +55,13 @@ async function mounted(
         }),
     } as never)
   }
-  const readRaw = vi.fn(async (id: SessionId) => artifact(String(id)))
+  const open = vi.fn(async (id: SessionId) => readHandle(String(id)))
   if (withServices) {
     ctx.provide('sessionQuery', {
       traceSession: async () => ({ descendants: [] }),
     } as never)
     ctx.provide('sessionPersistence', {
-      supportsRawArtifacts: true,
-      readRaw,
+      open,
     } as never)
     ctx.provide('attachments', {
       readImage: async () => { throw new Error('fixture has no images') },
@@ -78,7 +70,7 @@ async function mounted(
   const connection = new HostConnectionService(ctx, [], {} as BrowserAuth)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber
-  return { connection, readRaw, dispose: () => fiber.dispose() }
+  return { connection, open, dispose: () => fiber.dispose() }
 }
 
 describe('Session log export Fetch route', () => {
@@ -92,9 +84,7 @@ describe('Session log export Fetch route', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('application/zip')
     const files = unzipSync(new Uint8Array(await response.arrayBuffer()))
-    const exported = strFromU8(files['session.jsonl'] as Uint8Array)
-    expect(exported).toContain('"id":"session-1"')
-    expect(exported).not.toContain('isSeeded')
+    expect(strFromU8(files['session.jsonl'] as Uint8Array)).toContain('"id":"session-1"')
 
     const head = await shared.fetch(new Request(
       `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1`, { method: 'HEAD' },
@@ -125,7 +115,7 @@ describe('Session log export Fetch route', () => {
     const principal: AuthenticatedPrincipal = {
       source: 'fixture', id: 'alice', username: 'Alice', role: 'user',
     }
-    const { connection, readRaw, dispose } = await mounted(true, {
+    const { connection, open, dispose } = await mounted(true, {
       principal,
       allowed: new Set(),
     })
@@ -134,7 +124,7 @@ describe('Session log export Fetch route', () => {
       `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=hidden`,
     ))
     expect(response.status).toBe(404)
-    expect(readRaw).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
     await dispose()
   })
 

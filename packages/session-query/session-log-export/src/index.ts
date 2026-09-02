@@ -13,10 +13,10 @@ import {
 } from '@deepseek-ai/dsh-principal-access'
 import type { SessionLineageNode, SessionLineageTrace } from '@deepseek-ai/dsh-session-query'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
+  readSessionLogText,
   sessionLogExportDeps,
   sessionLogZipFilename,
   streamSessionLogZip,
@@ -27,6 +27,9 @@ import {
 export {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
+  readSessionLogText,
+  serializeSessionLog,
+  SESSION_LOG_FILENAME,
   sessionLogExportDeps,
   sessionLogZipEntries,
   sessionLogZipFilename,
@@ -133,12 +136,6 @@ async function sessionLogExportResponse(
       { status: 500 },
     )
   }
-  if (!deps.sessionPersistence.supportsRawArtifacts) {
-    return new Response(
-      'session log export is unavailable: the persistence backend does not expose per-session raw artifacts',
-      { status: 501 },
-    )
-  }
   const ready: SessionLogExportReady = {
     sessionQuery: deps.sessionQuery,
     sessionPersistence: deps.sessionPersistence,
@@ -176,20 +173,25 @@ async function sessionLogExportResponse(
     const descendantRejection = await authorize(descendantIds)
     if (descendantRejection !== undefined) return descendantRejection
   }
-  let root: SessionRawArtifact | undefined
+  let rootContent: string | undefined
   try {
     await flushLiveSessionLog(deps, sessionId, request.signal)
-    root = await deps.sessionPersistence.readRaw(sessionId, request.signal)
+    rootContent = await readSessionLogText(deps.sessionPersistence, sessionId, request.signal)
     request.signal.throwIfAborted()
   } catch {
     request.signal.throwIfAborted()
-    return new Response('session log export failed to prepare the stored artifact', { status: 500 })
+    // Root preparation failure (flush, open, or read): answer 500 without
+    // echoing the error, which may carry absolute host paths into the
+    // browser error bar.
+    return new Response('session log export failed to read the stored log', { status: 500 })
   }
-  if (root === undefined) return new Response('session not found', { status: 404 })
+  if (rootContent === undefined) {
+    return new Response('session not found', { status: 404 })
+  }
   const response = new Response(
     streamSessionLogZip(
       ready,
-      root,
+      rootContent,
       sessionId,
       descendantsValue === 'true',
       compressionLevel,
