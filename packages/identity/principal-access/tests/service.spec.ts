@@ -112,10 +112,10 @@ describe('principal access seam', () => {
     const session = { kind: 'session', id: SessionId('hidden') } as const
     const workspace = { kind: 'workspace', id: WorkspaceId('hidden') } as const
 
-    expect(() => { requirePrincipalAccess(result, session) }).toThrowError(
+    expect(() => { requirePrincipalAccess(result, session) }).toThrow(
       new PrincipalAccessDeniedError('subject-denied', session),
     )
-    expect(() => { requirePrincipalAccess(result, workspace) }).toThrowError(
+    expect(() => { requirePrincipalAccess(result, workspace) }).toThrow(
       new PrincipalAccessDeniedError('subject-denied', workspace),
     )
   })

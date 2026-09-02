@@ -390,17 +390,24 @@ export class TypertGatewayService extends Service implements TypertGateway {
   }
 
   private bindRequestPrincipal(
-    source: AsyncIterable<unknown>,
+    source: AsyncIterable<unknown, unknown, unknown>,
     principal: AuthenticatedPrincipal | undefined,
-  ): AsyncIterable<unknown> {
+  ): AsyncIterable<unknown, unknown, unknown> {
     const bind = <T>(operation: () => T): T => this.withRequestPrincipal(principal, operation)
     return {
-      [Symbol.asyncIterator](): AsyncIterator<unknown> {
+      [Symbol.asyncIterator](): AsyncIterator<unknown, unknown, unknown> {
         const iterator = bind(() => source[Symbol.asyncIterator]())
         return {
-          next: value => bind(() => iterator.next(value)),
-          return: value => bind(() => iterator.return?.(value) ?? Promise.resolve({ done: true, value })),
-          throw: error => bind(() => iterator.throw?.(error) ?? Promise.reject(error)),
+          next: (...args: [] | [unknown]) => bind(() => iterator.next(...args)),
+          return: (value?: unknown) => bind(() => iterator.return?.(value)
+            ?? Promise.resolve({ done: true, value })),
+          throw: (reason?: unknown) => bind(() => {
+            if (iterator.throw !== undefined) return iterator.throw(reason)
+            const error = reason instanceof Error
+              ? reason
+              : new Error('upstream iterator does not accept thrown values', { cause: reason })
+            return Promise.reject(error)
+          }),
         }
       },
     }
@@ -1068,7 +1075,7 @@ async function *cancellableStream(
   source: Iterable<unknown> | AsyncIterable<unknown>,
   endpoint: string,
   signal: AbortSignal,
-): AsyncGenerator {
+): AsyncGenerator<unknown, void, unknown> {
   const asyncFactory = Reflect.get(source, Symbol.asyncIterator) as unknown
   const syncFactory = Reflect.get(source, Symbol.iterator) as unknown
   const iterator = typeof asyncFactory === 'function'
