@@ -140,7 +140,7 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
     patchReload: 'startup',
   },
   web: {
-    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dshmarket'],
     patchReload: 'live',
   },
   headless: {

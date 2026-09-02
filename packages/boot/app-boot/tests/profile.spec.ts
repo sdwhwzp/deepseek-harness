@@ -190,6 +190,7 @@ describe('loadProfile', () => {
     // cannot be asserted to fail here: the source-plane test runner resolves
     // @deepseek-ai/* through tsconfig paths regardless of the staged anchor.
     expect(PROFILE_TEMPLATES.web?.bundles).toContain('@deepseek-ai/dsh-base')
+    expect(PROFILE_TEMPLATES.web?.bundles).toContain('dshmarket')
     expect(PROFILE_TEMPLATES.web?.patchReload).toBe('live')
     expect(PROFILE_TEMPLATES.headless?.patchReload).toBe('startup')
     expect(PROFILE_TEMPLATES.acp).toEqual({
