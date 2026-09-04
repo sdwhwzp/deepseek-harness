@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-principal-access",
   "description": "Deployment authorization seam for principal-scoped Session and Workspace reads",
-  "version": "0.1.2-alpha.4",
+  "version": "0.1.2-rc.1",
   "publishConfig": {
     "access": "public"
   },
