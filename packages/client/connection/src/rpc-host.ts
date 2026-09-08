@@ -9,7 +9,7 @@ import {
   type RpcId as RpcIdType,
 } from './rpc.ts'
 import { clientRequestSchema } from './rpc-schema.ts'
-import { bridge, type FetchHandler } from './http-bridge.ts'
+import { bridge } from './http-bridge.ts'
 import { isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
@@ -42,6 +42,7 @@ interface ConnectionRpcInterceptor {
 
 interface RegisteredFetchRoute {
   readonly methods: ReadonlySet<string>
+  readonly requestBody: ConnectionFetchRoute['requestBody']
   readonly fetch: ConnectionFetchRoute['fetch']
 }
 
@@ -144,6 +145,10 @@ export class HostConnectionService extends Service implements HostConnectionHand
     channel: '/api',
   ): ConnectionFetchHandler {
     return {
+      requestBodyMode: ({ method, url }) => {
+        const route = this.fetchRoutes.get(url.pathname)
+        return route?.methods.has(method) === true ? route.requestBody : 'buffered'
+      },
       fetch: async (request, authorization) => {
         let principal: AuthenticatedPrincipal | undefined
         if (authorization === undefined) {
@@ -187,6 +192,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     assertFetchRoute(route)
     const registered: RegisteredFetchRoute = {
       methods: new Set(route.methods),
+      requestBody: route.requestBody,
       fetch: route.fetch,
     }
     return owner.effect(() => {
@@ -215,6 +221,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
           return
         }
         await bridge(req, res, {
+          requestBodyMode: () => 'buffered',
           fetch: request => rpcFetchHandler(channel, handler, authorization.principal).fetch(request),
         })
       },
@@ -254,8 +261,9 @@ function rpcFetchHandler(
   channel: string,
   handler: ConnectionRpcHandler,
   principal: AuthenticatedPrincipal | undefined,
-): FetchHandler {
+): ConnectionFetchHandler {
   return {
+    requestBodyMode: () => 'buffered',
     async fetch(request: Request): Promise<Response> {
       const endpoint = endpointFromPath(channel, new URL(request.url).pathname)
       if (request.method !== 'POST' || endpoint === undefined) {

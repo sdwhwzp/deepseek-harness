@@ -110,7 +110,7 @@ function imageMeta(meta: unknown): ImageMeta | null {
  * @param content - the settled result's content blocks.
  * @returns the narrowed references, or null when no valid image block is present.
  */
-function imageReferences(content: readonly unknown[]): ImageAttachmentRef[] | null {
+export function imageReferences(content: readonly unknown[]): ImageAttachmentRef[] | null {
   const refs: ImageAttachmentRef[] = []
   for (const part of content) {
     if (typeof part !== 'object' || part === null) continue

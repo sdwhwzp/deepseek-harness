@@ -134,6 +134,7 @@ root
 │  │     │  ├─ conversation.chat.assistant-actions
 │  │     │  ├─ conversation.chat.commandview
 │  │     │  ├─ conversation.chat.turnTail
+│  │     │  ├─ tool.call.result-images
 │  │     │  └─ tool.call.toolview
 │  │     │     ├─ tool.call.images
 │  │     │     └─ tool.view.cordis

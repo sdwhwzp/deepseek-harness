@@ -136,6 +136,9 @@ export function toolSessionEvents(nodes: readonly ToolResultNode[]): readonly Se
           ...(node.meta === undefined ? {} : { meta: node.meta }),
         }),
         surfaceOp: 'append',
+        // The real loop cites the call event (agent-loop tool-calls.ts), and the
+        // Tool Definition derives its lifecycle identity from that citation.
+        sourceEventSeqs: [SessionSeq(callSeq)],
       } as unknown as SessionLiveEventEntry['event'],
     }
     entries.push(resultEntry)

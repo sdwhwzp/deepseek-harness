@@ -210,7 +210,7 @@ describe('run_code sub-calls through the real chat machinery', () => {
   it('a file sub-row click opens the host path; bash sub-rows do not open details', async () => {
     const parent = 'call-64'
     const subCalls = [
-      subCall(11, parent, 1, 'read', { path: 'notes/demo.txt' }, 'ok'),
+      subCall(11, parent, 1, 'read', { path: 'notes/demo.txt', sessionId: SID }, 'ok'),
       subCall(12, parent, 2, 'bash', { command: 'ls notes', description: 'List notes' }, 'demo.txt'),
     ]
     const b = await bench(snapshotWith([codeResult(10, parent)], subCalls))
@@ -218,7 +218,7 @@ describe('run_code sub-calls through the real chat machinery', () => {
     view.getByText('notes/demo.txt').click()
     expect(b.layout.openDetails).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(b.openWorkspacePath).toHaveBeenCalledWith({ path: 'notes/demo.txt' })
+      expect(b.openWorkspacePath).toHaveBeenCalledWith({ path: 'notes/demo.txt', sessionId: SID })
     })
     view.getByText('List notes').click()
     expect(b.layout.openDetails).not.toHaveBeenCalled()

@@ -30,7 +30,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
-import { admitPromptContent } from '@deepseek-ai/dsh-attachment'
+import type {} from '@deepseek-ai/dsh-attachment'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
@@ -107,7 +107,6 @@ export type {
   SubagentDescriptorData,
   SubagentDescriptorInput,
 } from './descriptor.ts'
-export { seedDescriptorTurn } from './descriptor-seed.ts'
 export { SubagentError } from './error.ts'
 export { settleRun } from './run-settlement.ts'
 export { assertSubagentMaxDepth, delegationDepthOf } from './depth.ts'
@@ -392,10 +391,13 @@ export class SubagentRuntime extends TypertRemoteService {
   @Remote('list')
   async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog> {
     validateControlRequest('subagent.list', { parentSessionId })
-    await this.requireReadableParent(parentSessionId, signal)
     try {
+      // Authorization shares the read's cancellation, so its abort must reach
+      // the same refusal mapping instead of surfacing a bare AbortError.
+      await this.requireReadableParent(parentSessionId, signal)
       return catalogView(this.ctx, parentSessionId, await this.listChildren(parentSessionId, signal))
     } catch (error: unknown) {
+      if (error instanceof RemoteError) throw error
       return rejectCatalogRead(error, signal)
     }
   }
@@ -421,7 +423,12 @@ export class SubagentRuntime extends TypertRemoteService {
     const { parentSessionId, childSessionId, clientTimeZone } = request
     validateControlRequest('subagent.prompt', request)
     const principal = this.currentPrincipal()
-    await this.requireReadableParent(parentSessionId, signal, principal)
+    try {
+      await this.requireReadableParent(parentSessionId, signal, principal)
+    } catch (error: unknown) {
+      if (error instanceof RemoteError) throw error
+      return rejectPrompt(error, childSessionId, signal)
+    }
     const canonicalTimeZone = clientTimeZone === undefined
       ? undefined
       : canonicalClientTimeZone(clientTimeZone)
@@ -454,7 +461,7 @@ export class SubagentRuntime extends TypertRemoteService {
       } else {
         const attachments = this.ctx.get('attachments')
         if (attachments === undefined) throw new Error('subagent image prompt requires an attachment store')
-        content = await admitPromptContent(attachments, request.content)
+        content = await attachments.admitPromptContent(request.content)
       }
       return {
         messageId: await this[deliverSubagentPrompt](

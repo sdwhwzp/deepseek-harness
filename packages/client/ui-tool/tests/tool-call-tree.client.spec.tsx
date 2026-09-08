@@ -6,7 +6,7 @@ import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/cl
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { ToolCallOwnerProps, ToolTreeProps } from '../src/client/contract/slots.ts'
+import type { ToolCallOwnerProps, ToolImagesOwnerProps, ToolTreeProps } from '../src/client/contract/slots.ts'
 import { ToolCallTree } from '../src/client/tool/ToolCallTree.tsx'
 import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 
@@ -24,12 +24,16 @@ function props(
   selectedCallId?: string,
   home?: string,
   owners?: ToolCallOwnerProps[],
-  renderMessageImages: ToolTreeProps['renderMessageImages'] = () => null,
+  imageOwners?: ToolImagesOwnerProps[],
 ): ToolTreeProps {
   const snapshot = {} as SessionSnapshot
   const useSession = ((selector: (value: SessionSnapshot) => unknown) => selector(snapshot)) as ToolTreeProps['useSession']
-  const renderSlot = ((_key: string, owner: ToolCallOwnerProps, options?: { fallback?: React.ReactNode }) => {
-    owners?.push(owner)
+  const renderSlot = ((key: string, owner: ToolCallOwnerProps | ToolImagesOwnerProps, options?: { fallback?: React.ReactNode }) => {
+    if (key === 'tool.call.result-images') {
+      imageOwners?.push(owner as ToolImagesOwnerProps)
+      return <div data-testid="tool-result-image" />
+    }
+    owners?.push(owner as ToolCallOwnerProps)
     return options?.fallback ?? null
   }) as unknown as ToolTreeProps['renderSlot']
   return {
@@ -48,7 +52,6 @@ function props(
     selectedCallId,
     openFile: vi.fn(),
     inspectCall: vi.fn(),
-    renderMessageImages,
     forkAt: vi.fn(),
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
     fileMentions: vi.fn(),
@@ -104,7 +107,7 @@ describe('ToolCallTree', () => {
     expect(view.getByText('~/docs/a.ts')).toBeTruthy()
   })
 
-  it('renders every settled root and nested Tool image through the shared history gallery', () => {
+  it('renders generic root and nested result images through their authorized slot', () => {
     const attachment = {
       attachmentId: 'sha256:image' as never,
       mediaType: 'image/png' as const,
@@ -115,6 +118,7 @@ describe('ToolCallTree', () => {
     }
     const child = {
       ...root('parent:code:1', { name: 'read_image', argsRaw: '{"file_path":"result.png"}' }),
+      parentCallId: 'parent',
       content: [{ type: 'image' as const, attachment }],
     }
     const block = {
@@ -122,19 +126,38 @@ describe('ToolCallTree', () => {
       content: [{ type: 'image' as const, attachment }],
       subCalls: [child],
     }
-    const imageOwners: Parameters<ToolTreeProps['renderMessageImages']>[0][] = []
-    const renderMessageImages: ToolTreeProps['renderMessageImages'] = (owner) => {
-      imageOwners.push(owner)
-      return <div data-testid="tool-result-image" />
-    }
-    const view = render(<ToolCallTree {...props(block, undefined, undefined, undefined, renderMessageImages)} />)
+    const imageOwners: ToolImagesOwnerProps[] = []
+    const ownerProps = props(block, undefined, undefined, undefined, imageOwners)
+    const view = render(<ToolCallTree {...ownerProps} />)
 
     expect(view.getAllByTestId('tool-result-image')).toHaveLength(2)
     expect(imageOwners).toEqual([
-      { images: [{ attachment }], align: 'start' },
-      { images: [{ attachment }], align: 'start' },
+      { images: [{ attachment }], loadImage: ownerProps.loadImage, align: 'start' },
+      { images: [{ attachment }], loadImage: ownerProps.loadImage, align: 'start' },
     ])
-    expect(view.container.querySelector('[data-tool="read_image"]')).not.toBeNull()
-    expect(view.getByText('读取')).toBeTruthy()
+    expect(view.container.querySelector('[data-subcalls] [data-testid="tool-result-image"]')).not.toBeNull()
+  })
+
+  it('leaves a complete image read to its collapsed card without a second gallery', () => {
+    const attachment = {
+      attachmentId: 'sha256:image' as never,
+      mediaType: 'image/png' as const,
+      bytes: 1,
+      width: 1,
+      height: 1,
+    }
+    const block = {
+      ...root('image', { name: 'read_image', argsRaw: '{"file_path":"result.png"}' }),
+      content: [
+        { type: 'text' as const, text: '<path>result.png</path>\n<type>image</type>\n<content>\nimage/png\n</content>' },
+        { type: 'image' as const, attachment },
+      ],
+      meta: { path: 'result.png' },
+    }
+    const imageOwners: ToolImagesOwnerProps[] = []
+    const view = render(<ToolCallTree {...props(block, undefined, undefined, undefined, imageOwners)} />)
+
+    expect(view.queryByTestId('tool-result-image')).toBeNull()
+    expect(imageOwners).toEqual([])
   })
 })

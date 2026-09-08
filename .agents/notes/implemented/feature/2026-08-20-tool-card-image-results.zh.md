@@ -14,6 +14,8 @@ Status: implemented
 
 ## 决定
 
+本文记录的通用图片限制由[独立的调用树结果图库](../architecture/2026-09-05-principal-authorization-across-013-upstream.zh.md)取代。本笔记继续负责专用的 `read_image` 卡片、其元数据和折叠展示。
+
 **宿主侧。** `read_image` 获得只持久化 `{ path }` 的 `output.presentationMeta`——仅路径一项。
 
 附件引用有意不写在那里。已结算的 `content` 本身就带着含完整引用的 image 块，而当 `tools/post-execute` 钩子合法重写结果时，被替换的正是那个块。因此在 `meta` 里再存一份就是同一事实的重复记录，且恰恰在内容变化时变成过期副本——卡片会继续显示结果已不再返回的图像。路径是 content 唯一不作为结构化字段携带的事实：面向模型的信封把后端解析出的路径写成文本，而客户端从不解析那段文本。

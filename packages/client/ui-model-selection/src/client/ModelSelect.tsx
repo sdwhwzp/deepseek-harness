@@ -60,6 +60,9 @@ export function ModelSelect(
   const toastSeq = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
+  // A connection reset empties the directory before it reloads it, so the
+  // trigger keeps the last confirmed model instead of flashing the loading text.
+  const confirmedRef = useRef<{ model: string; effort: string | undefined } | undefined>(undefined)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
 
@@ -193,18 +196,20 @@ export function ModelSelect(
   }
 
   const waiting = state.current === null && state.status === 'loading'
-  const modelLabel = waiting
+  const resolvedLabel = currentChoice?.model.name
+    ?? (state.current === null ? t('trigger.fallback') : `${state.current.provider}/${state.current.model}`)
+  if (state.current !== null) confirmedRef.current = { model: resolvedLabel, effort: effortLabel }
+  const confirmed = waiting ? confirmedRef.current : undefined
+  const modelLabel = confirmed?.model ?? (waiting ? t('trigger.loading') : resolvedLabel)
+  const shownEffort = confirmed === undefined ? effortLabel : confirmed.effort
+  const triggerLabel = shownEffort === undefined ? modelLabel : `${modelLabel} · ${shownEffort}`
+  const triggerAria = waiting && confirmed === undefined
     ? t('trigger.loading')
-    : currentChoice?.model.name
-      ?? (state.current === null ? t('trigger.fallback') : `${state.current.provider}/${state.current.model}`)
-  const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
-  const triggerAria = waiting
-    ? t('trigger.loading')
-    : state.current === null
+    : state.current === null && confirmed === undefined
       ? t('trigger.selectAria')
-      : effortLabel === undefined
+      : shownEffort === undefined
         ? t('trigger.aria', { model: modelLabel })
-        : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
+        : t('trigger.ariaEffort', { model: modelLabel, effort: shownEffort })
   itemRefs.current = []
   let itemIndex = 0
   const itemRef = () => {
@@ -233,7 +238,7 @@ export function ModelSelect(
         }}
       >
         <span className={css.triggerLabel}>{modelLabel}</span>
-        {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
+        {shownEffort !== undefined && <span className={css.triggerEffort}>{shownEffort}</span>}
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
 

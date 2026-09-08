@@ -45,6 +45,8 @@ The owner payload is `ToolCallOwnerProps`: `callId`, `toolName`, the frozen `blo
 
 This package owns the generic fallback and the built-in shell/pwsh, read, read_image, write/edit, running `str_replace_editor` `create`/`str_replace`, grep/glob, web, todo, question, and Code Dispatch presentations. Structured cards derive directly from first-party raw event fields; Host `presentCall` and `presentResult` values never enter the Client. Foreground one-shot shell results use terminal cards. Settled persistent-shell results use the expandable generic input/output card because reset and partial-output diagnostics do not always describe one process exit status; background acknowledgements remain collapsed. A successful question row pairs call questions with result answers by their stable ids and shows readable question/answer lines when expanded. A cancelled or interrupted row shows its verdict and original questions without inventing answers. Unsupported, malformed, or ambiguous inputs fall back to flattened Tool input/result text. `ui-skill` demonstrates a business-owned registration for `skill`.
 
+Result images remain visible for generic tools and historical image reads without card metadata, at both root and nested calls. The call tree renders these through `tool.call.result-images`; complete `read_image` cards keep their own collapsed gallery through `tool.call.images`. Both slots use the attachment presentation plugin and the Session-authorized image loader, and a complete image card suppresses the tree gallery to avoid duplicate images.
+
 -----
 
 <a id="understand-the-implementation"></a>

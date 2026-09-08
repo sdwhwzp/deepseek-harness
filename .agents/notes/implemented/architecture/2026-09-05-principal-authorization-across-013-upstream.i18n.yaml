@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-05-principal-authorization-across-013-upstream.md
+2026-09-05-principal-authorization-across-013-upstream.md: 1b775494cba0220c8a502b51671a785a59be2064
+2026-09-05-principal-authorization-across-013-upstream.zh.md: 5f11202f3dd3c9dfb667d1d7add794c77f095f8d

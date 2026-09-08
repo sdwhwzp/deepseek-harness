@@ -38,6 +38,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * slot.
      */
     'tool.call.images': { kind: 'single'; scope: 'session'; owner: ToolImagesOwnerProps }
+    /**
+     * Result images outside the read_image card, including generic tools and
+     * historical image reads without card metadata. The call tree owns this
+     * gallery so root and nested results use the same authorized loader.
+     */
+    'tool.call.result-images': { kind: 'single'; scope: 'session'; owner: ToolImagesOwnerProps }
   }
 }
 
@@ -95,7 +101,7 @@ export type ToolHostInfoInjected = {
 
 /** Full props of the Tool call-tree renderer registered as a `tool-call` Chat Node. */
 export type ToolTreeProps = PropsRuntime<'conversation.chat.node', 'tool-call'>
-  & PropsRenderSlots<'tool.call.toolview'>
+  & PropsRenderSlots<'tool.call.toolview' | 'tool.call.result-images'>
   & PropsLocale<'conversation'>
   & InjectFace<ToolHostInfoInjected>
 

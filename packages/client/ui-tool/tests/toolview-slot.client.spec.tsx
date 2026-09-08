@@ -132,7 +132,7 @@ describe('keyed toolview hole through the real machinery', () => {
     view.getByText('src/a.ts').click()
     expect(b.layout.openDetails).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(b.openWorkspacePath).toHaveBeenCalledWith({ path: 'src/a.ts' })
+      expect(b.openWorkspacePath).toHaveBeenCalledWith({ path: 'src/a.ts', sessionId: SID })
     })
     await b.runtime.dispose()
   })

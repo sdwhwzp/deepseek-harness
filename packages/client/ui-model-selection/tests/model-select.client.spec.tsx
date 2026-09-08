@@ -179,15 +179,17 @@ describe('ModelSelect reasoning effort', () => {
       t={t}
     />)
 
-    expect(screen.getByRole('button', {
+    const trigger = screen.getByRole('button', {
       name: '选择模型，当前 DeepSeek-V4-Flash，推理等级 High',
-    })).toBeTruthy()
+    })
+    const confirmedText = trigger.textContent
+    expect(confirmedText).toContain('High')
     act(() => {
       directory.set(state({ current: null, routable: null, groups: [], status: 'loading' }))
     })
     expect(screen.getByRole('button', {
       name: '选择模型，当前 DeepSeek-V4-Flash，推理等级 High',
-    })).toBeTruthy()
+    }).textContent).toBe(confirmedText)
   })
 
   it('announces a rejected selection as a transient toast and keeps the in-menu strip for loads', async () => {

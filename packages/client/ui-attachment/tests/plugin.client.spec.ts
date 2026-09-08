@@ -16,6 +16,7 @@ async function bench() {
       'conversation.message.images': { kind: 'single', scope: 'session' },
       'conversation.trajectory.images': { kind: 'single', scope: 'session' },
       'tool.call.images': { kind: 'single', scope: 'session' },
+      'tool.call.result-images': { kind: 'single', scope: 'session' },
     },
   } as never, () => null)
   const fiber = ctx.plugin({ inject: [...inject], apply })
@@ -47,6 +48,10 @@ describe('attachment plugin', () => {
       locale: 'conversation',
       component: MessageImages,
     }])
+    expect(ctx.slots.entries('tool.call.result-images')).toMatchObject([{
+      locale: 'conversation',
+      component: MessageImages,
+    }])
 
     await fiber.dispose()
 
@@ -54,5 +59,6 @@ describe('attachment plugin', () => {
     expect(ctx.slots.entries('conversation.message.images')).toHaveLength(0)
     expect(ctx.slots.entries('conversation.trajectory.images')).toHaveLength(0)
     expect(ctx.slots.entries('tool.call.images')).toHaveLength(0)
+    expect(ctx.slots.entries('tool.call.result-images')).toHaveLength(0)
   })
 })

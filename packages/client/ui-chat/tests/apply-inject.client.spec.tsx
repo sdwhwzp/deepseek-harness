@@ -127,7 +127,7 @@ describe('Chat inject API', () => {
     const b = await bench()
     const { injected } = b.chatViewApi(ROOT)
     await injected.openFile('src/a.ts')
-    expect(b.openWorkspacePath).toHaveBeenCalledWith({ path: '/proj/src/a.ts' })
+    expect(b.openWorkspacePath).toHaveBeenCalledWith({ path: '/proj/src/a.ts', sessionId: ROOT })
 
     b.openWorkspacePath.mockResolvedValueOnce({
       ok: false,

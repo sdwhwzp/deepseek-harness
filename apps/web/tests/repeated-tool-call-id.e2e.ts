@@ -54,6 +54,7 @@ function repeatedCallIdFixture(): string {
   session.append('assistant/message', {
     turn: 1,
     step: 1,
+    stream: [],
     message: createMessage({
       role: 'assistant',
       content: calls.map(call => ({
@@ -88,6 +89,7 @@ function repeatedCallIdFixture(): string {
   session.append('assistant/message', {
     turn: 1,
     step: 2,
+    stream: [],
     message: createMessage({
       role: 'assistant',
       content: [{ type: 'text', text: `I am grok-4.6. ${LATER_REPLY}` }],

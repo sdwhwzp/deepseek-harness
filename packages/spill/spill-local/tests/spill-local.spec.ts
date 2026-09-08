@@ -267,7 +267,11 @@ describe('startup cleanup sweep', () => {
   it('keeps a file exactly at the boundary (only strictly-older expires)', async () => {
     const dir = sessionDir(root, 'sess-1')
     mkdirSync(dir, { recursive: true })
-    const cutoffMs = Date.now() - 30 * DAY_MS
+    // utimes takes seconds, and a millisecond cutoff that is not a whole
+    // second loses the round trip to float: mtimeMs reads back just under the
+    // cutoff and the boundary file expires. Align the cutoff to a second so
+    // the case tests the comparison instead of the clock's current value.
+    const cutoffMs = Math.floor((Date.now() - 30 * DAY_MS) / 1000) * 1000
     const boundary = join(dir, 'boundary.txt')
     writeFileSync(boundary, 'x')
     utimesSync(boundary, cutoffMs / 1000, cutoffMs / 1000)

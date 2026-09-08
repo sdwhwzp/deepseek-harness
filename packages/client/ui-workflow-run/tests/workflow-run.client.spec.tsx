@@ -319,9 +319,9 @@ function panelProps(data: WorkflowRunChatData, sessions = listState(), openSessi
     useInput: () => { throw new Error('unused') },
     inputActions: {
       setDraft: () => {},
-      addImages: () => false,
-      removeImage: () => {},
-      pruneImages: () => {},
+      addAttachments: () => false,
+      removeAttachment: () => {},
+      pruneAttachments: () => {},
       submit: () => {},
     },
     useWorkspaces: selector => selector(panelWorkspace),

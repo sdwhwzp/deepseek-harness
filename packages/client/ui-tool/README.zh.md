@@ -45,6 +45,8 @@ owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、冻结的 `block`
 
 本包拥有 generic fallback，以及 shell/pwsh、read、read_image、write/edit、running `str_replace_editor` `create`／`str_replace`、grep/glob、web、todo、question 与 Code Dispatch 的内置展示。结构化卡片直接从第一方原始 event 字段派生；Host `presentCall` 与 `presentResult` 值不会进入 Client。前台一次性 shell 结果使用 terminal 卡片。已完成的持久 shell 结果使用可展开的 generic 输入／输出卡片，因为 reset 与部分输出诊断不一定描述单个进程的退出状态；后台启动回执保持折叠。成功的问题行按稳定 id 配对调用中的问题与结果中的回答，展开后显示可读的问答行。已取消或已中断的问题行显示其裁决与原始问题，不虚构回答。不受支持、格式错误或含糊的输入回退为压平的工具输入／结果文本。`ui-skill` 展示了业务包自行拥有的 `skill` 注册项。
 
+通用工具和缺少卡片元数据的历史图片读取结果仍显示图片，根调用和嵌套调用均如此。调用树通过 `tool.call.result-images` 渲染这些图片；完整的 `read_image` 卡片通过 `tool.call.images` 保留自己的折叠图库。两个槽位均使用附件展示插件和经过 Session 授权的图片加载器；完整图片卡片会抑制调用树图库，避免重复图片。
+
 -----
 
 <a id="understand-the-implementation"></a>

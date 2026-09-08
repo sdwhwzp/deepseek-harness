@@ -18,6 +18,7 @@
     { "path": "../../identity/principal-access" },
     { "path": "../../interaction/commands" },
     { "path": "../../llm/llm" },
+    { "path": "../../session/session-format" },
     { "path": "../../session/session-persistence" },
     { "path": "../session-query" }
   ]

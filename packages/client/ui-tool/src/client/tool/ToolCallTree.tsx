@@ -3,6 +3,7 @@ import { memo, useMemo, type ReactNode } from 'react'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ToolCallOwnerProps, ToolTreeProps } from '../contract/slots.ts'
 import { GenericToolCard } from './toolviews/GenericToolCard.tsx'
+import { imageCardModel, imageReferences } from './models/image-card-model.ts'
 import css from './ToolCallTree.module.css'
 
 /** Resolve a Tool call's wire name from either lifecycle form. */
@@ -31,6 +32,11 @@ const ToolCall = memo(function ToolCall({
     loadImage,
     inspect: () => { inspectCall(callId) },
   }), [callId, toolName, block, openFile, cwd, home, loadImage, inspectCall])
+  // Complete read_image cards own their collapsed gallery. Other results keep
+  // their image references even when tool-specific metadata is unavailable.
+  const images = useMemo(() => 'kind' in block && imageCardModel(block, cwd, home) === null
+    ? imageReferences(block.content)?.map(attachment => ({ attachment })) ?? []
+    : [], [block, cwd, home])
   return (
     <div
       className={css.callRow}
@@ -42,6 +48,7 @@ const ToolCall = memo(function ToolCall({
         entryKey: toolName,
         fallback: <GenericToolCard {...owner} t={t} />,
       })}
+      {images.length > 0 && renderSlot('tool.call.result-images', { images, loadImage, align: 'start' })}
       {children}
     </div>
   )

@@ -14,6 +14,8 @@ The rendering capability already existed, but only on the message path. `Message
 
 ## Decision
 
+The generic-image restriction recorded here is superseded by the [separate call-tree result gallery](../architecture/2026-09-05-principal-authorization-across-013-upstream.md). This note continues to own the specialized `read_image` card, its metadata, and its collapsed presentation.
+
 **Host.** `read_image` gains an `output.presentationMeta` that persists `{ path }` — the path only.
 
 The attachment reference is deliberately not persisted there. The settled `content` already carries the image block with the complete reference, and that block is what a `tools/post-execute` hook replaces when it legitimately rewrites a result. A second copy in `meta` would therefore be a duplicate record of one fact, and a stale one exactly when the content changed — the card would keep showing an image the result no longer returns. The path is the one fact the content does not carry as a structured field: the model-facing envelope embeds the backend-resolved path as text, and the client never parses that text.

@@ -31,4 +31,8 @@ export function apply(ctx: ClientContext): void {
     name: 'tool.call.images',
     locale: 'conversation',
   }, MessageImages))
+  ctx.slots.inject('tool.call.result-images', () => ctx.slots.register({
+    name: 'tool.call.result-images',
+    locale: 'conversation',
+  }, MessageImages))
 }

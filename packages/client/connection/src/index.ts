@@ -24,6 +24,7 @@ export type {
   ConnectionRequestRejection,
   ConnectionRequestAuthorization,
   ConnectionRpcResult,
+  ConnectionRequestBodyMode,
   ConnectionTrustRequest,
   ClientRequest,
   HostConnectionHandle,
@@ -125,6 +126,7 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
         return
       }
       await bridge(req, res, {
+        requestBodyMode: probe => fetchHandler.requestBodyMode(probe),
         fetch: request => fetchHandler.fetch(request, authorization),
       }, maxRequestBodyBytes)
     },
