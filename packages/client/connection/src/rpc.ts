@@ -130,7 +130,12 @@ export type ConnectionRpcHandler = (
   endpoint: string,
   payload: unknown,
   signal: AbortSignal,
-  principal: AuthenticatedPrincipal | undefined,
+  /**
+   * The caller the transport verified, absent for an anonymous or in-process
+   * caller. Optional so a handler that makes no authorization decision keeps
+   * the three-parameter shape.
+   */
+  principal?: AuthenticatedPrincipal,
 ) => Promise<ConnectionRpcResult<unknown>>
 
 /** Synchronous ownership test for one endpoint on a shared RPC channel. */
