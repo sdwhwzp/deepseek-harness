@@ -6,6 +6,7 @@
  * @module @deepseek-ai/dsh-workflow
  */
 
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {
   WorkflowMeta, WorkflowResult, WorkflowRunId,
@@ -29,6 +30,13 @@ export interface WorkflowStartRequest {
   maxTotalAgents?: number
   /** The agent on whose behalf the run executes (parent of every child). */
   parent: Agent
+  /**
+   * Authenticated owner of the delegating model step, carried to every child
+   * the script spawns. Without it a delegated turn records no owner, and its
+   * usage is neither visible to the operator who started the run nor charged
+   * to them, while the same work in the parent session is.
+   */
+  principal?: AuthenticatedPrincipal
   /** Cancels the run when aborted. */
   signal?: AbortSignal
 }

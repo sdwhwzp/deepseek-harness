@@ -10,7 +10,7 @@ Sources: browser-safe vocabulary in [`packages/workflow/workflow/src/types.ts`](
 
 ## The start request
 
-What a caller asks for when starting a run. The ordinary workflow tool builds this from the model's `{ script, meta, args }` call plus the calling agent; specialized consumers may also select one engine-wide `subagentProvider` and lower `maxTotalAgents` for the run, but the script cannot observe or replace either policy. `meta` and `args` are plain JSON DATA (the engine validates `meta` against its schema and rejects loud BEFORE anything runs — no script text is ever evaluated to obtain it). `parent` is REQUIRED — every child the script starts is attributed to it, and cwd, lineage, and depth pass through the [subagent seam](subagent.md).
+What a caller asks for when starting a run. The ordinary workflow tool builds this from the model's `{ script, meta, args }` call plus the calling agent; specialized consumers may also select one engine-wide `subagentProvider` and lower `maxTotalAgents` for the run, but the script cannot observe or replace either policy. `meta` and `args` are plain JSON DATA (the engine validates `meta` against its schema and rejects loud BEFORE anything runs — no script text is ever evaluated to obtain it). `parent` is REQUIRED — every child the script starts is attributed to it, and cwd, lineage, and depth pass through the [subagent seam](subagent.md). `principal` carries the delegating step's owner to those children, so delegated usage is attributed the way the same work is in the parent session.
 
 ```ts type-equiv
 /**
@@ -31,6 +31,13 @@ interface WorkflowStartRequest {
   maxTotalAgents?: number
   /** The agent on whose behalf the run executes (parent of every child). */
   parent: Agent
+  /**
+   * Authenticated owner of the delegating model step, carried to every child
+   * the script spawns. Without it a delegated turn records no owner, and its
+   * usage is neither visible to the operator who started the run nor charged
+   * to them, while the same work in the parent session is.
+   */
+  principal?: AuthenticatedPrincipal
   /** Cancels the run when aborted. */
   signal?: AbortSignal
 }

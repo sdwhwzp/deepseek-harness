@@ -285,6 +285,9 @@ export function apply(ctx: Context, config: Config): void {
         meta: args.meta,
         ...args.args !== undefined ? { args: args.args } : {},
         parent,
+        // The delegating step's owner reaches every child the script spawns;
+        // a child that records none is unowned in the session log.
+        ...exec.principal === undefined ? {} : { principal: exec.principal },
         signal: exec.signal,
       })
       const recordsRun = exec.parent === undefined

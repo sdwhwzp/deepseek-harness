@@ -175,6 +175,7 @@ class WorkerThreadWorkflowEngine extends WorkflowEngine {
       id,
       meta,
       request.parent,
+      request.principal,
       init,
       subagentProvider,
       this.config.disposeGraceMs,

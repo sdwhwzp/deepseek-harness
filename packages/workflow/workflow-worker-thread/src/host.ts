@@ -6,6 +6,7 @@
  * @module @deepseek-ai/dsh-workflow-worker-thread/host
  */
 
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import { tmpdir } from 'node:os'
 import { Worker } from 'node:worker_threads'
 import type { WorkerOptions } from 'node:worker_threads'
@@ -138,6 +139,8 @@ export class WorkerRun implements WorkflowRun {
     readonly id: WorkflowRunId,
     readonly meta: WorkflowMeta,
     private readonly parent: Agent,
+    /** Owner of the delegating step, recorded on every child's prompt. */
+    private readonly principal: AuthenticatedPrincipal | undefined,
     init: WorkerInit,
     private readonly provider: string,
     private readonly disposeGraceMs: number,
@@ -355,6 +358,7 @@ export class WorkerRun implements WorkflowRun {
       run = await this.subagents.start(this.provider, {
         prompt: [{ type: 'text', text: request.prompt }],
         parent: this.parent,
+        ...this.principal === undefined ? {} : { principal: this.principal },
         signal: this.controller.signal,
         ...request.schema !== undefined ? { outputSchema: request.schema } : {},
         ...request.provider !== undefined || request.model !== undefined

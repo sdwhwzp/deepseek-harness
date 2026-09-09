@@ -1,3 +1,4 @@
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it, vi } from 'vitest'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -1091,6 +1092,76 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
       expect(provider.runs[0]!.disposed).toBe(true)
       // The memo: the host drive and the worker's RPC share one disposal.
       expect(provider.runs[0]!.disposeCalls).toBe(1)
+    })
+
+    it("carries the delegating step's owner to every child the script spawns", async () => {
+      const ctx = new Context()
+      await ctx.plugin(SessionProjectionRegistry)
+      await ctx.plugin(SubagentRuntime)
+      const owners: (AuthenticatedPrincipal | undefined)[] = []
+      const provider: SubagentProvider = {
+        name: 'owner-probe',
+        capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: false },
+        inheritsParentContext: false,
+        start: async (request) => {
+          owners.push(request.principal)
+          return {
+            id: SessionId(`owner-probe-${owners.length}`),
+            localAgent: undefined,
+            result: Promise.resolve({ output: [{ type: 'text' as const, text: 'ok' }], stopReason: 'completed' as const }),
+            dispose: () => Promise.resolve(),
+          }
+        },
+      }
+      ctx.subagents.registerProvider(provider)
+      await ctx.plugin(WorkerThreadWorkflowEngine, { provider: 'owner-probe', maxConcurrentAgents: 2 })
+      const principal: AuthenticatedPrincipal = { source: 'dsh-passwords', id: '3', username: 'u3', role: 'user' }
+      const handle = ctx.workflowEngine.start({
+        ...scripted(`
+          await Promise.all([agent('one'), agent('two')])
+          return 'done'
+        `),
+        parent: fakeParent(),
+        principal,
+      })
+      await handle.result
+      await handle.dispose()
+      // Both children carry it: an unowned child's usage is charged to nobody.
+      expect(owners).toEqual([principal, principal])
+      await ctx.fiber.dispose()
+    })
+
+    it('a run started without an owner leaves its children unowned rather than guessing', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SessionProjectionRegistry)
+      await ctx.plugin(SubagentRuntime)
+      const owners: (AuthenticatedPrincipal | undefined)[] = []
+      ctx.subagents.registerProvider({
+        name: 'owner-absent',
+        capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: false },
+        inheritsParentContext: false,
+        start: async (request) => {
+          owners.push(request.principal)
+          return {
+            id: SessionId('owner-absent-child'),
+            localAgent: undefined,
+            result: Promise.resolve({ output: [], stopReason: 'completed' as const }),
+            dispose: () => Promise.resolve(),
+          }
+        },
+      })
+      await ctx.plugin(WorkerThreadWorkflowEngine, { provider: 'owner-absent', maxConcurrentAgents: 1 })
+      const handle = ctx.workflowEngine.start({
+        ...scripted(`
+          await agent('one')
+          return 'done'
+        `),
+        parent: fakeParent(),
+      })
+      await handle.result
+      await handle.dispose()
+      expect(owners).toEqual([undefined])
+      await ctx.fiber.dispose()
     })
 
     it('the grace force-settle pairs every stranded start: a host-synthesized cancelled agent-end lands before workflow/end', async () => {

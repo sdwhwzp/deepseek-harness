@@ -10,7 +10,7 @@ Service Definition：[dsh-workflow](../../packages/workflow/workflow)（`ctx.wor
 
 ## 启动请求
 
-本节定义调用方启动一次运行时提交的请求。普通工作流工具会根据模型的 `{ script, meta, args }` 调用和发起调用的 agent 构建该请求；专用消费方还可以为本次运行选择引擎级 `subagentProvider`，并将 `maxTotalAgents` 调低，但脚本无法观察或替换这两项策略。`meta` 与 `args` 是普通 JSON 数据；引擎会用 schema 校验 `meta`，并在任何工作开始前明确报错并拒绝无效数据。引擎绝不会通过对脚本文本求值来获取它们。`parent` 是必填字段——脚本启动的每个子 agent 都归属于它，cwd、谱系与深度通过 [subagent seam](subagent.zh.md) 传递。
+本节定义调用方启动一次运行时提交的请求。普通工作流工具会根据模型的 `{ script, meta, args }` 调用和发起调用的 agent 构建该请求；专用消费方还可以为本次运行选择引擎级 `subagentProvider`，并将 `maxTotalAgents` 调低，但脚本无法观察或替换这两项策略。`meta` 与 `args` 是普通 JSON 数据；引擎会用 schema 校验 `meta`，并在任何工作开始前明确报错并拒绝无效数据。引擎绝不会通过对脚本文本求值来获取它们。`parent` 是必填字段——脚本启动的每个子 agent 都归属于它，cwd、谱系与深度通过 [subagent seam](subagent.zh.md) 传递。`principal` 把发起委派那一步的归属带给这些子 agent，使委派出去的用量与留在父会话时一样归属。
 
 ```ts type-equiv
 /**
@@ -31,6 +31,13 @@ interface WorkflowStartRequest {
   maxTotalAgents?: number
   /** The agent on whose behalf the run executes (parent of every child). */
   parent: Agent
+  /**
+   * Authenticated owner of the delegating model step, carried to every child
+   * the script spawns. Without it a delegated turn records no owner, and its
+   * usage is neither visible to the operator who started the run nor charged
+   * to them, while the same work in the parent session is.
+   */
+  principal?: AuthenticatedPrincipal
   /** Cancels the run when aborted. */
   signal?: AbortSignal
 }
