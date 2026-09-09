@@ -31,7 +31,7 @@
   - img
   - text: Standard mode
   - img
-- textbox "Describe what you want to build... / commands, @ files or sessions":
+- textbox "Describe what you want to build, / commands, @ files or sessions":
   - paragraph
 - button "Commands":
   - img
@@ -42,6 +42,3 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: Details
-- button "Close details"
-- text: Click a tool row in the message flow to view its details

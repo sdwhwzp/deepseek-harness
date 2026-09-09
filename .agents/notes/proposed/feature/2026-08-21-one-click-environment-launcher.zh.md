@@ -8,7 +8,7 @@ Status: proposed
 
 面向普通客户的入口 `npx @deepseek-ai/dsh web` 假定机器已经安装兼容的 Node.js。从 checkout 运行还需要 Git、仓库固定的 pnpm 版本、依赖安装、完整构建和终端知识。如果客户的机器无法启动现有 Node CLI（命令行界面），位于该 CLI 内部的环境检测器也无法提供帮助。
 
-仓库已经通过[不使用受管安装器运行源码](../../implemented/simplification/2026-08-10-source-run-without-managed-installer.zh.md)和[源码启动与仓库构建分离](../../implemented/simplification/2026-08-12-separate-source-launch-from-build.zh.md)，明确让源码用户负责 checkout 放置、Git 更新和产物新鲜度。面向客户的桌面产品不能只把这些贡献者职责变成图形化源码安装器，否则网络、提权、包管理器和编译器故障仍然是客户设置故障，只是换了一个界面。
+仓库已经通过[不使用受管安装器运行源码](../../archived/simplification/2026-08-10-source-run-without-managed-installer.md)和[源码启动与仓库构建分离](../../archived/simplification/2026-08-12-separate-source-launch-from-build.md)，明确让源码用户负责 checkout 放置、Git 更新和产物新鲜度。面向客户的桌面产品不能只把这些贡献者职责变成图形化源码安装器，否则网络、提权、包管理器和编译器故障仍然是客户设置故障，只是换了一个界面。
 
 客户需要的是一个具有独立窗口、桌面集成、经过测试的运行时和可预测生命周期的已安装应用。它必须在没有 Git、Node.js、pnpm、源码 checkout 或外部浏览器的情况下启动 DeepSeek Harness，同时保留现有 Web 体验和用户数据。
 

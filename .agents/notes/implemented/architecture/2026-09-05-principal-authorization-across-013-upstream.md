@@ -20,7 +20,7 @@ Authorization awaits can change when optional Cordis injections complete and can
 
 **Tool galleries retain both specialized and generic results.** Complete `read_image` cards keep their collapsed `tool.call.images` gallery. The call tree owns a separate `tool.call.result-images` slot for other image-bearing results, including nested calls and historical image reads without card metadata. Both slots use the attachment plugin's existing gallery and the Session-authorized loader. The tree suppresses its gallery when the specialized card accepts the result.
 
-The [Tool-card image decision](../feature/2026-08-20-tool-card-image-results.md) continues to own specialized card derivation and collapsed presentation. This decision supersedes only its generic-image limitation: a separate tree-owned slot preserves one declaration owner per slot without a React rendering callback in owner props. Shared command ranking uses `rankByName`.
+The [Tool-card image decision](../../archived/feature/2026-08-20-tool-card-image-results.md) continues to own specialized card derivation and collapsed presentation. This decision supersedes only its generic-image limitation: a separate tree-owned slot preserves one declaration owner per slot without a React rendering callback in owner props. Shared command ranking uses `rankByName`.
 
 **The model trigger retains confirmed names during reload.** A connection reset clears the model directory before reloading it. During that interval the trigger keeps the last confirmed model and effort names in both visible text and its accessible label. An initial load without a confirmed selection displays loading text.
 

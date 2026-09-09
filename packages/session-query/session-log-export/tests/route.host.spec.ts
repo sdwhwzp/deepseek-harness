@@ -30,7 +30,7 @@ function readHandle(id: string): SessionHandle {
     id: header.id,
     header,
     access: 'read',
-    read: async () => [],
+    read: async () => ({ eventState: 'detached', events: [] }),
     close: async () => {},
   } as unknown as SessionHandle
 }

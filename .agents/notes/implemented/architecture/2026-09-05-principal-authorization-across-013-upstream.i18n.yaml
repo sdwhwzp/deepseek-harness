@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-05-principal-authorization-across-013-upstream.md
-2026-09-05-principal-authorization-across-013-upstream.md: 72edd98aff7bae988fa83cad6fcb4b5bdd59550b
-2026-09-05-principal-authorization-across-013-upstream.zh.md: 123017d8b19b19f4063700de11192adeb8726317
+2026-09-05-principal-authorization-across-013-upstream.md: cd92dda5a9ec7a7f6536177166098018051c6c2c
+2026-09-05-principal-authorization-across-013-upstream.zh.md: e12082967f45e574aa69199a8b61896d7f8ca73a

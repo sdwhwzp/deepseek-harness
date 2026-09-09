@@ -88,9 +88,10 @@ function invocationOf(value: unknown): TypertRemoteEventInvocation {
 function fakeAgent(
   ctx: Context,
   events: readonly Record<string, unknown>[] = [],
+  id = 'fixture-agent',
 ): Agent {
   return {
-    id: SessionId('fixture-agent'),
+    id: SessionId(id),
     ctx,
     session: { snapshotEvents: () => events },
   } as unknown as Agent
@@ -196,6 +197,25 @@ describe('Remote event Host source', () => {
       value: { event: 'settings/document-updated', args: ['ui-theme', 1] },
     })
 
+    emitRaw(ctx, 'goal/activation-changed', [{
+      sessionId: 'session-1',
+      goal: { id: 'goal-1', revision: 1, activation: 'disarmed' },
+    }])
+    await expect(first.next()).resolves.toEqual({
+      done: false,
+      value: {
+        event: 'goal/activation-changed',
+        args: [{ sessionId: 'session-1', goal: { id: 'goal-1', revision: 1, activation: 'disarmed' } }],
+      },
+    })
+    await expect(second.next()).resolves.toEqual({
+      done: false,
+      value: {
+        event: 'goal/activation-changed',
+        args: [{ sessionId: 'session-1', goal: { id: 'goal-1', revision: 1, activation: 'disarmed' } }],
+      },
+    })
+
     const firstDone = first.next()
     firstAbort.abort(new Error('first Client disconnected'))
     emitRaw(ctx, 'commands/change', [])
@@ -246,9 +266,17 @@ describe('Remote event Host source', () => {
     const abort = new AbortController()
     const iterator = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
     const agentCtx = ctx.extend()
-    const agent = fakeAgent(agentCtx)
+    const agent = fakeAgent(agentCtx, [], 'agent-1')
     const target = scopeTarget(ctx, agent)
     const request = { questions: [], agent }
+
+    await expect(async () => waterfallRaw(
+      ctx,
+      target,
+      'user-questions/request',
+      [{ questions: [], agent: { id: 'agent-2', ctx: ctx.extend() } }],
+      () => Promise.resolve('host fallback'),
+    )).rejects.toThrow('must carry its Agent directly')
 
     const claimed = waterfallRaw(
       ctx,
@@ -261,7 +289,7 @@ describe('Remote event Host source', () => {
     expect(claimedDispatch).toMatchObject({
       event: 'user-questions/request',
       request,
-      context: { value: agentCtx, subject: agent },
+      context: { value: agentCtx, subject: agent, agentId: 'agent-1' },
     })
     claimedDispatch.resolve({ kind: 'result', value: 'client answer' })
     await expect(claimed).resolves.toBe('client answer')
@@ -303,7 +331,7 @@ describe('Remote event Host source', () => {
     const abort = new AbortController()
     const iterator = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
     const delivery = iterator.next()
-    const agent = fakeAgent(ctx.extend())
+    const agent = fakeAgent(ctx.extend(), [], 'agent-1')
     const reason = new Error('forwarded event source removed')
     const pending = waterfallRaw(
       ctx,

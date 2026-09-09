@@ -148,6 +148,10 @@ function validateEvent(
       if (callSeq !== undefined) pendingCalls = { kind: 'delete', callSeq }
       break
     }
+    case 'system/message': {
+      requireOpenStep(trace, 'system/message', event.data.turn, event.data.step, fail)
+      break
+    }
     case 'user/message':
       break
     case 'session/end-seed':

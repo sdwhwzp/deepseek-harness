@@ -15,7 +15,8 @@ import type {
   PreStepDecision,
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
-import { Inbox, agentEvents, assembleContextFor, messageBelongsToPrincipal } from '@deepseek-ai/dsh-agent'
+import { agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
+import { messageBelongsToPrincipal } from './inbox.ts'
 import type { AuthenticatedPrincipal, GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   LlmError,
@@ -32,8 +33,10 @@ import { joinContextSections, renderContextSections, renderPrompt } from '@deeps
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { Context } from '@deepseek-ai/cordis'
+import { ReactLoopInbox } from './inbox.ts'
 import { RuntimeContextProjection } from './runtime-context.ts'
 import { AssistantStreamAttempt } from './assistant-stream.ts'
+import { SystemPromptProjection } from './runtime-context.ts'
 import { executeToolCalls } from './tool-calls.ts'
 
 type Phase =
@@ -48,6 +51,11 @@ type Phase =
 
 type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }>
 
+/** Resolve the owner of the next durable turn before its inbox claim. */
+function nextTurnPrincipal(inbox: ReactLoopInbox): AuthenticatedPrincipal | undefined {
+  return inbox.nextPrincipal('next-turn')
+}
+
 type PreparedStep =
   | { kind: 'reject' }
   | {
@@ -55,21 +63,9 @@ type PreparedStep =
     messages: UserMessage[]
     startsRequestSeries?: true
     assembly: PromptAssembly
+    /** Owner of the claimed messages; every event this step logs carries it. */
+    principal?: AuthenticatedPrincipal
   }
-
-/** Resolve the owner of the next durable turn before its inbox claim. */
-function nextTurnPrincipal(inbox: Inbox): AuthenticatedPrincipal | undefined {
-  return inbox.nextPrincipal('next-turn')
-}
-
-/** Whether the next-step FIFO prefix belongs to the open turn. */
-function hasNextStepForPrincipal(
-  inbox: Inbox,
-  principal: AuthenticatedPrincipal | undefined,
-): boolean {
-  const next = inbox.nextStep[0]
-  return next !== undefined && messageBelongsToPrincipal(next, principal)
-}
 
 /** Remove adapter-derived values before plugins propose the next request config. */
 function requestProposal(header: EpochHeader): LlmCallConfig {
@@ -82,7 +78,7 @@ function requestProposal(header: EpochHeader): LlmCallConfig {
 
 /** Drives one session through turn and step boundaries. */
 export class ReactLoopAgent implements Agent {
-  readonly inbox: Inbox
+  readonly inbox: ReactLoopInbox
   private phase: Phase
   private activityDone: Promise<void> = Promise.resolve()
 
@@ -95,12 +91,15 @@ export class ReactLoopAgent implements Agent {
 
   /** Whether this loop instance has appended its initial/resume request anchor. */
   private requestHeaderLogged = false
-  /** Surface generation of the preceding built request. */
-  private requestSurfaceGeneration: number | undefined
+  /** Surface generation at attachment or the preceding built request. */
+  private requestSurfaceGeneration: number
   private readonly runtimeContext: RuntimeContextProjection
   /** Process-local revision of assistant frames for this attached Session. */
   private assistantStreamRevision = 0
   private assistantAttemptCounter = 0
+  private readonly systemPrompt: SystemPromptProjection
+  /** Identities fully frozen by this loop; weak references do not retain replaced history. */
+  private readonly frozenMessages = new WeakSet<Message>()
 
   constructor(
     private loopCtx: Context,
@@ -108,18 +107,16 @@ export class ReactLoopAgent implements Agent {
     public readonly options: AgentOptions,
     public readonly session: Session,
   ) {
+    this.requestSurfaceGeneration = session.surface.replaceGeneration
     this.dispatch = agentEvents(loopCtx, this)
-    this.inbox = new Inbox(session, {
-      inserted: (message) => { this.dispatch.emit('agent/inbox/inserted', { message }) },
-      discarded: (message) => { this.dispatch.emit('agent/inbox/discarded', { message }) },
-      claimed: (message, turn) => { this.dispatch.emit('agent/inbox/claimed', { message, turn }) },
-    })
+    this.scope = createScope(loopCtx, this)
+    this.ctx = this.scope.ctx
+    this.inbox = new ReactLoopInbox(this.ctx.sessionProjections, session, this.dispatch)
     /* v8 ignore next -- the loop registers its own turnBoundary unit, so the key is always present */
     const lastTurn = this.loopCtx.sessionProjections.stateOf(session, 'turnBoundary')?.lastTurn ?? 0
     this.phase = { kind: 'idle', lastTurn }
-    this.scope = createScope(loopCtx, this)
-    this.ctx = this.scope.ctx.extend({ agent: this })
     this.runtimeContext = new RuntimeContextProjection(this.ctx, session)
+    this.systemPrompt = new SystemPromptProjection(session)
   }
 
   get status(): AgentStatus {
@@ -275,7 +272,14 @@ export class ReactLoopAgent implements Agent {
     )
     signal.throwIfAborted()
     if (decision.kind === 'reject') return decision
-    return { ...decision, assembly }
+    return { ...decision, assembly, ...principal === undefined ? {} : { principal } }
+  }
+
+  /** Whether the assembled tool schemas differ from the logged request header's. */
+  private toolsChanged(tools: PromptAssembly['tools']): boolean {
+    const baseline = this.session.requestHeader()
+    if (baseline === undefined) return false
+    return !headerEquals(baseline, canonicalHeader({ ...baseline, tools: [...tools] }))
   }
 
   /** Open one turn before claiming its first proposed step. */
@@ -323,16 +327,9 @@ export class ReactLoopAgent implements Agent {
         })
         phase.step = step
         try {
-          for (const message of decision.messages) {
-            this.session.append('user/message', message, { surfaceOp: 'append' })
-          }
           // max-tokens is sticky: once any step hits the ceiling, later steps
           // that complete normally must not downgrade the turn outcome.
-          const stepEnd = await this.step(
-            decision.assembly,
-            decision.startsRequestSeries === true,
-            principal,
-          )
+          const stepEnd = await this.step(decision)
           // max-tokens stays sticky: a later completed step must not
           // downgrade the turn outcome.
           if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
@@ -340,11 +337,11 @@ export class ReactLoopAgent implements Agent {
           this.session.append('step/end', { turn, step })
         }
         signal.throwIfAborted()
-        if (turnEnds && !hasNextStepForPrincipal(this.inbox, principal)) {
+        if (turnEnds && this.inbox.nextStep.length === 0) {
           await this.dispatch.serial('agent/turn-stopping', { turn, signal })
           signal.throwIfAborted()
         }
-        if (turnEnds && !hasNextStepForPrincipal(this.inbox, principal)) break
+        if (turnEnds && this.inbox.nextStep.length === 0) break
         target = 'next-step'
       }
     } catch (error: unknown) {
@@ -377,31 +374,34 @@ export class ReactLoopAgent implements Agent {
     return true
   }
 
-  private async step(
-    assembly: PromptAssembly,
-    startsRequestSeries: boolean,
-    principal: AuthenticatedPrincipal | undefined,
-  ): Promise<StepEndReason | null> {
+  private async step(decision: Extract<PreparedStep, { kind: 'enter' }>): Promise<StepEndReason | null> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
     const { turn, step, abort: { signal } } = this.phase
     signal.throwIfAborted()
-    const system = renderPrompt(assembly)
 
+    const { assembly, principal } = decision
+    const renderedPrompt = renderPrompt(assembly)
+    let firstAttempt = true
     while (true) {
-      const surfaceGeneration = this.session.surface.replaceGeneration
-      const { request, preparedCall } = await this.buildRequest(
-        turn,
-        step,
-        assembly.tools,
-        system,
-        this.session.deriveMessages(),
-        startsRequestSeries,
-        surfaceGeneration,
-        principal,
-        signal,
-      )
-      startsRequestSeries = false
+      const { config, preparedCall } = await this.prepareRequest(turn, step, principal, signal)
+      const startsRequestSeries = firstAttempt && decision.startsRequestSeries === true
+      const commits = this.systemPrompt.project(renderedPrompt, {
+        inHistory: preparedCall?.systemPromptUpdate === 'in-history',
+        startsSeries: startsRequestSeries
+          || this.requestSurfaceGeneration !== this.session.surface.replaceGeneration
+          || this.toolsChanged(assembly.tools),
+      })
+      for (const { message, intent } of commits) {
+        this.session.append('system/message', { turn, step, message }, intent)
+      }
+      if (firstAttempt) {
+        for (const message of decision.messages) {
+          this.session.append('user/message', message, { surfaceOp: 'append' })
+        }
+      }
+      firstAttempt = false
+      const request = this.buildRequest(config, preparedCall, assembly.tools, startsRequestSeries, signal)
       const live = new AssistantStreamAttempt(
         this.session.id,
         ++this.assistantAttemptCounter,
@@ -513,6 +513,8 @@ export class ReactLoopAgent implements Agent {
         const { concluded } = await executeToolCalls(
           this.loopCtx, turn, step, toolCalls, principal, signal,
           (context) => {
+            // The tool result belongs to this step's owner, so it lands ahead of
+            // any queued message admitted for a different account.
             const foreignIndex = this.inbox.nextStep.findIndex(message =>
               !messageBelongsToPrincipal(message, principal))
             const index = foreignIndex < 0 ? this.inbox.nextStep.length : foreignIndex
@@ -527,21 +529,13 @@ export class ReactLoopAgent implements Agent {
     }
   }
 
-  /**
-   * Compose one frozen request and bind it to the adapter registration that
-   * resolved its exact-model defaults.
-   */
-  private async buildRequest(
+  /** Resolve request config and bind its adapter before admitting model-visible input. */
+  private async prepareRequest(
     turn: number,
     step: number,
-    tools: GenerateOptions['tools'] & object,
-    system: string,
-    boundaryMessages: Message[],
-    startsRequestSeries: boolean,
-    surfaceGeneration: number,
     principal: AuthenticatedPrincipal | undefined,
     signal: AbortSignal,
-  ): Promise<{ request: GenerateOptions; preparedCall?: PreparedLlmCall }> {
+  ): Promise<{ config: LlmCallConfig; preparedCall?: PreparedLlmCall }> {
     const { session } = this
 
     // A loop instance starts from its declared route, restoring only an explicit
@@ -590,11 +584,22 @@ export class ReactLoopAgent implements Agent {
       config = proposedConfig
     }
     signal.throwIfAborted()
+    return { config, ...preparedCall === undefined ? {} : { preparedCall } }
+  }
 
+  /** Log the resolved envelope and derive a frozen request from the admitted surface. */
+  private buildRequest(
+    config: LlmCallConfig,
+    preparedCall: PreparedLlmCall | undefined,
+    tools: GenerateOptions['tools'] & object,
+    startsRequestSeries: boolean,
+    signal: AbortSignal,
+  ): GenerateOptions {
+    const { session } = this
+    const surfaceGeneration = session.surface.replaceGeneration
     const header = canonicalHeader({
       config,
       ...preparedCall === undefined ? {} : { adapterDefaults: preparedCall.adapterDefaults },
-      ...system ? { system } : {},
       ...tools.length > 0 ? { tools } : {},
     })
     const baseline = this.session.requestHeader()
@@ -615,27 +620,38 @@ export class ReactLoopAgent implements Agent {
     this.requestSurfaceGeneration = surfaceGeneration
 
     const contextWindow = preparedCall?.context?.contextWindow
+    const systemPromptUpdate = preparedCall?.systemPromptUpdate
     const requestContext: RequestContext = {
       provider: config.provider,
       model: config.model,
       ...contextWindow === undefined ? {} : { contextWindow },
+      ...systemPromptUpdate === undefined ? {} : { systemPromptUpdate },
     }
     const previousContext = session.requestContext()
     if (previousContext?.provider !== requestContext.provider
       || previousContext.model !== requestContext.model
-      || previousContext.contextWindow !== requestContext.contextWindow) {
+      || previousContext.contextWindow !== requestContext.contextWindow
+      || previousContext.systemPromptUpdate !== requestContext.systemPromptUpdate) {
       session.append('request/context', requestContext)
     }
     signal.throwIfAborted()
 
-    const request = markAgentLoopRequest(deepFreeze({
+    // canonicalHeader is shallow; append logs a detached snapshot, not these local values.
+    deepFreeze(header)
+    const boundaryMessages = session.deriveMessages()
+    for (const message of boundaryMessages) {
+      if (this.frozenMessages.has(message)) continue
+      deepFreeze(message)
+      this.frozenMessages.add(message)
+    }
+    Object.freeze(boundaryMessages)
+    const request = markAgentLoopRequest(Object.freeze({
       ...header.config,
       messages: boundaryMessages,
-      ...header.system !== undefined ? { system: header.system } : {},
       ...header.tools !== undefined ? { tools: header.tools } : {},
       sessionId: this.session.id,
       signal,
     }))
-    return { request, ...preparedCall === undefined ? {} : { preparedCall } }
+    return request
   }
 }

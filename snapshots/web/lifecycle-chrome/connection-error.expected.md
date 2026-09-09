@@ -1,6 +1,4 @@
 - button "Settings":
   - img
   - text: Settings
-- button "Disconnected, reconnect now": Disconnected
-- text: Build version
-- code: {{buildVersion}}
+- button "Reconnecting automatically, reconnect now": Reconnect now

@@ -24,6 +24,7 @@ import { ApiSessionList } from './list.ts'
 import { buildModelCatalog } from './catalog.ts'
 import { installModelSelectionProjection } from './model-selection-projection.ts'
 import { SessionSkillCatalog } from './skill-catalog.ts'
+import { SessionMediaReferences } from './media-references.ts'
 import { currentRequestPrincipal, requireReadableSession } from './principal-access.ts'
 import type {
   ModelCatalog,
@@ -137,6 +138,7 @@ export class SessionController extends TypertRemoteService {
     this.canOpenPath = internals.canOpenPath
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
     ctx.plugin(SessionFileReferences)
+    ctx.plugin(SessionMediaReferences)
     ctx.plugin(SessionSkillCatalog)
 
     ctx.on('session/created', (session) => {
