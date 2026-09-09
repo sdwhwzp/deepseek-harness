@@ -18,6 +18,18 @@ function migrate(rows: readonly unknown[]) {
 }
 
 describe('released v0 legacy normalization', () => {
+  it('preserves flat steering ownership and refuses a malformed principal', () => {
+    const principal = { source: 'gateway', id: 'account-2', username: 'reader', role: 'user' }
+    const rows = [
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      { type: 'steering/message', seq: 1, time: 2, data: { turn: 1, content: [], source: { kind: 'user' }, principal }, surfaceOp: 'append' },
+      { type: 'turn/end', seq: 2, time: 3, data: { turn: 1, reason: { kind: 'completed' } } },
+    ]
+    expect(migrate(rows).events[1]).toMatchObject({ type: 'user/message', data: { principal } })
+    principal.role = 'owner'
+    expect(() => migrate(rows)).toThrow(/principal role/)
+  })
+
   it('restores pre-identity user, assistant, and replacement tool-result identities', () => {
     const rows = [
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },

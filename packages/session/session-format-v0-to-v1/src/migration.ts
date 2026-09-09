@@ -109,7 +109,7 @@ function normalizeLegacySteering(event: SessionFormatEvent, sessionId: string): 
     sessionFormatCount(data['turn'], `steering/message ${event.seq} turn`)
     return { ...event, type: 'user/message', data: wrapped }
   }
-  assertReleasedV0Keys(data, ['turn', 'content', 'source'], [], `steering/message ${event.seq} data`)
+  assertReleasedV0Keys(data, ['turn', 'content', 'source'], ['principal'], `steering/message ${event.seq} data`)
   sessionFormatCount(data['turn'], `steering/message ${event.seq} turn`)
   const { turn: _turn, ...message } = data
   return {
@@ -127,13 +127,14 @@ function normalizeLegacyTurnStart(event: SessionFormatEvent, sessionId: string):
   if (event.type !== 'turn/start') return event
   const data = releasedV0Record(event.data, `turn/start ${event.seq} data`)
   if (!Object.hasOwn(data, 'trigger')) return event
-  assertReleasedV0Keys(data, ['turn', 'trigger'], [], `turn/start ${event.seq} data`)
+  assertReleasedV0Keys(data, ['turn', 'trigger'], ['principal'], `turn/start ${event.seq} data`)
   const turn = sessionFormatCount(data['turn'], `turn/start ${event.seq} turn`)
   const trigger = releasedV0Record(data['trigger'], `turn/start ${event.seq} trigger`)
   if (turn < 1 || typeof trigger['kind'] !== 'string' || trigger['kind'].length === 0) {
     throw malformedLegacy(sessionId, 'turn/start', event.seq)
   }
-  return { ...event, data: { turn } }
+  const { trigger: _trigger, ...current } = data
+  return { ...event, data: current }
 }
 
 function normalizeLegacyTurnEnd(event: SessionFormatEvent, sessionId: string): SessionFormatEvent {

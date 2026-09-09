@@ -88,7 +88,7 @@ export const RELEASED_V0_EVENT_DISPOSITIONS: Readonly<Record<string, ReleasedV0P
     ['titleProvider', 'messageSeqs', 'route', 'system', 'messages', 'maxTokens'],
   ),
   'step/end': disposition(['turn', 'step']),
-  'step/start': disposition(['turn', 'step']),
+  'step/start': disposition(['turn', 'step'], ['principal']),
   'subagent/descriptor': disposition(
     ['mode', 'version', 'provider'],
     ['label', 'agentProvider', 'agentModel', 'agentReasoningEffort', 'persona', 'toolFilter'],
@@ -120,8 +120,8 @@ export const RELEASED_V0_EVENT_DISPOSITIONS: Readonly<Record<string, ReleasedV0P
     ['meta'],
   ),
   'turn/end': disposition(['turn', 'reason']),
-  'turn/start': disposition(['turn']),
-  'user/message': disposition(['role', 'id', 'content', 'source']),
+  'turn/start': disposition(['turn'], ['principal']),
+  'user/message': disposition(['role', 'id', 'content', 'source'], ['principal']),
   'web/deepseek-search-llm-request': disposition(['endpoint', 'apiVersion', 'body']),
 })
 

@@ -40,6 +40,8 @@ const migratedV1 = sessionFormatV0ToV1.migrate(decodedV0)
 
 The alpha edge refuses every event type outside its frozen inventory, including an unknown event marked `ignorable: true`. It also refuses unexpected payload members. `tool/result.meta` and nested PTC `arguments` remain explicit opaque JSON fields and are preserved without Session-sequence interpretation. Unknown content-block `type`, message-source `kind`, assistant finish-reason `kind`, and `turn/end` reason `kind` arms remain owner-opaque JSON while their known arms receive structural validation.
 
+Optional `principal` metadata on user-role messages and `turn/start` or `step/start` preserves the recorded authentication provider, account id, username, and admin/user role. The same validation applies to inbox messages and messages inside title requests. Unexpected identity members, invalid roles, and identities on assistant/system messages refuse migration; absent identities remain absent. Legacy turn-trigger removal preserves the principal.
+
 The bounded historical normalizers convert `steering/message` to `user/message`, remove `turn/start.trigger`, convert retired `turn/end` reasons, add the current message wrappers and deterministic legacy message ids, and remove the obsolete `request/header.header.messagePrefix` duplicate. Retired `request/header-delta`, `mode/set`, and the `request/header` fallback reason refuse migration. No other event, reference, source, or payload fact may change.
 
 -----

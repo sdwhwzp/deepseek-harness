@@ -24,6 +24,8 @@ The [Tool-card image decision](../feature/2026-08-20-tool-card-image-results.md)
 
 **The model trigger retains confirmed names during reload.** A connection reset clears the model directory before reloading it. During that interval the trigger keeps the last confirmed model and effort names in both visible text and its accessible label. An initial load without a confirmed selection displays loading text.
 
+**Released migration validators preserve stored principals.** The v0-to-v1 edge validates the optional identity on user-role messages, inbox entries, title-request messages, and turn/step starts; its shared payload validator also serves the v1-to-v2 edge. It retains the exact provider, subject id, username, and role, including when removing a legacy turn trigger. Dropping identity to make old logs readable would change message ownership and accounting, so malformed identities still refuse migration. A recorded v0 transcript replay snapshot and complete-chain cases preserve these fields without changing model output or committed source generations.
+
 ## Alternatives considered
 
 **Bind the principal when registering the RPC handler.** Registration outlives individual requests, so it cannot capture the authenticated caller of each operation.

@@ -196,8 +196,11 @@ export function assertReleasedPayloadSemantics(event: SessionFormatEvent, versio
       positiveIntegerValue(data['maxTokens'], `${label} maxTokens`)
       return
     case 'step/end':
+      coordinatePair(data, label)
+      return
     case 'step/start':
       coordinatePair(data, label)
+      if (data['principal'] !== undefined) principalValue(data['principal'], `${label} principal`)
       return
     case 'subagent/descriptor':
       subagentDescriptorValue(data, label)
@@ -279,6 +282,7 @@ export function assertReleasedPayloadSemantics(event: SessionFormatEvent, versio
       return
     case 'turn/start':
       countValue(data['turn'], `${label} turn`)
+      if (data['principal'] !== undefined) principalValue(data['principal'], `${label} principal`)
       return
     case 'user/message':
       messageValue(data, label, version, 'user')
@@ -483,11 +487,15 @@ function messageValue(
   version: number,
   expected?: 'user' | 'assistant' | 'tool',
 ): void {
-  const message = exactRecord(value, label, ['id', 'role', 'content', 'source'])
+  const message = exactRecord(value, label, ['id', 'role', 'content', 'source'], ['principal'])
   nonEmptyString(message['id'], `${label} id`)
   const role = expected === 'assistant' ? 'assistant' : expected === 'user' || expected === 'tool' ? 'user' : undefined
   if (role === undefined) literalValue(message['role'], ['system', 'user', 'assistant'], `${label} role`)
   else literalValue(message['role'], [role], `${label} role`)
+  if (message['principal'] !== undefined) {
+    literalValue(message['role'], ['user'], `${label} principal message role`)
+    principalValue(message['principal'], `${label} principal`)
+  }
   contentBlocksValue(message['content'], `${label} content`, version)
   messageSourceValue(message['source'], `${label} source`, version, expected)
   if (expected === 'tool') {
@@ -500,6 +508,12 @@ function messageValue(
       throw new SessionFormatError(`${label} must contain exactly one tool-result block`)
     }
   }
+}
+
+function principalValue(value: SessionFormatJsonValue, label: string): void {
+  const principal = exactRecord(value, label, ['source', 'id', 'username', 'role'])
+  for (const key of ['source', 'id', 'username'] as const) stringValue(principal[key], `${label} ${key}`)
+  literalValue(principal['role'], ['admin', 'user'], `${label} role`)
 }
 
 function messageSourceValue(
