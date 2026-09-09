@@ -287,7 +287,7 @@ function node(data: WorkflowRunChatData): WorkflowRunPanelProps['node'] {
 const phase = (overrides: Partial<WorkflowRunChatData['phases'][number]> = {}): WorkflowRunChatData['phases'][number] => ({
   key: 'missing',
   phase: null,
-  members: [{ seq: 1, label: 'worker', childId: 'child-1' as SessionId, status: 'running' }],
+  members: [{ seq: 1, label: 'worker', childId: 'child-1' as SessionId, status: 'running', startedAt: 0 }],
   ...overrides,
 })
 
@@ -366,8 +366,8 @@ describe('WorkflowRunPanel', () => {
       phases: [phase({
         key: 'research', phase: 'Research',
         members: [
-          { seq: 1, label: 'worker', childId: CHILD_ID, status: 'running' },
-          { seq: 2, label: 'second', childId: 'child-2' as SessionId, status: 'running' },
+          { seq: 1, label: 'worker', childId: CHILD_ID, status: 'running', startedAt: 0 },
+          { seq: 2, label: 'second', childId: 'child-2' as SessionId, status: 'running', startedAt: 0 },
         ],
       })],
     })} />)
@@ -405,6 +405,7 @@ describe('WorkflowRunPanel', () => {
       phases: [phase({
         members: [{
           seq: 1, label: 'done', childId: 'child-1' as SessionId, status: 'completed',
+          startedAt: 0,
         }],
       })],
     }
@@ -420,6 +421,7 @@ describe('WorkflowRunPanel', () => {
       phases: [phase({
         members: [{
           seq: 1, label: 'reviewed', childId: 'child-1' as SessionId, status: 'completed',
+          startedAt: 0,
         }],
       })],
     }
@@ -433,8 +435,8 @@ describe('WorkflowRunPanel', () => {
       name: 'audit', status: 'running',
       phases: [phase({
         members: [
-          { seq: 1, label: 'reviewed', childId: CHILD_ID, status: 'completed' },
-          { seq: 2, label: 'new', childId: 'child-2' as SessionId, status: 'running' },
+          { seq: 1, label: 'reviewed', childId: CHILD_ID, status: 'completed', startedAt: 0 },
+          { seq: 2, label: 'new', childId: 'child-2' as SessionId, status: 'running', startedAt: 0 },
         ],
       })],
     }
@@ -447,8 +449,8 @@ describe('WorkflowRunPanel', () => {
       ...renewed,
       phases: [phase({
         members: [
-          { seq: 1, label: 'reviewed', childId: CHILD_ID, status: 'completed' },
-          { seq: 2, label: 'new', childId: 'child-2' as SessionId, status: 'completed' },
+          { seq: 1, label: 'reviewed', childId: CHILD_ID, status: 'completed', startedAt: 0 },
+          { seq: 2, label: 'new', childId: 'child-2' as SessionId, status: 'completed', startedAt: 0 },
         ],
       })],
     }
@@ -469,6 +471,7 @@ describe('WorkflowRunPanel', () => {
   it('refolds a phase when a complete activity cycle arrives as one clean update', () => {
     const firstMember = {
       seq: 1, label: 'first', childId: 'child-1' as SessionId, status: 'completed' as const,
+      startedAt: 0,
     }
     const phaseClean: WorkflowRunChatData = {
       name: 'phase-cycle', status: 'running',
@@ -484,6 +487,7 @@ describe('WorkflowRunPanel', () => {
       ...phaseClean,
       phases: [phase({ members: [firstMember, {
         seq: 2, label: 'second', childId: 'child-2' as SessionId, status: 'completed',
+        startedAt: 0,
       }] })],
     })} />)
     expect(runHeader.getAttribute('aria-expanded')).toBe('true')
@@ -496,8 +500,10 @@ describe('WorkflowRunPanel', () => {
       status: 'completed',
       phases: [phase({ members: [firstMember, {
         seq: 2, label: 'second', childId: SECOND_ID, status: 'completed',
+        startedAt: 0,
       }, {
         seq: 3, label: 'final', childId: 'child-3' as SessionId, status: 'completed',
+        startedAt: 0,
       }] })],
     })} />)
     expect(runHeader.getAttribute('aria-expanded')).toBe('false')
@@ -516,7 +522,7 @@ describe('WorkflowRunPanel', () => {
         ...running.phases,
         phase({
           key: 'build', phase: 'Build',
-          members: [{ seq: 2, label: 'builder', childId: SECOND_ID, status: 'running' }],
+          members: [{ seq: 2, label: 'builder', childId: SECOND_ID, status: 'running', startedAt: 0 }],
         }),
       ],
     })} />)
@@ -545,7 +551,7 @@ describe('WorkflowRunPanel', () => {
       render(<WorkflowRunPanel {...panelProps({
         name: 'member-outcome', status,
         phases: [phase({
-          members: [{ seq: 1, label: status, childId: CHILD_ID, status }],
+          members: [{ seq: 1, label: status, childId: CHILD_ID, status, startedAt: 0 }],
         })],
       })} />)
       const runHeader = screen.getByRole('button', { name: /^member-outcome/ })
@@ -570,7 +576,7 @@ describe('WorkflowRunPanel', () => {
     const failed: WorkflowRunChatData = {
       name: 'audit', status: 'running',
       phases: [phase({
-        members: [{ seq: 1, label: 'failed', childId: CHILD_ID, status: 'failed' }],
+        members: [{ seq: 1, label: 'failed', childId: CHILD_ID, status: 'failed', startedAt: 0 }],
       })],
     }
     view.rerender(<WorkflowRunPanel {...panelProps(failed)} />)
@@ -583,8 +589,8 @@ describe('WorkflowRunPanel', () => {
       ...failed,
       phases: [phase({
         members: [
-          { seq: 1, label: 'failed', childId: CHILD_ID, status: 'failed' },
-          { seq: 2, label: 'cancelled', childId: 'child-2' as SessionId, status: 'cancelled' },
+          { seq: 1, label: 'failed', childId: CHILD_ID, status: 'failed', startedAt: 0 },
+          { seq: 2, label: 'cancelled', childId: 'child-2' as SessionId, status: 'cancelled', startedAt: 0 },
         ],
       })],
     })} />)
@@ -600,9 +606,11 @@ describe('WorkflowRunPanel', () => {
       phases: [
         phase({ key: 'value:0:', phase: '', members: [{
           seq: 1, label: '', childId: 'child-1' as SessionId, status: 'completed',
+          startedAt: 0,
         }] }),
         phase({ key: 'missing', phase: null, members: [{
           seq: 2, label: 'second', childId: 'child-2' as SessionId, status: 'running',
+          startedAt: 0,
         }] }),
       ],
     })} />)
@@ -633,8 +641,8 @@ describe('WorkflowRunPanel', () => {
       name: 'repo-audit', status: 'failed',
       phases: [phase({
         members: [
-          { seq: 1, label: 'failed', childId: 'child-1' as SessionId, status: 'failed' },
-          { seq: 2, label: 'cancelled', childId: 'child-2' as SessionId, status: 'cancelled' },
+          { seq: 1, label: 'failed', childId: 'child-1' as SessionId, status: 'failed', startedAt: 0 },
+          { seq: 2, label: 'cancelled', childId: 'child-2' as SessionId, status: 'cancelled', startedAt: 0 },
         ],
       })],
     }
@@ -650,8 +658,8 @@ describe('WorkflowRunPanel', () => {
       name: 'repo-audit', status: 'interrupted',
       phases: [phase({
         members: [
-          { seq: 1, label: 'done', childId: 'child-1' as SessionId, status: 'completed' },
-          { seq: 2, label: 'interrupted', childId: 'child-2' as SessionId, status: 'interrupted' },
+          { seq: 1, label: 'done', childId: 'child-1' as SessionId, status: 'completed', startedAt: 0 },
+          { seq: 2, label: 'interrupted', childId: 'child-2' as SessionId, status: 'interrupted', startedAt: 0 },
         ],
       })],
     })} />)
@@ -674,8 +682,8 @@ describe('WorkflowRunPanel', () => {
     const running: WorkflowRunChatData = {
       name: 'audit', status: 'running', phases: [phase({
         members: [
-          { seq: 1, label: 'worker', childId: CHILD_ID, status: 'running' },
-          { seq: 2, label: 'second', childId: SECOND_ID, status: 'running' },
+          { seq: 1, label: 'worker', childId: CHILD_ID, status: 'running', startedAt: 0 },
+          { seq: 2, label: 'second', childId: SECOND_ID, status: 'running', startedAt: 0 },
         ],
       })],
     }
@@ -703,8 +711,8 @@ describe('WorkflowRunPanel', () => {
       name: 'audit', status: 'completed',
       phases: [phase({
         members: [
-          { seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed' },
-          { seq: 2, label: 'second', childId: SECOND_ID, status: 'completed' },
+          { seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed', startedAt: 0 },
+          { seq: 2, label: 'second', childId: SECOND_ID, status: 'completed', startedAt: 0 },
         ],
       })],
     }, sessions)} />)
@@ -737,7 +745,7 @@ describe('WorkflowRunPanel', () => {
     view.rerender(<WorkflowRunPanel {...panelProps({
       name: 'audit', status: 'completed',
       phases: [phase({
-        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed' }],
+        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed', startedAt: 0 }],
       })],
     })} />)
     const retained = screen.getByRole('button', { name: 'worker' })
@@ -766,7 +774,7 @@ describe('WorkflowRunPanel', () => {
     view.rerender(<WorkflowRunPanel {...panelProps({
       ...running,
       phases: [phase({
-        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed' }],
+        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed', startedAt: 0 }],
       })],
     })} />)
     const retained = screen.getByRole('button', { name: 'worker' })
@@ -781,7 +789,7 @@ describe('WorkflowRunPanel', () => {
       ...running,
       status: 'completed',
       phases: [phase({
-        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed' }],
+        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed', startedAt: 0 }],
       })],
     })} />)
     expect(runHeader.getAttribute('aria-expanded')).toBe('true')
@@ -800,7 +808,7 @@ describe('WorkflowRunPanel', () => {
     view.rerender(<WorkflowRunPanel {...panelProps({
       ...running,
       phases: [phase({
-        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed' }],
+        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed', startedAt: 0 }],
       })],
     })} />)
     const runHeader = screen.getByRole('button', { name: /^audit/ })
@@ -865,6 +873,7 @@ describe('WorkflowRunPanel', () => {
       phases: [phase({
         members: [{
           seq: 1, label: 'worker', childId: 'child-1' as SessionId, status: memberStatus,
+          startedAt: 0,
         }],
       })],
     }
