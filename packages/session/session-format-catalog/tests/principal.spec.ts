@@ -17,8 +17,10 @@ function history(identity: unknown = principal) {
 }
 
 function restore(rows: unknown[], version = 0) {
+  // Released v2 headers carry isSeeded; earlier generations refuse the member.
+  const physical = version === 2 ? { ...header, version, isSeeded: false } : { ...header, version }
   const run = sessionFormatCatalog.createRestore(
-    { ...header, version },
+    physical,
     { recovery: 'strict', validation: 'current' },
   )
   for (const row of rows) run.decodeRow(row)
@@ -44,7 +46,7 @@ function identitiesOf(events: readonly { type: string; data: unknown }[]) {
 }
 
 describe('released authenticated history', () => {
-  it.each([0, 1])('preserves message and turn identities through the complete v%s chain', (version) => {
+  it.each([0, 1, 2])('preserves message and turn identities through the complete v%s chain', (version) => {
     const rows = history()
     const original = structuredClone(rows)
     const migrated = restore(rows, version)

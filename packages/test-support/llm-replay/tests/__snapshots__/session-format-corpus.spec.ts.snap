@@ -1,55 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`committed Session format corpus > replays a recorded v0 transcript with retained message and turn principals 1`] = `
-[
-  {
-    "event": "agent/inbox/spliced",
-    "principal": {
-      "id": "account-2",
-      "role": "user",
-      "source": "fixture-auth",
-      "username": "reader",
-    },
-  },
-  {
-    "event": "turn/start",
-    "principal": {
-      "id": "account-2",
-      "role": "user",
-      "source": "fixture-auth",
-      "username": "reader",
-    },
-  },
-  {
-    "event": "step/start",
-    "principal": {
-      "id": "account-2",
-      "role": "user",
-      "source": "fixture-auth",
-      "username": "reader",
-    },
-  },
-  {
-    "event": "user/message",
-    "principal": {
-      "id": "account-2",
-      "role": "user",
-      "source": "fixture-auth",
-      "username": "reader",
-    },
-  },
-  {
-    "event": "user/message",
-    "principal": {
-      "id": "account-2",
-      "role": "user",
-      "source": "fixture-auth",
-      "username": "reader",
-    },
-  },
-]
-`;
-
 exports[`committed Session format corpus principals > replays a recorded v0 transcript with retained message and turn principals 1`] = `
 [
   {
