@@ -1,5 +1,5 @@
 import {
-  useLayoutEffect, useMemo, useRef, useState,
+  useEffect, useLayoutEffect, useMemo, useRef, useState,
   type FocusEvent, type MouseEvent, type ReactNode,
 } from 'react'
 import {
@@ -89,6 +89,38 @@ type StatusDisclosureProps = Omit<DisclosureRowProps, 'expandable'>
 
 function StatusDisclosure(props: StatusDisclosureProps) {
   return <DisclosureRow {...props} expandable />
+}
+
+/**
+ * Elapsed wall-clock time as the shortest readable unit pair.
+ * @param startedAt - start event time.
+ * @param now - current time.
+ * @param t - the dictionary.
+ * @returns `45 秒`, `1 分 30 秒`, or `2 时 05 分`.
+ */
+export function readableElapsed(startedAt: number, now: number, t: WorkflowRunPanelProps['t']): string {
+  const total = Math.max(0, Math.floor((now - startedAt) / 1000))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  if (hours > 0) return t('elapsed.hours', { hours, minutes: String(minutes).padStart(2, '0') })
+  if (minutes > 0) return t('elapsed.minutes', { minutes, seconds })
+  return t('elapsed.seconds', { seconds })
+}
+
+/**
+ * The current time, re-read every second while `active`. A run that has
+ * settled stops the timer so a finished node costs nothing.
+ */
+function useTicking(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return undefined
+    setNow(Date.now())
+    const timer = setInterval(() => { setNow(Date.now()) }, 1000)
+    return () => { clearInterval(timer) }
+  }, [active])
+  return now
 }
 
 function abnormal(status: WorkflowRunStatus): boolean {
@@ -238,21 +270,34 @@ function RunHeader({ children, count, name, onToggle, open, status, t }: {
   )
 }
 
-function MemberRow({ member, navigable, openSession, t }: {
+function MemberRow({ member, navigable, now, openSession, t }: {
   readonly member: WorkflowRunMemberData
   readonly navigable: boolean
+  readonly now: number
   readonly openSession: WorkflowRunInjected['openSession']
   readonly t: WorkflowRunPanelProps['t']
 }) {
   const name = readableMember(member.label, t)
   const [focused, setFocused] = useState(false)
   const renderButton = navigable || focused
+  const running = member.status === 'running'
 
+  // The elapsed time and the open hint are visual liveness cues for a member
+  // that may sit in provider backoff for minutes without any other change;
+  // both stay out of the accessible name, which keeps naming the status.
   const content = (
     <>
       <span className={css.dotSlot}><StateDot state={dotState(member.status)} /></span>
       <span className={css.memberLabelWrap} data-member-label-wrap><span className={css.memberLabel} data-member-label>{name}</span></span>
-      <span className={css.memberStatus} data-member-status-text>{t(STATUS_KEYS[member.status])}</span>
+      <span className={css.memberStatus} data-member-status-text>
+        {t(STATUS_KEYS[member.status])}
+        {running
+          ? <span className={css.memberElapsed} data-member-elapsed aria-hidden>{readableElapsed(member.startedAt, now, t)}</span>
+          : null}
+        {running && navigable
+          ? <span className={css.memberOpenHint} data-member-open-hint aria-hidden>{t('member.openHint')} ›</span>
+          : null}
+      </span>
     </>
   )
   if (!renderButton) {
@@ -277,7 +322,7 @@ function MemberRow({ member, navigable, openSession, t }: {
 
 function PhaseSection({
   contentRef, onContentBlur, onToggle, open, pendingCleanCollapse,
-  phase, navigable, openSession, t,
+  phase, navigable, now, openSession, t,
 }: {
   readonly contentRef: (element: HTMLDivElement | null) => void
   readonly onContentBlur: (event: FocusEvent<HTMLDivElement>) => void
@@ -286,6 +331,7 @@ function PhaseSection({
   readonly pendingCleanCollapse: boolean
   readonly phase: WorkflowRunPhaseData
   readonly navigable: readonly SessionId[]
+  readonly now: number
   readonly openSession: WorkflowRunInjected['openSession']
   readonly t: WorkflowRunPanelProps['t']
 }) {
@@ -319,6 +365,7 @@ function PhaseSection({
               key={member.seq}
               member={member}
               navigable={navigable.includes(member.childId)}
+              now={now}
               openSession={openSession}
               t={t}
             />
@@ -349,6 +396,9 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
     sessions => navigableMembers(sessions, node.data.phases, sessionId),
     shallowEqual,
   )
+  const now = useTicking(node.data.phases.some(
+    phase => phase.members.some(member => member.status === 'running'),
+  ))
 
   // Outer hiding unmounts Phase content without a dependable blur event, so this edge settles deferred closes.
   useLayoutEffect(() => {
@@ -457,6 +507,7 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
                   pendingCleanCollapse={disclosure.pendingCleanCollapse}
                   phase={phase}
                   navigable={navigable}
+                  now={now}
                   openSession={openSession}
                   t={t}
                 />

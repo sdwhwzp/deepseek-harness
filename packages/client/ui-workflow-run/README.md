@@ -31,6 +31,10 @@ A top-level workflow run through `dsh-tool-workflow` appears in the conversation
 
 The run uses a 32-pixel row with persistent chevrons, an inline state dot, and status text; phases use disclosure rows with title and member count in the main area and a fixed aggregate-status tail; members use a 16-pixel dot slot, a truncating name area, and a fixed status column. Opening a member's child Session requires the member to be running, the child id to be in the ordinary Session list, the row to have `origin: 'subagent'`, its `parentId` to be the current Session, and the list row to still be running — remote, addressed-only, wrong-parent, or terminal rows remain non-interactive.
 
+### Liveness while a member runs
+
+A running member shows the time elapsed since its start event beside its status, and a running member the browser can open also shows an open hint. Both exist because a workflow can produce no events for minutes — a member sitting in provider rate-limit backoff writes nothing to the log — and without them the node is indistinguishable from a stalled one. The timer runs only while at least one member is running, and neither cue enters the accessible name, which keeps naming the status.
+
 ### State and completion
 
 Completion updates the visible status immediately but delays its automatic close while focus remains inside the content. A closed Turn or Step with missing terminal events presents the affected run or members as interrupted without changing the tool result.

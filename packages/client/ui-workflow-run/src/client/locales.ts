@@ -23,6 +23,10 @@ export const zh = {
   'status.failed': '失败',
   'status.cancelled': '已取消',
   'status.interrupted': '已中断',
+  'elapsed.seconds': '{seconds} 秒',
+  'elapsed.minutes': '{minutes} 分 {seconds} 秒',
+  'elapsed.hours': '{hours} 时 {minutes} 分',
+  'member.openHint': '查看',
 }
 
 /** English dictionary (same key set). */
@@ -45,6 +49,10 @@ export const en: Record<WorkflowRunKey, string> = {
   'status.failed': 'Failed',
   'status.cancelled': 'Cancelled',
   'status.interrupted': 'Interrupted',
+  'elapsed.seconds': '{seconds}s',
+  'elapsed.minutes': '{minutes}m {seconds}s',
+  'elapsed.hours': '{hours}h {minutes}m',
+  'member.openHint': 'View',
 }
 
 /** Union of this namespace's dictionary keys. */

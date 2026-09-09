@@ -17,6 +17,8 @@ export interface WorkflowRunMemberData {
   readonly label: string
   readonly childId: SessionId
   readonly status: WorkflowRunStatus
+  /** Wall-clock time of the member's start event, for the elapsed display while it runs. */
+  readonly startedAt: number
 }
 
 /** Final renderer data for one exact phase identity. */
@@ -43,6 +45,7 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
 
 interface WorkflowMemberState extends Omit<ToolWorkflowAgentStartData, 'runId'> {
   readonly outcome?: WorkflowAgentOutcome
+  readonly startedAt: number
 }
 
 interface WorkflowState {
@@ -107,6 +110,7 @@ function projectWorkflow(
       seq: member.seq,
       label: member.label,
       childId: member.childId,
+      startedAt: member.startedAt,
       status: member.outcome === undefined
         ? interrupted ? 'interrupted' : 'running'
         : statusFromOutcome(member.outcome),
@@ -126,12 +130,13 @@ function projectWorkflow(
   }
 }
 
-function updateAgentStart(state: WorkflowState, data: ToolWorkflowAgentStartData): WorkflowState {
+function updateAgentStart(state: WorkflowState, data: ToolWorkflowAgentStartData, startedAt: number): WorkflowState {
   const member: WorkflowMemberState = {
     seq: data.seq,
     label: data.label,
     ...data.phase === undefined ? {} : { phase: data.phase },
     childId: data.childId,
+    startedAt,
   }
   return { ...state, members: [...state.members, member] }
 }
@@ -166,7 +171,7 @@ export const workflowRunDefinition: ConversationNodeDefinition<WorkflowState> = 
   },
   update: (context, match) => {
     if (match.event.type === 'tool-workflow/agent-start') {
-      return updateAgentStart(context.state, match.event.data)
+      return updateAgentStart(context.state, match.event.data, match.event.time)
     }
     if (match.event.type === 'tool-workflow/agent-end') {
       return updateAgentEnd(context.state, match.event.data)

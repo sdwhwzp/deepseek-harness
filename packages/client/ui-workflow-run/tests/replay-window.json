@@ -1,0 +1,239 @@
+[
+ {
+  "type": "step/end",
+  "seq": 520,
+  "time": 1788951208240,
+  "data": {
+   "turn": 2,
+   "step": 40
+  }
+ },
+ {
+  "type": "step/start",
+  "seq": 521,
+  "time": 1788951214926,
+  "data": {
+   "turn": 2,
+   "step": 41
+  }
+ },
+ {
+  "type": "assistant/message",
+  "seq": 522,
+  "time": 1788951219063,
+  "data": {
+   "turn": 2,
+   "step": 41,
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "<redacted>"
+     }
+    ]
+   }
+  },
+  "surfaceOp": "append"
+ },
+ {
+  "type": "tool/call",
+  "seq": 523,
+  "time": 1788951219066,
+  "data": {
+   "turn": 2,
+   "step": 41,
+   "callId": "call_00_AnQKucGjO7WnpNSyu2od7649",
+   "name": "workflow",
+   "arguments": "{\"redacted\":true}"
+  }
+ },
+ {
+  "type": "tool-workflow/run-start",
+  "seq": 524,
+  "time": 1788951219126,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "name": "ocr-fanout"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-start",
+  "seq": 525,
+  "time": 1788951219346,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 1,
+   "label": "p1_recv",
+   "phase": "OCR2",
+   "childId": "058053f4-21e1-4e1d-a5ca-a9bc91783bbc"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-start",
+  "seq": 526,
+  "time": 1788951219475,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 2,
+   "label": "p2_recv",
+   "phase": "OCR2",
+   "childId": "d77c9582-58ca-42c2-82d8-8a98f193b985"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-start",
+  "seq": 527,
+  "time": 1788951219476,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 3,
+   "label": "p1_proj",
+   "phase": "OCR2",
+   "childId": "e5a9bcf1-be26-478c-ae19-468be72d56ba"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-start",
+  "seq": 528,
+  "time": 1788951219535,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 4,
+   "label": "p2_proj",
+   "phase": "OCR2",
+   "childId": "3e89c626-6277-4d43-82b5-ec190de13277"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-start",
+  "seq": 529,
+  "time": 1788951219598,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 5,
+   "label": "p1_full",
+   "phase": "OCR2",
+   "childId": "1f08f6c6-9985-4acc-b65b-e1e2898e040d"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-start",
+  "seq": 530,
+  "time": 1788951219714,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 6,
+   "label": "p2_full",
+   "phase": "OCR2",
+   "childId": "2479c87a-2865-4a60-8baa-8c8599b9e2ea"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-end",
+  "seq": 531,
+  "time": 1788951246767,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 1,
+   "outcome": "failed"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-end",
+  "seq": 532,
+  "time": 1788951246875,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 5,
+   "outcome": "failed"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-end",
+  "seq": 533,
+  "time": 1788951248555,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 3,
+   "outcome": "failed"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-end",
+  "seq": 534,
+  "time": 1788951257926,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 2,
+   "outcome": "failed"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-end",
+  "seq": 535,
+  "time": 1788951282133,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 4,
+   "outcome": "failed"
+  }
+ },
+ {
+  "type": "tool-workflow/agent-end",
+  "seq": 536,
+  "time": 1788951431701,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "seq": 6,
+   "outcome": "cancelled"
+  }
+ },
+ {
+  "type": "tool-workflow/run-end",
+  "seq": 537,
+  "time": 1788951431740,
+  "data": {
+   "runId": "b0969c08-d84d-46d4-9bdb-77d9c300fbd0",
+   "stopReason": "cancelled"
+  }
+ },
+ {
+  "type": "tool/result",
+  "seq": 538,
+  "time": 1788951431750,
+  "data": {
+   "turn": 2,
+   "step": 41,
+   "callId": null,
+   "name": "workflow"
+  },
+  "surfaceOp": "append",
+  "sourceEventSeqs": [
+   523
+  ]
+ },
+ {
+  "type": "step/end",
+  "seq": 539,
+  "time": 1788951431761,
+  "data": {
+   "turn": 2,
+   "step": 41
+  }
+ },
+ {
+  "type": "turn/end",
+  "seq": 540,
+  "time": 1788951431763,
+  "data": {
+   "turn": 2,
+   "reason": {
+    "kind": "aborted",
+    "reason": {
+     "kind": "user"
+    }
+   }
+  }
+ }
+]

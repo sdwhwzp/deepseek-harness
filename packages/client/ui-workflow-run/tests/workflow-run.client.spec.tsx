@@ -142,11 +142,11 @@ describe('workflow-run Conversation Definition', () => {
       phases: [
         {
           key: 'value:0:', phase: '',
-          members: [{ seq: 1, label: 'first', childId: 'child-1', status: 'completed' }],
+          members: [{ seq: 1, label: 'first', childId: 'child-1', status: 'completed', startedAt: 400 }],
         },
         {
           key: 'missing', phase: null,
-          members: [{ seq: 2, label: 'second', childId: 'child-2', status: 'failed' }],
+          members: [{ seq: 2, label: 'second', childId: 'child-2', status: 'failed', startedAt: 500 }],
         },
       ],
     })
