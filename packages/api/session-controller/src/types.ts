@@ -360,6 +360,8 @@ export interface SessionCancelValue {
 export interface SessionOpenWorkspacePathRequest {
   /** Session whose visibility authorizes the native opener request. */
   readonly sessionId: SessionId
+  /** File-manager navigation when requested; omission uses the default application. */
+  readonly action?: 'reveal'
   /** Path after best-effort Session workspace resolution, in Host filesystem syntax. */
   readonly path: string
 }

@@ -503,7 +503,6 @@ export class ContinuableActivationRegistry {
     } finally {
       this.wake(activation)
     }
-    activation.announced = true
     activation.principal = principal
     return message.id
   }

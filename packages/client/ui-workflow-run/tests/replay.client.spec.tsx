@@ -68,6 +68,7 @@ function props(node: ChatConversationViewNode, sessions: SessionListState): Work
   const attention = new Map<SessionId, never>()
   return {
     node: node as WorkflowRunPanelProps['node'], sessionId: PARENT_ID,
+    usePanelInfo: selector => selector({ activePanelId: null }),
     useSessions: s => s(sessions), useResource,
     useSessionPendingInteraction: s => s(attention),
     useSession: s => s(sessionSnapshot(PARENT_ID)),
