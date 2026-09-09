@@ -7,7 +7,12 @@ import { RELEASED_V2_EVENT_DISPOSITIONS } from '@deepseek-ai/dsh-session-format-
 
 /** Audited surface event names; all other admitted events are log-only. */
 export const SURFACE_TYPES: ReadonlySet<string> = new Set(['system/message', 'user/message', 'assistant/message', 'tool/result'])
-const SOURCE_KINDS = new Set(['user', 'plugin', 'model', 'tool', 'agent-instructions', 'session-reference', 'team-message', 'goal', 'skill-invocation', 'skill-catalog', 'coordinator', 'subagent-report', 'subagent-settled', 'webhook', 'agent-message'])
+const SOURCE_KINDS = new Set(['user', 'plugin', 'model', 'tool', 'agent-instructions', 'session-reference', 'team-message', 'goal', 'skill-invocation', 'skill-catalog', 'coordinator', 'subagent-report', 'subagent-settled', 'webhook', 'agent-message',
+  // Fork-owned: the dsh-at-file plugin stamped this kind on user messages in
+  // released v2 Sessions this fork wrote, so the released inventory must admit
+  // it or those Sessions refuse migration. Native v3 does not classify source
+  // kinds, so the plugin needs no further admission after this edge.
+  'at-file-mention'])
 
 /**
  * Require a JSON object at the durable input boundary.

@@ -117,7 +117,7 @@ V2 `session-log-deepseek/delivery-accepted` 若携带 `data.sessionFormatVersion
 <a id="source-audit"></a>
 ### 源审计与拒绝
 
-迁移分类[已发布 V2 事件清单](../session-format-v1-to-v2/src/dispositions.ts)，包括仅日志的 `assistant/attempt`，以及 `feedback/message-put` 和 `feedback/message-delete`。[载荷校验器](src/payload.ts)应用精确的已接纳信封和载荷成员，以及已发布嵌套校验。未知事件（即使可忽略）以及被检查记录中未经审计的成员均被拒绝。消息来源分类覆盖下表的五个 Message 位置：未知来源种类会被拒绝，agent（智能体）中继归属则被接纳，但标识不会被解释为 Session 引用。
+迁移分类[已发布 V2 事件清单](../session-format-v1-to-v2/src/dispositions.ts)，包括仅日志的 `assistant/attempt`，以及 `feedback/message-put` 和 `feedback/message-delete`。[载荷校验器](src/payload.ts)应用精确的已接纳信封和载荷成员，以及已发布嵌套校验。未知事件（即使可忽略）以及被检查记录中未经审计的成员均被拒绝。消息来源分类覆盖下表的五个 Message 位置：未知来源种类会被拒绝，agent（智能体）中继归属则被接纳，但标识不会被解释为 Session 引用。本分支额外接纳 `at-file-mention`——其 `dsh-at-file` 插件把该种类写在了已发布 v2 Session 的用户消息上；原生 V3 不对来源种类分类，因此该插件在这条边之外无需接纳。
 
 内容审计仅接纳 `text`、`reasoning`、`image`、`file`、`tool-call` 和 `tool-result`。它校验归本格式所有的块字段，并在以下有限位置递归审计每层嵌套的 `tool-result.content`：
 

@@ -58,6 +58,12 @@ describe('durable V3 admission failures', () => {
     expect(() =>{  assertEvent(extension, 2) }).toThrow(/unclassified/)
   })
 
+  it('admits the fork plugin source kind that released v2 Sessions already carry', () => {
+    const mention = event('user/message', { ...user, source: { kind: 'at-file-mention' } }, { surfaceOp: 'append' })
+    expect(() =>{  assertEvent(mention, 2) }).not.toThrow()
+    expect(() =>{  assertEvent(mention, 3) }).not.toThrow()
+  })
+
   it.each([0, -1, 1.5])('rejects invalid system step coordinates %s', (step) => {
     expect(() => releasedV3SessionFormatCodec.encodeEvent(event('system/message', { ...system, step }, { surfaceOp: 'append' }))).toThrow()
   })
