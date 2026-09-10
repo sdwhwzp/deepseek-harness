@@ -162,7 +162,7 @@ describe('archived version recovery', () => {
       SessionLogOffset(0),
       ['title'],
     )).toBeUndefined()
-    expect(cache.cachedPredecessorTitle(
+    expect(cache.cachedPredecessorListHints(
       headerFor(SessionId(sid), record.identity),
       SessionLogOffset(0),
     )).toEqual({
@@ -196,7 +196,7 @@ describe('archived version recovery', () => {
         SessionLogOffset(0),
         ['title'],
       )).toBeUndefined()
-      expect(cache.cachedPredecessorTitle(
+      expect(cache.cachedPredecessorListHints(
         headerFor(id, doc.record.identity),
         SessionLogOffset(0),
       )).toEqual({
@@ -240,14 +240,14 @@ describe('archived version recovery', () => {
       cwd: '/work',
       isSeeded: false,
     })
-    expect(cache.cachedPredecessorTitle(listed('older'), SessionLogOffset(0))).toEqual({
+    expect(cache.cachedPredecessorListHints(listed('older'), SessionLogOffset(0))).toEqual({
       asOfSeq: -1,
       values: { title: 'older title' },
     })
-    expect(cache.cachedPredecessorTitle(listed('current'), SessionLogOffset(0))).toBeUndefined()
-    expect(cache.cachedPredecessorTitle(listed('newer'), SessionLogOffset(0))).toBeUndefined()
-    expect(cache.cachedPredecessorTitle(listed('stale-title'), SessionLogOffset(0))).toBeUndefined()
-    expect(cache.cachedPredecessorTitle(listed('missing'), SessionLogOffset(0))).toBeUndefined()
+    expect(cache.cachedPredecessorListHints(listed('current'), SessionLogOffset(0))).toBeUndefined()
+    expect(cache.cachedPredecessorListHints(listed('newer'), SessionLogOffset(0))).toBeUndefined()
+    expect(cache.cachedPredecessorListHints(listed('stale-title'), SessionLogOffset(0))).toBeUndefined()
+    expect(cache.cachedPredecessorListHints(listed('missing'), SessionLogOffset(0))).toBeUndefined()
   })
 
   it('refuses a lineage-less archive for a seeded caller (identity mismatch, cold rebuild)', async () => {
@@ -258,7 +258,7 @@ describe('archived version recovery', () => {
     const { cache } = await harness(root)
     const seeded = { ...headerFor(id, doc.record.identity), isSeeded: true }
     expect(cache.cachedSnapshot(seeded, SessionLogOffset(2), ['title'])).toBeUndefined()
-    expect(cache.cachedPredecessorTitle(seeded, SessionLogOffset(2))).toBeUndefined()
+    expect(cache.cachedPredecessorListHints(seeded, SessionLogOffset(2))).toBeUndefined()
   })
 
   it('backs up and skips a record that fails schema validation instead of failing the boot', async () => {

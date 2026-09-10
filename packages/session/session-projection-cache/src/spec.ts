@@ -86,8 +86,8 @@ export type CheckpointRecord = z.infer<typeof checkpointRecord>
  * current fold semantics cannot vouch for.
  *
  * A lifecycle-matching predecessor may still expose its version-compatible
- * title through the cache service's listing-only hint; this never relaxes the
- * format requirement for hydration or another fold shortcut.
+ * title, plus V2-to-V3 list metadata, through the listing-only hints. This
+ * never relaxes the format requirement for hydration or another fold shortcut.
  *
  * `invalidRecords: 'backup-and-skip'`: a stored record that fails the schema
  * anyway is disposable derived data, so it must never cost the boot — the

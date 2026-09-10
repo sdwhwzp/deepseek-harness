@@ -1,0 +1,13 @@
+- name: '@deepseek-ai/dsh-storage'
+- name: '@deepseek-ai/dsh-storage-json'
+  config:
+    root: __STORAGE_ROOT__
+- name: '@deepseek-ai/dsh-storage-domain'
+  config:
+    backend: json
+- name: '@deepseek-ai/dsh-session'
+- name: '@deepseek-ai/dsh-session-projection'
+- name: '@deepseek-ai/dsh-session-projection-cache'
+  config:
+    writeEveryEvents: 100
+    writeIntervalMs: 60000

@@ -43,6 +43,7 @@ type CurrentCheckpointIdentity = CheckpointIdentity & {
 }
 
 const PREDECESSOR_TITLE_KEY = 'title' as Extract<keyof SessionProjectionMap, string>
+const V2_LIST_KEYS = ['title', 'sessionListMetadata'] as Extract<keyof SessionProjectionMap, string>[]
 
 export { checkpointIdentity, checkpointRecord, checkpointRow, projectionCacheDomainSpec } from './spec.ts'
 export type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
@@ -153,31 +154,30 @@ export class SessionProjectionCache extends Service {
   }
 
   /**
-   * Read only a predecessor checkpoint's title as a zero-I/O listing hint.
+   * Read format-compatible predecessor values as zero-I/O listing hints.
    *
-   * The authoritative Session header supplies the lifecycle identity. A cache
-   * checkpoint can lag that log but cannot lead it because writes flush the
-   * log first, so a matching predecessor title is a genuine (possibly stale)
-   * fact from this Session. The registry still requires the current title
-   * projection's row version and schema. No other predecessor projection is
-   * exposed: format normalization can change their current meaning, and the
-   * strict {@link cachedSnapshot} / hydration paths continue to reject them.
+   * A lifecycle-matching title may be stale but remains meaningful after
+   * migration. V2-to-V3 also preserves turn/start and human-message times,
+   * so that exact edge admits sessionListMetadata. Each row still requires
+   * its current projection version and schema; no hint can seed hydration.
    * @param meta - authoritative listed Session header.
    * @param inheritedEventCount - exact inherited cut completing the lifecycle identity.
-   * @returns a title-only checkpoint view with `asOfSeq: -1`, or `undefined`
-   *   when the record is current, newer, unrelated, missing, or incompatible
-   *   with the title unit. The sentinel avoids reusing a sequence that a
-   *   cardinality-changing Session migration may have remapped.
+   * @returns compatible listing values with `asOfSeq: -1`, or `undefined`
+   *   for current, newer, unrelated, missing, or incompatible records. The
+   *   sentinel discards sequences that migration may have remapped.
    */
-  cachedPredecessorTitle(
+  cachedPredecessorListHints(
     meta: SessionHeader,
     inheritedEventCount: SessionLogOffset,
   ): ProjectionSnapshot | undefined {
     const expected = identityOf(meta, inheritedEventCount)
     const record = this.requireTable().get(meta.id)
     if (record === undefined || !predecessorIdentityMatches(record.identity, expected)) return undefined
-    const title = this.viewRecord(record, [PREDECESSOR_TITLE_KEY])
-    return title === undefined ? undefined : { ...title, asOfSeq: -1 }
+    const keys = record.identity.formatVersion === 2 && expected.formatVersion === 3
+      ? V2_LIST_KEYS
+      : [PREDECESSOR_TITLE_KEY]
+    const hints = this.viewRecord(record, keys)
+    return hints === undefined ? undefined : { ...hints, asOfSeq: -1 }
   }
 
   /** View selected wire rows and bind them to their lowest served watermark. */

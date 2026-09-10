@@ -66,6 +66,25 @@ function requests(events: readonly SessionFormatEvent[], version: 2 | 3) {
 }
 
 describe('streaming V2 system prompt migration', () => {
+  it('preserves blankness and human prompt times used by predecessor listing hints', () => {
+    const standalone = [event('permission/preset', { preset: 'danger-full-access' })]
+    const inputs = [
+      standalone,
+      [...standalone, event('turn/start', { turn: 1 }), event('turn/end', { turn: 1, reason: { kind: 'completed' } })],
+      [...opening(), event('user/message', user(), 'append'), event('request/header', request('system'))],
+      [...opening(), event('user/message', { ...user(), source: { kind: 'plugin', plugin: 'tools-code-mode' } }, 'append')],
+    ]
+    const metadata = (events: readonly SessionFormatEvent[]) => ({
+      blank: !events.some(e => e.type === 'turn/start'),
+      lastPromptAt: events.filter(e => e.type === 'user/message'
+        && ((e.data as SessionFormatJsonObject)['source'] as SessionFormatJsonObject)['kind'] === 'user').at(-1)?.time ?? null,
+    })
+    expect(inputs.map(input => metadata(migrate(input).events)))
+      .toEqual([{ blank: true, lastPromptAt: null }, { blank: false, lastPromptAt: null },
+        { blank: false, lastPromptAt: 42 }, { blank: false, lastPromptAt: null }])
+    for (const input of inputs) expect(metadata(migrate(input).events)).toEqual(metadata(input))
+  })
+
   it('emits an empty head immediately after first step, preserves chronology, and captures changed and cleared prompts', () => {
     const input = dense([...opening(), event('user/message', user(), 'append'), event('request/header', request('first')), event('request/header', request('first')), event('request/header', request('changed')), event('request/header', request()), event('request/header', request(''))])
     const h = stage()

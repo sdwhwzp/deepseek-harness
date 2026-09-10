@@ -39,7 +39,7 @@ v4→v5 的唯一实质差异是 identity 新增两个 lineage 字段；v6 只�
 5. **identity 匹配比结构准入更严格**：缺失 `formatVersion` 的记录绝不匹配当前 Session，因此前代行不能播种投影，而会从权威日志重新折叠。格式匹配后，`identityMatches` 才把缺失 lineage 归一化为 unseeded（`?? false` / `?? 0`）：对 unseeded 会话精确，对 seeded 期望则匹配失败。v5 投毒 home 因而可以安全启动，但其未绑定行不会作为当前值暴露。
 6. **schema 校验兜底：`invalidRecords: 'backup-and-skip'`（仅本域声明）**。读兼容之外仍然解析失败的存量记录不再让整个域拒开：domain 层调用后端的 `KvUnit.backupRecord`（json per-record 实现＝把文档改名为 `<key>.json.bak.<YYYYMMDDHHmm>`，字节留档、不再被读取），用 `logger.error` 打印具体失败信息（域名、表、键、移动去向、zod 失败原因），随后当该记录不存在继续启动；下一次冷读会重建并重写该会话的缓存。**该策略是域级显式声明，缺省仍为 fail-loud**——其他业务域的存量数据校验失败照旧整域拒载；后端没有 `backupRecord` 能力（single 布局、行存储）时也回退 fail-loud。命名沿革：quarantine → backup-and-skip（用户裁决：词要同时含"备份"与"跳过"两义，且与 `.bak` 后缀同源；skip-backup 因 CLI `--skip-X` 惯例存在"不备份"反读而弃用）。对本域而言，该策略取代了 [2026-07-28 存储恢复提案](../../proposed/architecture/2026-07-28-storage-root-and-derived-medium-recovery.zh.md)中 reset/destroy 的恢复途径；该提案对权威介质与整介质损坏仍然有效。
 
-7. **predecessor title 是列表 hint，而不是 fold shortcut**：Session list 启动保持 metadata/cache-only，绝不打开冷 log body。log header 是权威来源；生命周期匹配的 checkpoint 是 durable prefix witness，可以落后但不能领先日志。因此 `cachedPredecessorTitle` 只公开仍通过当前 title unit `stateVersion` 与 schema 的 predecessor `title` row。两条相邻 Session format edge 都保留 title 文本。该 hint 使用 `asOfSeq: -1`，而不使用存储 row 的序号，因为改变日志事件数量的迁移会重新映射该坐标。其他 predecessor row 继续隐藏，`hydratePrepared`/`coldSnapshot` 仍要求严格格式 identity，因为即使物理存储一致，normalizer 仍可能改变 `blank` 或 `lastPromptAt` 等值。
+7. **前代值是列表提示，而非折叠捷径**：Session 列表启动仍只读取元数据与缓存，绝不打开冷日志正文。日志头是权威来源；生命周期匹配的检查点证明一个持久前缀，可以落后但不能领先于日志。`cachedPredecessorListHints` 公开标题及下文指定迁移中的元数据，每个值都经过当前投影版本与 schema 校验。`asOfSeq: -1` 丢弃迁移中可能重映射的序号。其余行仍隐藏，`hydratePrepared`/`coldSnapshot` 仍严格匹配格式身份，因为历史规范化可能改变投影语义。
 
 ### v3-v6 → v7 处置
 
@@ -55,10 +55,17 @@ v4→v5 的唯一实质差异是 identity 新增两个 lineage 字段；v6 只�
 | identity 匹配的 v7 当前记录 | 正常服务缓存值 |
 | 格式匹配但缺 lineage 的记录 | unseeded 调用方可以使用；seeded 调用方拒绝并回落冷折叠 |
 
+### V2→V3 列表元数据
+
+当存储格式恰为 2、列表格式恰为 3 时，`cachedPredecessorListHints()` 也接纳 `sessionListMetadata`。该迁移保留 `turn/start` 是否存在及人工消息的时间戳，因此版本兼容的行可保留空白状态和最近活动时间。缺少格式代号或其他格式迁移仍只公开标题。缓存仍是可能过时的持久前缀提示；两类行都不能作为 hydration 的起点，`asOfSeq: -1` 会丢弃迁移中可能重映射的旧序号。
+
+丢弃 V2 的空白标记会使仅含配置事件的 Session 在升级后以目录名显示。Loader 回归测试记录空白和非空白会话的列表输出，拒绝无关生命周期、不支持的迁移、行版本不匹配和无效值，并证明没有发生冷 stat、正文读取、Session 激活或缓存重写。迁移测试覆盖仅配置、零步骤、人工输入及插件输入日志中的两个元数据字段。
+
 ## 备选方案
 
 - **在存储层拒绝前代版本戳**：对投影安全，但会阻止受保护的 legacy bootstrap，也无法保留结构完好的记录直到权威重折叠替换它。结构准入加语义 identity 拒绝既让启动可恢复，也不服务未经证明的值。
 - **在所有用途中把缺失格式代视为当前代**：可以保留缓存值，但让迁移前折叠绕过 Session 格式边。不采用，因为 v0→v1 含有界历史规范化，后续边还可能改变事件基数。title-only 列表 hint 更窄：它不播种 fold，而且 title 文本在已安装 edge 之间保持不变。
+- **读取每个冷日志或删除空 Session**：列表会引入正文 I/O 和激活风险，删除则改变保留的历史。兼容的列表提示保留现有的纯元数据读取路径和持久记录。
 - **schema `.default()` 填缺省**：行为与 optional+读点归一化等价，但把"缺失=unseeded"的解释固化进 durable schema 的输出类型；拍板为 optional——schema 如实描述介质上所有被接受的形态，解释权在消费点（2026-09-02 用户裁决）。
 - **域版本回退到 4**：改动很小，但破坏版本单调性、依赖"bootstrap 不查版本"这个 bug 本身、且投毒态与正常 v5 home 的缓存全被丢弃。
 

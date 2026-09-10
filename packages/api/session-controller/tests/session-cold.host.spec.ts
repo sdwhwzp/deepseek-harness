@@ -95,7 +95,7 @@ describe('sessions.list cold merge', () => {
     })
     ctx.provide('sessionProjectionCache', {
       cachedSnapshot: () => undefined,
-      cachedPredecessorTitle: (meta: SessionHeader) => meta.id === sid('legacy-title')
+      cachedPredecessorListHints: (meta: SessionHeader) => meta.id === sid('legacy-title')
         ? { asOfSeq: -1, values: { title: 'Cached predecessor title' } }
         : undefined,
     } as never)
@@ -153,7 +153,7 @@ describe('sessions.list cold merge', () => {
         }
         return undefined
       },
-      cachedPredecessorTitle: () => undefined,
+      cachedPredecessorListHints: () => undefined,
     } as never)
     const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 

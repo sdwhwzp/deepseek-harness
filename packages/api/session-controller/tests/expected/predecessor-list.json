@@ -1,0 +1,47 @@
+[
+  {
+    "id": "conversation",
+    "blank": false,
+    "updatedAt": 200
+  },
+  {
+    "id": "blank",
+    "blank": true,
+    "updatedAt": 100
+  },
+  {
+    "id": "wrong-lifecycle",
+    "blank": false,
+    "updatedAt": 100
+  },
+  {
+    "id": "wrong-row-version",
+    "blank": false,
+    "updatedAt": 100
+  },
+  {
+    "id": "invalid-row",
+    "blank": false,
+    "updatedAt": 100
+  },
+  {
+    "id": "v1",
+    "blank": false,
+    "updatedAt": 100
+  },
+  {
+    "id": "unbound",
+    "blank": false,
+    "updatedAt": 100
+  },
+  {
+    "id": "future",
+    "blank": false,
+    "updatedAt": 100
+  },
+  {
+    "id": "seeded",
+    "blank": false,
+    "updatedAt": 100
+  }
+]
