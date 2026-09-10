@@ -86,7 +86,7 @@ function props(node: ChatConversationViewNode, sessions: SessionListState): Work
     },
     useWorkspaces: s => s(workspaceSnapshot()),
     useTurnData: () => undefined,
-    openFile: () => {}, inspectCall: () => {}, forkAt: () => {},
+    openFile: () => {}, openSkill: () => {}, inspectCall: () => {}, forkAt: () => {},
     loadImage: () => Promise.reject(new Error('not used')), renderMessageImages: () => null, fileMentions: () => undefined,
     openSession: vi.fn(), t: makeTranslate(zh),
   }

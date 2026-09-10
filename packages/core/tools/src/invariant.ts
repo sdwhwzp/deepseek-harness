@@ -44,6 +44,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
       return
     }
     if (event.data.rootCallSeq !== undefined) {
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing PTC root verification; migration deferred.
       const rootCall = session.eventAt(event.data.rootCallSeq)
       if (rootCall?.type !== 'tool/call'
         || rootCall.seq >= event.seq
@@ -66,6 +67,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
   const seed = (session: Session): number | null => {
     let openTurn: number | null = null
     dispatchRoots.set(session, new Map())
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     for (const event of session.snapshotEvents()) {
       validateDispatch(session, event)
       commitDispatch(session, event)

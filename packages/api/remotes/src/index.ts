@@ -188,6 +188,7 @@ function forwardWaterfall(
 
 /** Recover the owner of one live Agent-scoped waterfall from durable open boundaries. */
 function currentAgentPrincipal(agent: Agent): AuthenticatedPrincipal | undefined {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing live-waterfall principal recovery; migration deferred.
   const events = agent.session.snapshotEvents()
   const turn = events.findLast(event => event.type === 'turn/start' || event.type === 'turn/end')
   if (turn?.type !== 'turn/start') return undefined

@@ -109,6 +109,10 @@ These rules cover this Harness fork and its integrated dsh plugin forks. Record 
 4. Enumerate every local branch in each synchronized repository and upload every unpublished branch or commit to its owned fork. Verify each remote branch matches its local commit; do not stop after pushing only the current branch. Preserve branch histories and remote-only branches; never use `--mirror` or raw `--force`.
 5. Fetch again after all pushes. Compare the current branch against the latest source commits and inspect remaining source differences. Merge, adapt, check, and push again if new source commits remain. Report branch hashes, checks, and intentional adaptation differences; claim completion only when no source commits or unpublished local branches remain.
 
+## Production deployment cleanup
+
+For this fork and integrated plugins, local cleanup is mandatory after local builds/tests pass and production health and requested behavior are verified. Stop this deployment's local test processes/tunnels; delete its temporary profiles, workspaces, databases, credentials, caches, logs, screenshots and packages. Verify remote release copies and hashes before deleting local packages. Check ownership; preserve source, committed tests/fixtures, uncommitted work, shared dependencies and required rollback data. Retain a concise deployment record with commits, artifact hashes, test results and cleanup status. Pending or failed deployment retains necessary diagnostic/rollback material. Report completion only after cleanup.
+
 ## Conventions
 
 - Every npm package is `@deepseek-ai/dsh-<name>`; vendored packages are rescoped ([mapping](docs/rescope.md)) and `private: true`. `@deepseek-ai/cordis` is a peerDependency (+ dev) of every harness package.
