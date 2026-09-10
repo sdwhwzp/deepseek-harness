@@ -210,6 +210,8 @@ export class HostConnectionService extends Service implements HostConnectionHand
     handler: ConnectionRpcHandler,
   ): () => Promise<void> {
     assertChannel(channel)
+    const server = owner.get('webServer')
+    if (server === undefined) throw new Error('connection: RPC channels require a Web server')
     const route: WebRoute = {
       kind: 'prefix',
       path: channel,
@@ -227,7 +229,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
       },
     }
     return owner.effect(
-      () => owner.webServer.register(route),
+      () => server.register(route),
       `client-connection: ${channel} rpc channel`,
     )
   }

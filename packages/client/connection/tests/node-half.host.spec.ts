@@ -2,7 +2,7 @@
 import { EventEmitter } from 'node:events'
 import { createServer, request as httpRequest } from 'node:http'
 import { Readable } from 'node:stream'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -119,6 +119,42 @@ function browserCookie(connection: HostConnectionHandle, authority: string): str
 }
 
 describe('connection node half', () => {
+  it('registers and withdraws plugin RPC channels with a service-owned Web server', async () => {
+    const ctx = new Context()
+    const routes: WebRoute[] = []
+    class RouteRegistry extends Service {
+      constructor(context: Context) { super(context, 'webServer') }
+      register(route: WebRoute) {
+        routes.push(route)
+        return () => { routes.splice(routes.indexOf(route), 1) }
+      }
+    }
+    try {
+      await ctx.plugin(RouteRegistry)
+      provideBrowserCredentials(ctx)
+      await ctx.plugin({ inject: [...inject], apply })
+      const consumer = ctx.plugin({ inject: ['connection'], apply(context: Context) {
+        context.connection.rpc.handle('/plugin-memory', async () => ({ ok: true, value: 'private memory' }))
+      } })
+      await consumer.await()
+      expect(routes.some(route => route.path === '/plugin-memory')).toBe(true)
+      await consumer.dispose()
+      expect(routes.some(route => route.path === '/plugin-memory')).toBe(false)
+    } finally {
+      await ctx.fiber.dispose()
+      expect(routes).toEqual([])
+    }
+  })
+
+  it('rejects a legacy RPC channel when no Web server is available', async () => {
+    const ctx = new Context()
+    try {
+      provideBrowserCredentials(ctx)
+      await ctx.plugin({ inject: [...inject], apply })
+      expect(() => ctx.get('connection')!.rpc.handle('/plugin-memory', async () => ({ ok: true, value: null }))).toThrow('RPC channels require a Web server')
+    } finally { await ctx.fiber.dispose() }
+  })
+
   it('provides the carrier-neutral service without a Web server', async () => {
     const ctx = new Context()
     provideBrowserCredentials(ctx)
