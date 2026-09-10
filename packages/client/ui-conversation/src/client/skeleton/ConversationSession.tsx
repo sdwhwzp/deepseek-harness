@@ -188,7 +188,7 @@ export function ConversationSession({
 
   if (session.blank && conversationPhase(session, conversation) === 'blank') return null
   return (
-    <div className={css.viewArea}>
+    <div className={css.viewArea} data-conversation-view={active?.id}>
       {active !== undefined && renderSlot('conversation.view', {
         viewRequest,
         openView,

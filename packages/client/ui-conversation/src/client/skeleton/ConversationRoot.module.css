@@ -235,6 +235,10 @@
   cursor: col-resize;
 }
 
+.body:not(:has([data-conversation-view='chat'])) > .widthHandle {
+  display: none;
+}
+
 .widthHandle[data-side='left'] {
   right: calc(50% + var(--dsh-chat-content-width) / 2 + 24px);
 }

@@ -622,6 +622,7 @@ describe('ConversationRoot resident composer', () => {
     // fallback is Chat and must stay Chat when another lower-order view lands.
     act(() => { b.store.actions.setView('removed-view') })
     expect(b.view.getByTestId('view-chat')).toBeTruthy()
+    expect(b.view.container.querySelector('[data-conversation-view]')?.getAttribute('data-conversation-view')).toBe('chat')
 
     viewTabs.unshift({ id: 'new-view', label: 'New view' })
     b.rerender()
@@ -630,6 +631,8 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.queryByTestId('view-new-view')).toBeNull()
     expect(b.view.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true')
     expect(b.view.getByRole('tab', { name: 'New view' }).getAttribute('aria-selected')).toBe('false')
+    fireEvent.click(b.view.getByRole('tab', { name: 'Trajectory' }))
+    expect(b.view.container.querySelector('[data-conversation-view]')?.getAttribute('data-conversation-view')).toBe('trajectory')
   })
 
   it('rolls the pending workspace label back when switching fails', async () => {
