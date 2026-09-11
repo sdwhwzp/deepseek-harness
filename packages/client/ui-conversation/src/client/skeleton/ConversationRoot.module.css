@@ -282,7 +282,6 @@
   left: 16px;
 }
 
-.widthHandle:hover::after,
 .widthHandle[data-dragging]::after {
   opacity: 1;
 }

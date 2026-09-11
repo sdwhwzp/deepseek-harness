@@ -506,6 +506,42 @@ describe('web e2e: long Chat scroll contract', () => {
     await browser?.close()
   })
 
+  it('shows transcript width indicators only during a drag', async () => {
+    await withScrollWorld({
+      failureShot: 'web-e2e-chat-width-indicator',
+      seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
+    }, async (world) => {
+      const { page } = world
+      await page.setViewportSize({ width: 1990, height: 1028 })
+      await openSeed(page, HISTORY_FIXTURE, HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns))
+      for (const side of ['left', 'right'] as const) {
+        const handle = page.locator(`[data-width-handle="${side}"]`)
+        const opacity = () => handle.evaluate(element => getComputedStyle(element, '::after').opacity)
+        await handle.hover()
+        expect(await opacity()).toBe('0')
+        const box = await handle.boundingBox()
+        expect(box).not.toBeNull()
+        await page.mouse.down()
+        try {
+          await expect.poll(opacity).toBe('1')
+          const before = await page.evaluate(() => localStorage.getItem('dsh.conversation.contentWidth'))
+          await page.mouse.move(box!.x + box!.width / 2 + (side === 'right' ? 20 : -20), box!.y + box!.height / 2)
+          await page.mouse.up()
+          await expect.poll(() => page.evaluate(() => localStorage.getItem('dsh.conversation.contentWidth'))).not.toBe(before)
+        } finally {
+          await page.mouse.up()
+        }
+        await handle.hover()
+        await expect.poll(opacity).toBe('0')
+      }
+      await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+      for (const side of ['left', 'right']) {
+        expect(await page.locator(`[data-width-handle="${side}"]`).isVisible()).toBe(false)
+      }
+      assertClean(world)
+    })
+  })
+
   it.skipIf(MODE === 'record')('preserves the reader anchor when history and streaming arrive concurrently', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-history-stream',
