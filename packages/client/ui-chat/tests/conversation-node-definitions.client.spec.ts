@@ -13,7 +13,7 @@ import {
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { inspectSystemPrompt } from '../../ui-conversation/src/client/contract/system-prompt.ts'
 import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm/assistant-stream'
-import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import { LlmAttemptId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { hasAssistantReplyContent } from '../src/client/contract/assistant-content.ts'
 import { assistantDefinition } from '../src/client/conversation-nodes/assistant.ts'
 import { chatViewDefinition } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
@@ -2460,5 +2460,73 @@ describe('built-in conversation node Definitions', () => {
       command: { commandId: 'command-1', name: 'compact', outcome: { kind: 'success' } },
       compaction: { summary: 'manual summary', summaryEventSeq: 20 },
     })
+  })
+})
+
+describe('Assistant attempt retirement', () => {
+  it.each(['committed failure', 'abandoned'] as const)('hides a displayed prefix after %s and renders the next reply', (outcome) => {
+    const attemptId = LlmAttemptId('retired-attempt')
+    const opening = [at(0, 'turn/start', { turn: 1 }), at(1, 'step/start', { turn: 1, step: 1 })]
+    const value = assembler(opening)
+    const prefix: SessionEventLikeEntry = {
+      type: 'transient',
+      event: {
+        type: 'assistant/live-chunk', seq: 1.5, time: 1_700_000_000_002,
+        data: {
+          attemptId, turn: 1, step: 1,
+          chunk: { type: 'reasoning-delta', index: 0, text: 'Preparing a reply' },
+        },
+      },
+    }
+    value.append(prefix)
+    value.flush()
+    const running = node(snapshot(value), 'assistant-step')
+    expect(running?.visibility).toBe('visible')
+
+    const failure = outcome === 'abandoned' ? undefined : {
+      type: 'event' as const,
+      event: at(2, 'assistant/attempt', {
+        turn: 1, step: 1,
+        stream: [{ type: 'reasoning-chunks', index: 0, time0: prefix.event.time, dt: [], texts: ['Preparing a reply'] }],
+      }).event as SessionEvent<'assistant/attempt'>,
+    }
+    value.settleAssistant(attemptId, failure)
+    value.flush()
+    const retired = node(snapshot(value), 'assistant-step')
+    expect(retired?.key).toBe(running?.key)
+    expect(retired?.visibility).toBe('hidden')
+    expect(node(snapshot(value), 'turn-process')?.visibility).toBe('hidden')
+    expect((retired?.data as AssistantChatData).blocks).toEqual([])
+
+    const nextAttempt = LlmAttemptId('replacement-attempt')
+    value.append({
+      ...prefix,
+      event: {
+        ...prefix.event,
+        seq: outcome === 'abandoned' ? 1.5 : 2.5,
+        data: { ...prefix.event.data, attemptId: nextAttempt },
+      },
+    })
+    value.flush()
+    expect(node(snapshot(value), 'assistant-step')?.visibility).toBe('visible')
+    expect(node(snapshot(value), 'turn-process')?.visibility).toBe('visible')
+
+    const reply = {
+      type: 'event' as const,
+      event: at(3, 'assistant/message', {
+        turn: 1, step: 1, message: assistantMessage('recovered-reply', 'Recovered final answer'),
+      }, { surfaceOp: 'append' }).event as SessionEvent<'assistant/message'>,
+    }
+    value.settleAssistant(nextAttempt, reply)
+    const closing = [at(4, 'step/end', { turn: 1, step: 1 }), at(5, 'turn/end', { turn: 1, reason: { kind: 'completed' } })]
+    for (const entry of closing) value.append(entry)
+    value.flush()
+    const recovered = node(snapshot(value), 'assistant-step')
+    expect(recovered?.key).toBe(running?.key)
+    expect(recovered?.visibility).toBe('visible')
+    expect(node(snapshot(value), 'turn-process')?.visibility).toBe('visible')
+    expect(recovered?.data).toMatchObject({ status: 'settled', blocks: [{ kind: 'text', text: 'Recovered final answer' }] })
+    const replay = assembler([...opening, ...(failure === undefined ? [] : [failure]), reply, ...closing])
+    expect(recovered?.data).toEqual(node(snapshot(replay), 'assistant-step')?.data)
   })
 })

@@ -33,6 +33,8 @@ Web follow adapter 显式选择接收这些进程本地 frame，并为每个 sta
 
 Client event source 原样传递持久 settlement。Chat 与 Trajectory 的 Assistant node 在 attempt 活跃期间折叠 `assistant/live-chunk`，直接从 `assistant/message` 构建 settled output，并且不为展示重放 `assistant/attempt` stream。因此冷恢复的 settled presentation 不会重建逐 token timing；其他消费方需要精确证据时仍可展开持久 stream。
 
+当清理请求临时内容使可见证据消失时，Chat 会保留已经生成的 Assistant 节点及过程控件，并将其设为隐藏。在重试通知到达之前返回 `null` 会违反 Conversation 节点标识规则。[请求恢复约定](../../../../packages/client/ui-chat/README.zh.md#attempt-recovery)使这一短暂的空状态仍可正常渲染，而不添加持久消息，也不依赖后续帧修复。
+
 ### 已发布 v1 到 v2 迁移
 
 相邻迁移会校验完整的冻结 v1 产物，按 turn、step、terminal boundary 与精确 message provenance 对 chunk 分组，再为每个 attempt 替换一个 settlement。成功分组的 chunk 移入其 message。未被认领的分组会在最后一个被消费 chunk 的位置变成 `assistant/attempt`。无关的交错事件保持相对顺序，存活事件获得密集 v2 序号。该迁移边通过 `dsh-llm` 运行时的 `AssistantStreamAccumulator` 压缩嵌入 stream，而不持有冻结副本，因为该包拥有 v2 stream 编码。隔离的 publication verifier 通过 `expandAssistantStream()` 与 `BlockAssembler` 展开并重组写入后的 stream，并在发布前检查每个迁移后的 `assistant/message` 是否与其一致。日后若某个格式改变 stream 编码，必须把这些 helper 的冻结副本纳入本迁移边。

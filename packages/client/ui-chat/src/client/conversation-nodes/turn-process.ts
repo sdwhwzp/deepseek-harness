@@ -278,10 +278,13 @@ export const turnProcessDefinition: ConversationNodeDefinition<TurnProcessState>
   buildViewNode: (context) => {
     const turn = turnLocation(context)
     const data = turn?.data.get('turn-process')
-    if (turn === undefined || data === undefined) return null
     const current = context.current.get('chat') as ChatNode | null | undefined
+    if (turn === undefined || data === undefined) {
+      return current === undefined || current === null ? null : { ...current, visibility: 'hidden' }
+    }
     const state = context.state
     if (current?.kind === 'turn-process'
+      && current.visibility === 'visible'
       && state !== undefined
       && current.data.answerAnchorSeq === null
       && current.data.controlAnchorSeq === state.controlAnchorSeq

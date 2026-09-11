@@ -265,22 +265,51 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     expect(tripwire.warnings).toEqual([])
   }, 120_000)
 
-  it.skipIf(MODE === 'record')('recovers a transient SERVER failure through llm-retry and completes', async () => {
+  it.skipIf(MODE === 'record')('recovers a transient SERVER failure after displaying a partial reply', async () => {
     const derived = deriveReplayScript(parseSessionLog(await readFile(FIXTURE, 'utf8')))
     expect(derived).toHaveLength(1)
+    const partial = 'Discarded partial before retry'
     await launch(() => ({
       patches: [
-        { at: 0, entry: { kind: 'throw', chunks: [], message: 'upstream 503', code: 'SERVER' } },
+        { at: 0, entry: {
+          kind: 'throw',
+          chunks: [
+            { type: 'block-start', index: 0, blockType: 'text' },
+            { type: 'text-delta', index: 0, text: partial },
+          ],
+          message: 'upstream 503', code: 'SERVER',
+        } },
         // Append the fixture's own success as the retry attempt — single-
         // sourced from the recording, never copied into a committed sidecar.
         { at: 1, entry: derived[0]! },
       ],
     }))
     onTestFailed(() => saveFailureShot(page, 'web-e2e-retry'))
-    // llm-retry backs off ~500ms before the second attempt.
-    const { settled } = await sendPrompt(60_000)
-    await settled
+    const renderErrors: string[] = []
+    page.on('console', (message) => {
+      if (message.type() === 'error') renderErrors.push(message.text())
+    })
+    const displayed = Promise.withResolvers<undefined>()
+    const disposeBarrier = scaffold!.ctx.on('llm/stream', async function* (_options, next) {
+      for await (const chunk of next()) {
+        yield chunk
+        if (chunk.type === 'text-delta' && chunk.text === partial) await displayed.promise
+      }
+    }, { prepend: true })
+    try {
+      const { settled } = await sendPrompt(60_000)
+      await page.locator('[data-streaming="true"]').getByText(partial, { exact: true }).waitFor()
+      displayed.resolve(undefined)
+      await settled
+    } finally {
+      displayed.resolve(undefined)
+      disposeBarrier()
+    }
     expect(turnEndReasons(sessionEvents).at(-1)).toBe('completed')
+    await expect.poll(() => page.getByText(partial, { exact: true }).count()).toBe(0)
+    await expect.poll(() => page.locator('[data-streaming="true"]').count()).toBe(0)
+    await page.getByRole('button', { name: 'Send message', exact: true }).waitFor()
+    expect(renderErrors).toEqual([])
     // The durable retry record proves the second attempt (request/header logs
     // only on change, so attempt count is invisible there).
     expect(sessionEvents.filter(e => e.type === 'llm/retry').length).toBeGreaterThanOrEqual(1)

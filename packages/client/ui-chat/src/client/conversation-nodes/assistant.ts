@@ -34,7 +34,6 @@ interface AssistantState {
   readonly firstVisibleSeq: number | undefined
   readonly firstVisibleTime: number | undefined
   readonly firstTokenTime: number | undefined
-  readonly hidden: boolean
   readonly final: ConversationMatch | undefined
   readonly usage: unknown
 }
@@ -48,7 +47,6 @@ function initialState(turn: number, step: number): AssistantState {
     firstVisibleSeq: undefined,
     firstVisibleTime: undefined,
     firstTokenTime: undefined,
-    hidden: false,
     final: undefined,
     usage: undefined,
   }
@@ -85,7 +83,6 @@ function resetForRetry(state: AssistantState): AssistantState {
   return {
     ...initialState(state.turn, state.step),
     firstTokenTime: state.firstTokenTime,
-    hidden: true,
   }
 }
 
@@ -151,7 +148,6 @@ function updateChunk(
     ...state,
     blocks,
     visibleBlocks,
-    hidden: visibleBlocks > 0 ? false : state.hidden,
     ...visibleBlocks > 0 && state.firstVisibleSeq === undefined
       ? { firstVisibleSeq: seq, firstVisibleTime: time }
       : {},
@@ -171,7 +167,6 @@ function settleMessage(
     ...state,
     blocks,
     visibleBlocks: countVisibleBlocks(blocks),
-    hidden: false,
     final: match,
     usage: event.data.usage,
   }
@@ -345,7 +340,7 @@ export const assistantDefinition: ConversationNodeDefinition<AssistantState> = {
     const visible = settled === undefined ? state.visibleBlocks > 0 : hasVisibleContent(data.blocks)
     if (settled === undefined && !visible) {
       const current = context.current.get('chat')
-      if (!state.hidden || current === undefined || current === null) return null
+      if (current === undefined || current === null) return null
     }
     const anchorSeq = settled?.seq ?? state.firstVisibleSeq ?? context.matches[0]?.event.seq ?? 0
     return chatNode(context, 'assistant-step', anchorSeq, data, {
