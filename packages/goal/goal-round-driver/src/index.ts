@@ -9,14 +9,23 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { GoalMessageSource, GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-api-gateway'
+import { goalRoundOwnerProjection } from './principal.ts'
 import { renderGoalRoundPrompt } from './prompt.ts'
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** Authenticated owner of the open turn, without retaining closed-turn authority. */
+    goalRoundOwner: AuthenticatedPrincipal | null
+  }
+}
 
 export { renderGoalRoundPrompt } from './prompt.ts'
 
 export const name = 'goal-round-driver'
-export const inject = ['agents', 'goals', 'sessions']
+export const inject = ['agents', 'goals', 'sessions', 'sessionProjections']
 
 /** Identity reserved before a goal continuation enters the agent inbox. */
 interface RoundIdentity {
@@ -29,6 +38,7 @@ interface RoundIdentity {
 interface RoundAttempt extends RoundIdentity {
   readonly messageId: MessageId
   readonly content: ContentBlock[]
+  readonly principal: AuthenticatedPrincipal | undefined
   phase: 'queued' | 'claimed' | 'admitted'
   cancelled: boolean
   stale: boolean
@@ -38,6 +48,7 @@ interface RoundAttempt extends RoundIdentity {
 interface DriverState {
   readonly agent: Agent
   attempt: RoundAttempt | undefined
+  principal: AuthenticatedPrincipal | undefined
   competingQueued: boolean
   needsCheckpoint: boolean
   requested: boolean
@@ -58,8 +69,10 @@ function sameRound(source: GoalMessageSource, round: RoundIdentity): boolean {
 }
 
 /** Compare the complete queued record to the driver's reservation. */
-function sameQueued(content: ContentBlock[], source: MessageSource, attempt: RoundAttempt): boolean {
-  return isGoalRoundSource(source) && sameRound(source, attempt) && isDeepStrictEqual(content, attempt.content)
+function sameQueued(message: Pick<UserMessage, 'content' | 'source' | 'principal'>, attempt: RoundAttempt): boolean {
+  return isGoalRoundSource(message.source) && sameRound(message.source, attempt)
+    && isDeepStrictEqual(message.content, attempt.content)
+    && isDeepStrictEqual(message.principal, attempt.principal)
 }
 
 /** Exact current ref for a view. */
@@ -83,6 +96,7 @@ export function apply(ctx: Context): void {
     const state: DriverState = {
       agent,
       attempt: undefined,
+      principal: undefined,
       competingQueued: false,
       needsCheckpoint: false,
       requested: false,
@@ -176,12 +190,14 @@ export function apply(ctx: Context): void {
     const message = createUserMessage({
       content,
       source: { kind: 'goal', goalId: goal.id, revision: goal.revision, round },
+      ...state.principal === undefined ? {} : { principal: state.principal },
     })
     const reservation: RoundAttempt = {
       goalId: goal.id,
       revision: goal.revision,
       round,
       messageId: message.id,
+      principal: state.principal,
       content,
       phase: 'queued',
       cancelled: false,
@@ -243,6 +259,8 @@ export function apply(ctx: Context): void {
   // One composite effect keeps the step fence installed until this
   // plugin's own scheduling tasks settle.
   ctx.effect(function* () {
+    ctx.sessionProjections.register(goalRoundOwnerProjection)
+
     ctx.on('agent/error', ({ agent }) => {
       const state = stateFor(agent)
       disarm(state)
@@ -253,6 +271,7 @@ export function apply(ctx: Context): void {
     ctx.on('agent/session-start', ({ agent }) => {
       const state = stateFor(agent)
       state.attempt = undefined
+      state.principal = undefined
       state.competingQueued = false
       state.needsCheckpoint = false
     })
@@ -282,6 +301,14 @@ export function apply(ctx: Context): void {
     })
     ctx.on('goal/changed', ({ agent, change }) => {
       const state = stateFor(agent)
+      if (change.operation === 'create' || change.operation === 'resume') {
+        // Capture before checkpoint awaits or detached scheduling. A running
+        // tool owns its turn even when an older gateway request is inherited.
+        const initiator = ctx.agents.currentInitiator()
+        state.principal = initiator === undefined
+          ? ctx.get('typertGateway')?.currentPrincipal()
+          : ctx.sessionProjections.stateOf(initiator.session, 'goalRoundOwner') ?? undefined
+      }
       state.needsCheckpoint = true
       // A host-initiated pause stops goal execution: abort the live turn so the
       // model cannot keep acting or resume in the same turn. A model-initiated
@@ -297,21 +324,21 @@ export function apply(ctx: Context): void {
       if (!agent.inbox.nextTurn.some(candidate => candidate.id === message.id)) return
       const state = stateFor(agent)
       const attempt = state.attempt
-      if (attempt !== undefined && sameQueued(message.content, message.source, attempt)) return
+      if (attempt !== undefined && sameQueued(message, attempt)) return
       state.competingQueued = true
       if (attempt?.phase === 'queued') attempt.stale = true
     })
     ctx.on('agent/inbox/claimed', ({ agent, message }) => {
       const state = stateFor(agent)
       const attempt = state.attempt
-      if (attempt !== undefined && sameQueued(message.content, message.source, attempt)) {
+      if (attempt !== undefined && sameQueued(message, attempt)) {
         attempt.phase = 'claimed'
       }
     })
     ctx.on('agent/inbox/discarded', ({ agent, message }) => {
       const state = stateFor(agent)
       const attempt = state.attempt
-      if (attempt !== undefined && sameQueued(message.content, message.source, attempt)) {
+      if (attempt !== undefined && sameQueued(message, attempt)) {
         attempt.cancelled = true
       }
     })
@@ -345,14 +372,14 @@ export function apply(ctx: Context): void {
     /** Fail closed unless the queued prompt still owns the exact live revision. */
     function validReservation(
       state: DriverState,
-      content: ContentBlock[],
-      source: GoalMessageSource,
+      message: UserMessage & { source: GoalMessageSource },
     ): boolean {
+      const { source } = message
       const attempt = state.attempt
       const goal = currentGoal(state)
       return ctx.fiber.state === FiberState.ACTIVE
         && !state.stopping && attempt !== undefined && attempt.phase === 'claimed'
-      && !attempt.stale && sameQueued(content, source, attempt)
+      && !attempt.stale && sameQueued(message, attempt)
       && goal !== undefined && goal.id === source.goalId && goal.revision === source.revision
       && goal.phase === 'active' && goal.activation === 'armed'
       && source.round === goal.roundsStarted + 1
@@ -362,11 +389,11 @@ export function apply(ctx: Context): void {
       const submitted = messages.find((message): message is UserMessage & { source: GoalMessageSource } =>
         isGoalRoundSource(message.source))
       if (submitted === undefined) return next()
-      const { content, source } = submitted
+      const { source } = submitted
       const state = stateFor(agent)
       let valid = false
       try {
-        valid = validReservation(state, content, source)
+        valid = validReservation(state, submitted)
       } catch (error: unknown) {
         ctx.logger.warn(`goal-round-driver: pre-step check failed for agent "${agent.id}": ${renderThrown(error)}`)
         disarm(state)
@@ -410,7 +437,7 @@ export function apply(ctx: Context): void {
         return decision
       }
       try {
-        valid = validReservation(state, content, source)
+        valid = validReservation(state, submitted)
       } catch (error: unknown) {
         ctx.logger.warn(`goal-round-driver: post-decision check failed for agent "${agent.id}": ${renderThrown(error)}`)
         disarm(state)

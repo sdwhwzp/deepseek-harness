@@ -7,7 +7,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import GoalService, { GoalId } from '@deepseek-ai/dsh-goal'
 import type { GoalView } from '@deepseek-ai/dsh-goal'
 import { createUserMessage, LlmAdapter, LlmError  } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import * as goalSession from '../src/index.ts'
@@ -1114,5 +1114,100 @@ describe('same-session goal driving', () => {
     await handle.dispose()
 
     expect(test.ctx.agents.get(handle.agent.id)).toBeUndefined()
+  })
+})
+
+
+describe('goal-round account attribution', () => {
+  const alice: AuthenticatedPrincipal = { source: 'test', id: 'alice', username: 'Alice', role: 'user' }
+  const bob: AuthenticatedPrincipal = { source: 'test', id: 'bob', username: 'Bob', role: 'user' }
+
+  it('captures the creator before checkpoint waits and retains it for every round', async () => {
+    const test = await harness([textResponse('one'), textResponse('two')])
+    let caller = alice
+    test.ctx.reflect.provide('typertGateway', { currentPrincipal: () => caller })
+    const checkpoint = Promise.withResolvers<undefined>()
+    const entered = Promise.withResolvers<undefined>()
+    const remove = test.ctx.on('session/flush', () => {
+      entered.resolve(undefined)
+      return checkpoint.promise
+    })
+    try {
+      test.ctx.goals.create(test.agent, { objective: 'two attributed rounds', maxGoalRounds: 2 })
+      await entered.promise
+      caller = bob
+    } finally {
+      checkpoint.resolve(undefined)
+      remove()
+    }
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    const events = test.agent.session.snapshotEvents()
+    expect(events.flatMap(event => event.type === 'turn/start' ? [event.data.principal] : []))
+      .toEqual([alice, alice])
+    expect(events.flatMap(event => event.type === 'user/message' && event.data.source.kind === 'goal'
+      && event.data.source.round > 0 ? [event.data.principal] : [])).toEqual([alice, alice])
+  })
+
+  it('rejects a substituted principal before admitting the reserved round', async () => {
+    const test = await harness([textResponse('authorized round')])
+    test.ctx.reflect.provide('typertGateway', { currentPrincipal: () => alice })
+    const followup = test.agent.followup.bind(test.agent)
+    let substituted = false
+    vi.spyOn(test.agent, 'followup').mockImplementation((message) => {
+      if (!substituted && message.source.kind === 'goal' && message.source.round > 0) {
+        substituted = true
+        followup({ ...message, principal: bob })
+      } else followup(message)
+    })
+    test.ctx.goals.create(test.agent, { objective: 'reject substituted caller', maxGoalRounds: 1 })
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    expect(substituted).toBe(true)
+    expect(test.adapter.requests).toHaveLength(1)
+    expect(test.agent.session.snapshotEvents().flatMap(event =>
+      event.type === 'user/message' && event.data.source.kind === 'goal' && event.data.source.round > 0
+        ? [event.data.principal] : [])).toEqual([alice])
+  })
+
+  it('takes the explicit resumer after unloading instead of retaining the previous creator', async () => {
+    const test = await harness([textResponse('resumed')])
+    let caller = alice
+    test.ctx.reflect.provide('typertGateway', { currentPrincipal: () => caller })
+    const created = test.ctx.goals.create(test.agent, { objective: 'resume with caller', maxGoalRounds: 1 })
+    test.ctx.goals.pause(test.agent, created)
+    await test.driver.dispose()
+    await test.ctx.plugin(goalSession)
+    caller = bob
+    const paused = test.ctx.goals.get(test.agent)!
+    test.ctx.goals.resume(test.agent, { id: paused.id, revision: paused.revision })
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    expect(test.agent.session.snapshotEvents().flatMap(event =>
+      event.type === 'turn/start' ? [event.data.principal] : [])).toEqual([bob])
+  })
+
+  it('uses the active tool turn owner rather than an inherited gateway caller', async () => {
+    const test = await harness([
+      () => {
+        test.ctx.goals.create(test.agent, { objective: 'continue tool work', maxGoalRounds: 1 })
+        return textResponse('goal created')
+      },
+      textResponse('goal done'),
+    ])
+    test.ctx.reflect.provide('typertGateway', { currentPrincipal: () => alice })
+    test.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'start' }], source: { kind: 'user' }, principal: bob }))
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    expect(test.agent.session.snapshotEvents().flatMap(event =>
+      event.type === 'turn/start' ? [event.data.principal] : [])).toEqual([bob, bob])
+    expect(test.ctx.sessionProjections.stateOf(test.agent.session, 'goalRoundOwner')).toBeNull()
+  })
+
+  it('does not reuse a closed authenticated turn for an anonymous host goal', async () => {
+    const test = await harness([textResponse('human done'), textResponse('anonymous goal')])
+    test.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'start' }], source: { kind: 'user' }, principal: alice }))
+    await waitForRequests(test.adapter, 1)
+    await test.agent.whenIdle()
+    test.ctx.goals.create(test.agent, { objective: 'local anonymous work', maxGoalRounds: 1 })
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    expect(test.agent.session.snapshotEvents().flatMap(event =>
+      event.type === 'turn/start' ? [event.data.principal] : [])).toEqual([alice, undefined])
   })
 })

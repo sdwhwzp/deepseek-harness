@@ -1,0 +1,14 @@
+- id: headless-startup
+  disabled: true
+- id: headless-runner
+  disabled: true
+- id: agent-loop
+  config:
+    agents: []
+- id: session-persistence-jsonl
+  config:
+    root: !!js process.cwd() + '/.sessions'
+    compression: none
+- insert:
+    - id: cli-mock-llm
+      name: '../../../../test-support/loader-smoke/tests/fixtures/cli-mock-llm.ts'
