@@ -158,6 +158,18 @@ The PTC mode demo runs the same headless profile with code presentation enabled:
 pnpm run demo:ptc -- "summarize this workspace"
 ```
 
+### Shared production profile
+
+A deployment profile may have more than one writer: a release pipeline and a hand-applied plugin update both edit the same `package.json`, `pnpm-workspace.yaml` and `cordis.patch.yml`, and the later write wins. Record the pinned set before changing one — every `dependencies` entry, its workspace override, and every id-targeted patch row — then verify it survived; a pipeline restoring an older snapshot reverts a landed change with no error. Hand the pinned artifacts (name, version, file, sha256, commit) and any patch row that must not be lost to whoever owns the other pipeline.
+
+**A patch's `config` replaces, never merges.** The include plugin assigns each override key onto the target row, so an id-targeted override carries every field the row needs. Omitting one returns it to its schema default and changes behavior without any error — dropping `currency` alone re-denominates a whole accounting surface.
+
+**Probe the gate the deployment actually serves.** A health check names a scheme and a port that an unrelated change can move, and a probe that cannot reach a healthy service fails the deploy and rolls back a good build. Try the current scheme and fall back to the previous one. A zero-byte reply after an instant connect is a handshake failure, not a timeout, so a longer timeout hides rather than diagnoses it.
+
+**Version a cache whose producer changes.** A derivation cached under input identity — file size and mtime, a content hash — keeps serving entries built by an earlier rule, and unchanged inputs never re-derive. When a change alters what the producer counts or stores, stamp the entries with a producer version and treat a mismatch as a miss; otherwise the fix reaches no existing data and no restart clears it.
+
+**A public catalog is not a vendor rate card.** An aggregator's prices, capabilities and model ids carry its own currency conversion, lag the vendor's republications, and miss renames. Use one to fill what nothing else covers, never to overwrite a verified table, and record each observation's source and time so a figure can be traced back.
+
 ### TODO markers
 
 Use one of three comment tags to flag known issues in the code, ordered by urgency:

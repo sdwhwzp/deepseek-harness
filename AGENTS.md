@@ -111,7 +111,7 @@ These rules cover this Harness fork and its integrated dsh plugin forks. Record 
 
 ## Production deployment cleanup
 
-For this fork and integrated plugins, local cleanup is mandatory after local builds/tests pass and production health and requested behavior are verified. Stop this deployment's local test processes/tunnels; delete its temporary profiles, workspaces, databases, credentials, caches, logs, screenshots and packages. Verify remote release copies and hashes before deleting local packages. Check ownership; preserve source, committed tests/fixtures, uncommitted work, shared dependencies and required rollback data. Retain a concise deployment record with commits, artifact hashes, test results and cleanup status. Pending or failed deployment retains necessary diagnostic/rollback material. Report completion only after cleanup.
+For this fork and integrated plugins, local cleanup is mandatory after local builds/tests pass and production health and requested behavior are verified. Stop this deployment's local test processes/tunnels; delete its temporary profiles, workspaces, databases, credentials, caches, logs, screenshots and packages. Verify remote release copies and hashes before deleting local packages. Check ownership; preserve source, committed tests/fixtures, uncommitted work, shared dependencies and required rollback data. Retain a concise deployment record with commits, artifact hashes, test results and cleanup status. Pending or failed deployment retains necessary diagnostic/rollback material. Report completion only after cleanup. A profile with more than one writer needs its pinned set and patch rows recorded and re-verified ([shared profile](docs/development.md#shared-production-profile)).
 
 ## Conventions
 
