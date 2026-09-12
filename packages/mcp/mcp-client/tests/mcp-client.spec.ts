@@ -1298,3 +1298,47 @@ describe('tool execution — non-object args fallback', () => {
     )
   })
 })
+
+describe('structured content projection', () => {
+  let ctx: Context
+
+  beforeEach(async () => {
+    ctx = await mountRegistry()
+  })
+
+  const flights = { kind: 'collection', items: [{ fnum: 'FM9234', dep: 'WEH', arr: 'PVG' }] }
+
+  it('appends structuredContent as compact JSON when no text block echoes it', async () => {
+    const client = createMockClient(
+      [{ name: 'flights', inputSchema: { type: 'object' } }],
+      { content: [{ type: 'text', text: 'Flight list: 1 item(s)' }], structuredContent: flights },
+    )
+    await syncTools(client as never, ctx, defaultOpts, new Map())
+    const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('s1'), name: 'mcp__srv__flights', arguments: {} })
+    expect(result.isError).toBe(false)
+    expect(result.content).toEqual([{ type: 'text', text: `Flight list: 1 item(s)\n${JSON.stringify(flights)}` }])
+    if (result.isError) throw new Error('expected MCP success')
+    // The canonical value keeps both halves untouched.
+    expect(result.value).toEqual({ content: [{ type: 'text', text: 'Flight list: 1 item(s)' }], structuredContent: flights })
+  })
+
+  it('does not duplicate structuredContent a text block already echoes', async () => {
+    const client = createMockClient(
+      [{ name: 'flights', inputSchema: { type: 'object' } }],
+      { content: [{ type: 'text', text: JSON.stringify(flights, null, 2) }], structuredContent: flights },
+    )
+    await syncTools(client as never, ctx, defaultOpts, new Map())
+    const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('s2'), name: 'mcp__srv__flights', arguments: {} })
+    expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(flights, null, 2) }])
+  })
+
+  it('renders structuredContent alone when the content array is empty', async () => {
+    const client = createMockClient(
+      [{ name: 'flights', inputSchema: { type: 'object' } }],
+      { content: [], structuredContent: flights },
+    )
+    await syncTools(client as never, ctx, defaultOpts, new Map())
+    const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('s3'), name: 'mcp__srv__flights', arguments: {} })
+    expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(flights) }])
+  })
+})

@@ -171,7 +171,7 @@ The tool-definition prefix stays stable while the discovered set and schemas are
 
 #### What the model sees
 
-The public tool name and JSON arguments remain in assistant history. The canonical value retains the complete MCP JSON blocks and optional structured content for programmatic and PTC mode callers; supported image blocks project beside text in their original order after exact route-capability proof. Refused images, audio, embedded resources, resource links, and unknown blocks remain visible as bounded text diagnostics, and MCP `isError` rejects the call before image persistence.
+The public tool name and JSON arguments remain in assistant history. The canonical value retains the complete MCP JSON blocks and optional structured content for programmatic and PTC mode callers; supported image blocks project beside text in their original order after exact route-capability proof. When a result carries `structuredContent` and no text block echoes that same JSON, the model text ends with the structured value as compact JSON, so a server that puts the payload there and only a summary line in `content` still reaches the model. Refused images, audio, embedded resources, resource links, and unknown blocks remain visible as bounded text diagnostics, and MCP `isError` rejects the call before image persistence.
 
 #### Token effect
 

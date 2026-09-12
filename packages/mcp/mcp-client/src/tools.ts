@@ -294,8 +294,7 @@ function createOutput(rawName: string, structuredSchema: JsonSchemaNode | undefi
       additionalProperties: false,
     },
     render(_args: unknown, value: JsonValue) {
-      const result = value as unknown as McpResult
-      return [{ type: 'text', text: extractText(result.content, rawName) }]
+      return [{ type: 'text', text: modelText(value as unknown as McpResult, rawName) }]
     },
   }
 }
@@ -362,12 +361,47 @@ function createExecutor(
         : {},
     }
     if (containsImage(content)) {
-      const fallback: ContentBlock[] = [{ type: 'text', text: extractText(content, rawName) }]
+      const fallback: ContentBlock[] = [{ type: 'text', text: modelText(value, rawName) }]
       const projected = await prepareImageProjection(ctx, exec, content, rawName)
       projections.set(exec, { value, fallback, content: projected })
     }
     return value
   }
+}
+
+/**
+ * Model-visible text for one canonical result: the projected content text,
+ * then `structuredContent` as compact JSON unless a text block already carries
+ * that same JSON. The MCP specification asks a server with an `outputSchema`
+ * to echo the structured result in a text block for older clients; a server
+ * that sends only a summary line there would otherwise leave the model with
+ * the summary and no data.
+ * @param result - canonical bridge result.
+ * @param rawName - MCP wire tool name for diagnostics.
+ * @returns the text the model reads for this result.
+ */
+function modelText(result: McpResult, rawName: string): string {
+  if (result.structuredContent === undefined) return extractText(result.content, rawName)
+  const json = JSON.stringify(result.structuredContent)
+  // An empty content array is not "no model-visible content" when the
+  // structured half carries the payload; the JSON is the content.
+  if (result.content.length === 0) return json
+  const text = extractText(result.content, rawName)
+  return textEchoesStructured(result.content, result.structuredContent) ? text : `${text}\n${json}`
+}
+
+/** Whether any text block parses to a JSON value deep-equal to `structured`. */
+function textEchoesStructured(content: JsonValue[], structured: JsonValue): boolean {
+  return content.some((block) => {
+    if (!isRecord(block) || block.type !== 'text' || typeof block.text !== 'string') return false
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(block.text)
+    } catch {
+      return false // a prose text block is not JSON; nothing else throws here
+    }
+    return isDeepStrictEqual(parsed, structured)
+  })
 }
 
 /** Whether an untrusted MCP content array contains a declared image block. */
