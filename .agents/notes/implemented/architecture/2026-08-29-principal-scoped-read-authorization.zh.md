@@ -22,7 +22,7 @@ Harness 不能根据 `role` 或 `username` 推导该判定。两者都是认证�
 
 Session Controller 在一元调用或 stream 打开时捕获一次 API Gateway principal。每个指向既有 Session 的 Remote 操作都会先应用相同的可读性检查，再读取、恢复或变更它。`session.list` 在摘要投影与冷工件探测前授权候选 id。`session.search` 在内容查询与 ranked pagination 前收窄候选项，因此被拒绝的结果既不会泄露，也不会占用响应 limit。Page、附件与 skill 读取在观测日志前授权；direct subagent address 对其普通父 Session 授权，随后继续执行独立的持久父子关系校验。文件引用补全会先授权 wire Session id，再解析或恢复其 Agent。
 
-`session.follow` 会在观测日志前以及每个 frame 发布前授权，因此撤权会阻止下一条 frame 发布。`session.control` 过滤 opening baseline 中的全部三张 map，并在 yield 此后每个按 Session 寻址的 frame 前解析权限。因此授权同时覆盖初始状态与实时事件；只过滤 baseline 会泄露此后的全局 queue、job 或 projection 更新。
+`session.follow` 会在观测日志前以及每个 frame 发布前授权，因此撤权会阻止下一条 frame 发布。显式请求的[有界 Assistant 批次](../bug-fix/2026-09-13-bounded-assistant-follow-batches.zh.md)是一次发布帧，接受一次新的检查。`session.control` 过滤 opening baseline 中的全部三张 map，并在 yield 此后每个按 Session 寻址的 frame 前解析权限。因此授权同时覆盖初始状态与实时事件；只过滤 baseline 会泄露此后的全局 queue、job 或 projection 更新。
 
 ### Workspace 读取
 

@@ -383,7 +383,7 @@ describe('prompt and cancel errors', () => {
     expect(steered).toEqual({ ok: true, value: { accepted: true } })
     expect(cancelled).toEqual({ ok: true, value: { accepted: true } })
     expect(mock.log.requests(FOLLOW)).toEqual([
-      { address: { kind: 'subagent', ...CHILD }, assistantStream: true, maxMessages: 50 },
+      { address: { kind: 'subagent', ...CHILD }, assistantStream: true, assistantStreamBatch: true, maxMessages: 50 },
     ])
     expect(mock.log.requests(PAGE)).toEqual([])
     // The prompt mode crosses the wire as the request's delivery.
@@ -479,7 +479,7 @@ describe('prompt and cancel errors', () => {
     expect(mock.log.requests('subagents/prompt')).toMatchObject([CHILD])
     expect(mock.log.calls('subagents/interruptByParent').map(call => call.args)).toEqual([[SID, PARENT, 'continuable']])
     expect(mock.log.requests(FOLLOW)).toEqual([
-      { address: { kind: 'subagent', ...CHILD, mode: 'one-shot' }, assistantStream: true, maxMessages: 50 },
+      { address: { kind: 'subagent', ...CHILD, mode: 'one-shot' }, assistantStream: true, assistantStreamBatch: true, maxMessages: 50 },
     ])
     expect(mock.log.requests(PAGE)).toEqual([])
     expect(mock.log.requests('session/cancel')).toEqual([])

@@ -95,6 +95,25 @@ function pageEvents(page: SessionPage): SessionWireEvent[] {
 }
 
 describe('Session history raw journal', () => {
+  it('rejects assistant batching without the assistant stream opt-in', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStreamBatch: true,
+    }, abort.signal)[Symbol.asyncIterator]()
+    try {
+      await expect(iterator.next()).rejects.toMatchObject({
+        code: 'gateway/bad-request',
+        message: 'assistantStreamBatch requires assistantStream',
+      })
+    } finally {
+      await disposeFollow(ctx, iterator, abort)
+    }
+  })
+
   it('opens an empty opted-in Assistant baseline before any live attempt exists', async () => {
     const { ctx } = await harness()
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
@@ -476,7 +495,7 @@ describe('Session history raw journal', () => {
     }
   })
 
-  it('does not replay a buffered Assistant frame already represented by the opening baseline', async () => {
+  it.each([false, true])('does not replay buffered Assistant frames represented by the opening baseline with batching=%s', async (batched) => {
     const { ctx } = await harness()
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
     const agent = { id: session.id, session, status: 'running', ctx } as Agent
@@ -493,6 +512,7 @@ describe('Session history raw journal', () => {
     const iterator = history.follow({
       address: { kind: 'session', sessionId: session.id },
       assistantStream: true,
+      ...(batched ? { assistantStreamBatch: true as const } : {}),
     }, abort.signal)[Symbol.asyncIterator]()
 
     try {
@@ -526,7 +546,7 @@ describe('Session history raw journal', () => {
     }
   })
 
-  it('does not release an old-lifecycle frame after the opening baseline resets to revision one', async () => {
+  it.each([false, true])('does not release old-lifecycle frames after the baseline resets to revision one with batching=%s', async (batched) => {
     const { ctx } = await harness()
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
     const agent = { id: session.id, session, status: 'running', ctx } as Agent
@@ -551,6 +571,7 @@ describe('Session history raw journal', () => {
     const iterator = history.follow({
       address: { kind: 'session', sessionId: session.id },
       assistantStream: true,
+      ...(batched ? { assistantStreamBatch: true as const } : {}),
     }, abort.signal)[Symbol.asyncIterator]()
 
     try {

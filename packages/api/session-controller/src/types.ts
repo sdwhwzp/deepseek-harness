@@ -453,6 +453,8 @@ export interface SessionFollowRequest {
   readonly maxMessages?: number
   /** Include process-local assistant presentation frames for the Web client. */
   readonly assistantStream?: true
+  /** Permit bounded batches of queued assistant frames; requires `assistantStream: true`. */
+  readonly assistantStreamBatch?: true
 }
 
 /** One active assistant attempt in a reconnect opening snapshot. */
@@ -526,6 +528,7 @@ export type SessionFollowFrame =
   }
   | SessionEventEntry
   | { readonly type: 'assistant-stream'; readonly frame: SessionAssistantStreamFrame }
+  | { readonly type: 'assistant-stream-batch'; readonly frames: readonly SessionAssistantStreamFrame[] }
 
 /** One pending inbox occurrence in the authoritative queue snapshot. */
 export interface SessionQueuedItem {

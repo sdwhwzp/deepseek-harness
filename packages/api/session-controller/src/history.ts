@@ -37,6 +37,17 @@ import { SessionAssistantStreamAccumulator } from './assistant-stream.ts'
 
 const DEFAULT_MAX_MESSAGES = 50
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
+// Protocol ceilings bound one authorization and delivery unit, including the batch envelope.
+const ASSISTANT_BATCH_MAX_FRAMES = 128
+const ASSISTANT_BATCH_MAX_BYTES = 64 * 1024
+
+type BufferedFollowFrame =
+  | { readonly type: 'event'; readonly event: SessionEvent }
+  | {
+    readonly type: 'assistant-stream'
+    readonly frame: SessionAssistantStreamFrame
+    readonly ordinal: number
+  }
 
 /** Implements cold-safe history operations delegated by the Session Controller. */
 export class SessionHistoryController {
@@ -120,14 +131,7 @@ export class SessionHistoryController {
     validateFollowRequest(request)
     const { address } = request
     const target = addressId(address)
-    const buffered = new Deque<
-      | { readonly type: 'event'; readonly event: SessionEvent }
-      | {
-        readonly type: 'assistant-stream'
-        readonly frame: SessionAssistantStreamFrame
-        readonly ordinal: number
-      }
-    >()
+    const buffered = new Deque<BufferedFollowFrame>()
     let snapshotCursor: SessionSeqCursor | undefined
     let assistantStreamOrdinal = 0
     let wake: (() => void) | undefined
@@ -218,7 +222,9 @@ export class SessionHistoryController {
         }
         if (item.type === 'assistant-stream') {
           if (item.ordinal > assistantStreamOrdinalCut) {
-            yield { type: 'assistant-stream', frame: item.frame }
+            yield request.assistantStreamBatch === true
+              ? takeAssistantBatch(item.frame, buffered)
+              : { type: 'assistant-stream', frame: item.frame }
           }
           continue
         }
@@ -275,6 +281,33 @@ export class SessionHistoryController {
 
 }
 
+/** Drain only the already queued assistant prefix; durable entries remain delivery barriers. */
+function takeAssistantBatch(
+  first: SessionAssistantStreamFrame,
+  buffered: Deque<BufferedFollowFrame>,
+): SessionFollowFrame {
+  const frames = [first]
+  let bytes = Buffer.byteLength(JSON.stringify({ type: 'assistant-stream-batch', frames }))
+  while (frames.length < ASSISTANT_BATCH_MAX_FRAMES && bytes < ASSISTANT_BATCH_MAX_BYTES) {
+    const next = buffered.popFront()
+    if (next === undefined) break
+    if (next.type === 'event') {
+      buffered.pushFront(next)
+      break
+    }
+    const nextBytes = Buffer.byteLength(JSON.stringify(next.frame)) + 1
+    if (bytes + nextBytes > ASSISTANT_BATCH_MAX_BYTES) {
+      buffered.pushFront(next)
+      break
+    }
+    frames.push(next.frame)
+    bytes += nextBytes
+  }
+  return frames.length === 1
+    ? { type: 'assistant-stream', frame: first }
+    : { type: 'assistant-stream-batch', frames }
+}
+
 function cursorBeforeNext(nextSeq: SessionLogOffsetType): SessionSeqCursor {
   return nextSeq === 0 ? -1 : SessionSeq(nextSeq - 1)
 }
@@ -320,6 +353,9 @@ function validatePageRequest(request: SessionPageRequest): void {
 }
 
 function validateFollowRequest(request: SessionFollowRequest): void {
+  if (request.assistantStreamBatch === true && request.assistantStream !== true) {
+    throw new RemoteError('gateway/bad-request', 'assistantStreamBatch requires assistantStream', {})
+  }
   if (request.maxMessages !== undefined
     && (!Number.isSafeInteger(request.maxMessages) || request.maxMessages <= 0)) {
     throw new RemoteError('gateway/bad-request', 'maxMessages must be a positive safe integer', {})

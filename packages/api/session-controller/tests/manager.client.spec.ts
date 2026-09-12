@@ -310,7 +310,7 @@ describe('subagent catalogs', () => {
         address: {
           kind: 'subagent', parentSessionId: S1, childSessionId: S2, mode: 'continuable',
         },
-        assistantStream: true,
+        assistantStream: true, assistantStreamBatch: true,
         maxMessages: 50,
       },
     ])

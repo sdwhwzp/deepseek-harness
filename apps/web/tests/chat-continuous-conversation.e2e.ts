@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { ToolCallId, expandAssistantStream, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { ReplayEntry, ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
@@ -178,6 +178,10 @@ describe('web e2e: continuous conversation grown through the composer', () => {
   let tripwire: ReturnType<typeof watchConsole>
   const consoleWarnings: string[] = []
   const sessionEvents: SessionEvent[] = []
+  const assistantBatches: unknown[] = []
+  const finalStreamHeld = Promise.withResolvers<undefined>()
+  const releaseFinalStream = Promise.withResolvers<undefined>()
+  let restoreFollow = (): void => {}
   const specs = Array.from({ length: TURN_COUNT }, (_, offset) => turnSpec(offset + 1))
 
   beforeAll(async () => {
@@ -193,9 +197,35 @@ describe('web e2e: continuous conversation grown through the composer', () => {
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => {
       sessionEvents.push(event)
     })
+    const follow = scaffold.ctx.sessionController.follow.bind(scaffold.ctx.sessionController)
+    const followSpy = vi.spyOn(scaffold.ctx.sessionController, 'follow').mockImplementation(async function* (request, signal) {
+      for await (const frame of follow(request, signal)) {
+        yield frame
+        const frames = frame.type === 'assistant-stream' ? [frame.frame]
+          : frame.type === 'assistant-stream-batch' ? frame.frames : []
+        if (frames.some(member => member.type === 'start' && member.turn === TURN_COUNT)) {
+          // Hold the real carrier consumer while the replay completes, leaving its live suffix queued in History.
+          finalStreamHeld.resolve(undefined)
+          await releaseFinalStream.promise
+          signal.throwIfAborted()
+        }
+      }
+    })
+    restoreFollow = () => { followSpy.mockRestore() }
     browser = await chromium.launch()
     page = await newEnglishPage(browser, 900)
     tripwire = watchConsole(page)
+    page.on('websocket', (socket) => {
+      if (new URL(socket.url()).pathname !== '/api/remote.mux') return
+      socket.on('framereceived', ({ payload }) => {
+        const frame: unknown = JSON.parse(payload.toString())
+        if (typeof frame === 'object' && frame !== null && 'type' in frame && frame.type === 'item'
+          && 'value' in frame && typeof frame.value === 'object' && frame.value !== null
+          && 'type' in frame.value && frame.value.type === 'assistant-stream-batch') {
+          assistantBatches.push(frame.value)
+        }
+      })
+    })
     page.on('console', (message) => {
       if (message.type() === 'warning') consoleWarnings.push(message.text())
     })
@@ -206,6 +236,8 @@ describe('web e2e: continuous conversation grown through the composer', () => {
 
   afterAll(async () => {
     const failures: unknown[] = []
+    releaseFinalStream.resolve(undefined)
+    restoreFollow()
     await browser?.close().catch((error: unknown) => failures.push(error))
     await scaffold?.close().catch((error: unknown) => failures.push(error))
     if (replayDir !== undefined) {
@@ -249,6 +281,11 @@ describe('web e2e: continuous conversation grown through the composer', () => {
       await expect.poll(() => userRow.count(), { timeout: 10_000 }).toBe(1)
       expect(await userRow.getAttribute('data-chat-flow-kind')).toBe('user')
       expect(await userRow.textContent()).toContain(spec.userMarker)
+      if (spec.index === TURN_COUNT) {
+        await finalStreamHeld.promise
+        await settled
+        releaseFinalStream.resolve(undefined)
+      }
       await page.getByText(spec.firstMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
       const settledSessionId = await settled
       if (sessionId === undefined) {
@@ -297,6 +334,18 @@ describe('web e2e: continuous conversation grown through the composer', () => {
       await expect.poll(() => assistantRow.count(), { timeout: 10_000 }).toBe(1)
       expect(await assistantRow.getAttribute('data-chat-flow-kind')).toBe('assistant-step')
       expect(await assistantRow.textContent()).toContain(spec.doneMarker)
+      if (spec.index === TURN_COUNT) {
+        expect(assistantBatches).toContainEqual(expect.objectContaining({
+          type: 'assistant-stream-batch',
+          frames: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'chunk',
+              chunk: { type: 'text-delta', index: 0, text: spec.deltas.at(-1) },
+            }),
+          ]) as unknown,
+        }))
+        expect(await assistantRow.textContent()).toContain(spec.deltas.join(''))
+      }
 
       const calls = turnEvents.filter((event): event is SessionEvent<'tool/call'> => event.type === 'tool/call')
       const results = turnEvents.filter((event): event is SessionEvent<'tool/result'> => event.type === 'tool/result')

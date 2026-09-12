@@ -179,6 +179,7 @@ export class SessionEventStream extends RemoteJournalStream<
     for await (const frame of this.remote.session.follow({
       address: this.address,
       assistantStream: true,
+      assistantStreamBatch: true,
       ...(request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages }),
     }, signal)) {
       if (frame.type === 'snapshot') {
@@ -203,15 +204,21 @@ export class SessionEventStream extends RemoteJournalStream<
         }
         continue
       }
-      if (frame.type === 'assistant-stream') {
-        const expected = (assistantRevision ?? 0) + 1
-        if (frame.frame.revision !== expected) {
-          throw new RemoteStreamCarrierError(
-            `session assistant stream skipped revision ${String(expected)}`,
-          )
+      if (frame.type === 'assistant-stream' || frame.type === 'assistant-stream-batch') {
+        const frames = frame.type === 'assistant-stream' ? [frame.frame] : frame.frames
+        if (frames.length === 0) {
+          throw new RemoteError('gateway/internal', 'session assistant stream received an empty batch', {})
         }
-        assistantRevision = frame.frame.revision
-        yield { type: 'notification', notification: frame.frame }
+        for (const assistantFrame of frames) {
+          const expected = (assistantRevision ?? 0) + 1
+          if (assistantFrame.revision !== expected) {
+            throw new RemoteStreamCarrierError(
+              `session assistant stream skipped revision ${String(expected)}`,
+            )
+          }
+          assistantRevision = assistantFrame.revision
+          yield { type: 'notification', notification: assistantFrame }
+        }
         continue
       }
       assertSessionWireEvent(frame.event)

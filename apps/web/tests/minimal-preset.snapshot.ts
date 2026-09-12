@@ -136,6 +136,16 @@ describe('minimal agent preset', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
+    const followRequests: unknown[] = []
+    page.on('websocket', (socket) => {
+      if (new URL(socket.url()).pathname !== '/api/remote.mux') return
+      socket.on('framesent', ({ payload }) => {
+        const frame: unknown = JSON.parse(payload.toString())
+        if (typeof frame === 'object' && frame !== null
+          && 'endpoint' in frame && frame.endpoint === 'session/follow'
+          && 'payload' in frame) followRequests.push(frame.payload)
+      })
+    })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
 
@@ -146,6 +156,11 @@ describe('minimal agent preset', () => {
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await page.getByText('MINIMAL_PRESET_REQUEST_OK', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(followRequests).toContainEqual({ args: { request: expect.objectContaining({
+      address: { kind: 'session', sessionId: 'minimal-preset-smoke' },
+      assistantStream: true,
+      assistantStreamBatch: true,
+    }) as unknown } })
 
     const process = page.locator('[data-turn-process]')
     await process.waitFor({ timeout: 15_000 })
