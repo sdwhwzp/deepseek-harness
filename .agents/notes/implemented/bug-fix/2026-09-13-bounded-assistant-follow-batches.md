@@ -20,6 +20,8 @@ The Host applies a fresh principal-access check immediately before publishing ea
 
 The Client expands every batch member in order through its existing revision, dense-index, and settlement validation. The optimization changes the number of transport envelopes and authorization decisions, not the underlying stream members. Requests without the batch option receive scalar frames; the batch option without Assistant-stream opt-in is invalid. The [embedded-stream decision](../architecture/2026-09-01-v2-embedded-assistant-streams.md) still owns durable attempt evidence, while [frame-coalesced publication](../testing/2026-08-03-opt-in-reasoning-chunk-browser-stress.md) independently bounds rendering work after ingestion.
 
+A release of the batch opt-in must include the Session Controller and the [API Remotes assembly](../../../../packages/api/remotes/README.md#build-boundary) built from the same request declaration. API Remotes inlines the generated Client codec: an assembly without the batch field strips that field before sending the request, even when the installed Session Controller's Client and Host both support it. A browser refresh loads the installed assembly; it cannot repair a stale assembly artifact.
+
 ## Measurement
 
 The component measurement uses the production Session Controller and history follower from source under Vitest, Node.js 22.21.1 on macOS. It is evidence about publication work, not a built-artifact, network, or browser latency result. Concurrent build activity can affect the samples; no timing threshold is adopted.
@@ -39,6 +41,8 @@ Scalar samples are 3102.60, 3118.87, and 3100.85 ms; batched samples are 409.55,
 ## Verification
 
 The [authorization regression](../../../../packages/api/session-controller/tests/assistant-stream-authorization.host.spec.ts) compares complete ordered output for a 1,610-chunk burst with start, durable barrier, and end. Opening-inclusive checks fall from 1,615 to 18. The original scalar implementation fails the bounded-check assertion; the batched implementation passes. This count-based negative control does not depend on host timing.
+
+The [built Client regression](../../../../packages/api/remotes/tests/built-lib.e2e.ts) runs the published Session adapter, Gateway, and API Remotes bundle together, replacing only the Connection carrier. It checks the serialized batch opt-in, ordered receipt of every batch member, and cancellation cleanup. The deployed assembly without the batch field fails the outgoing-request assertion. Running against a fully rebuilt workspace validates that artifact set; deployment verification must also cover the selected release artifacts.
 
 ## Alternatives considered
 

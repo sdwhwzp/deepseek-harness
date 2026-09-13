@@ -5,8 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Built-artifact smoke for the first generated Remote: plain Node boots the
- * Host and Browser bundle handoffs, then crosses the shared `/api` HTTP route.
+ * Built-artifact smokes for generated Client requests and Host routing.
+ * Child processes isolate bundle registration and Connection globals.
  */
 
 const packageDir = fileURLToPath(new URL('..', import.meta.url))
@@ -18,6 +18,8 @@ const requiredArtifacts = [
   'packages/client/connection/lib/client.js',
   'packages/client/connection/lib/index.js',
   'packages/api/remotes/lib/client.js',
+  'packages/api/session-controller/lib/client.js',
+  'packages/client/store/lib/index.js',
   'packages/core/agent/lib/index.js',
   'packages/core/session/lib/index.js',
   'packages/goal/goal/lib/index.js',
@@ -29,7 +31,130 @@ const requiredArtifacts = [
   'packages/session/session-projection/lib/index.js',
 ].every(path => existsSync(artifact(path)))
 
-describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
+describe.skipIf(!requiredArtifacts)('Remote built LIB chain', () => {
+  it('preserves the Session stream batch request through the assembled Client codec', async () => {
+    const urls = Object.fromEntries(Object.entries({
+      apiGatewayClient: 'packages/api/gateway/lib/client.js',
+      registryClient: 'packages/typert/registry/lib/client.js',
+      remotesClient: 'packages/api/remotes/lib/client.js',
+      sessionClient: 'packages/api/session-controller/lib/client.js',
+    }).map(([key, path]) => [key, artifactUrl(path)]))
+    const script = `
+      import * as cordis from '@deepseek-ai/cordis'
+      import * as zod from 'zod'
+
+      const urls = ${JSON.stringify(urls)}
+      const store = await import(${JSON.stringify(artifactUrl('packages/client/store/lib/index.js'))})
+      const handoffs = new Map()
+      globalThis.window = {
+        __ModuleLoader__: { load(handoff) { handoffs.set(handoff.id, handoff) } },
+      }
+      for (const url of Object.values(urls)) await import(url)
+      const modules = new Map([
+        ['@deepseek-ai/cordis', cordis], ['zod', zod], ['@deepseek-ai/dsh-client-store', store],
+      ])
+      const instantiate = id => {
+        const handoff = handoffs.get(id)
+        if (handoff === undefined) throw new Error('missing Client bundle handoff ' + id)
+        const exports = handoff.factory(specifier => {
+          if (!modules.has(specifier)) throw new Error('unexpected Client external ' + specifier)
+          return modules.get(specifier)
+        })
+        modules.set(id + '/client', exports)
+        return exports
+      }
+
+      const requests = []
+      let carrierClosed = false
+      const frames = [
+        { type: 'start', attemptId: 'built-attempt', revision: 1, turn: 1, step: 1, startedAfterSeq: -1 },
+        {
+          type: 'chunk', attemptId: 'built-attempt', revision: 2, index: 0, time: 1,
+          chunk: { type: 'text-delta', index: 0, text: 'complete stream' },
+        },
+        {
+          type: 'end', attemptId: 'built-attempt', revision: 3, index: 1,
+          outcome: { kind: 'abandoned' },
+        },
+      ]
+      const client = new cordis.Context()
+      client.provide('connection', {
+        generation: { getSnapshot: () => ({ host: { home: '/fixture' } }) },
+        registerGenerationSource: () => () => {},
+        start: () => ({ stop() {} }),
+        rpc: {
+          async *open(channel, endpoint, payload, signal) {
+            requests.push(JSON.parse(JSON.stringify({ channel, endpoint, payload })))
+            try {
+              yield {
+                type: 'snapshot', cursor: -1, records: [], hasMore: false,
+                projections: { asOfSeq: -1, values: {} }, assistantStream: { revision: 0 },
+              }
+              yield { type: 'assistant-stream-batch', frames }
+              if (!signal.aborted) {
+                await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }))
+              }
+            } finally {
+              carrierClosed = true
+            }
+          },
+        },
+      })
+      let stream
+      try {
+        for (const id of [
+          '@deepseek-ai/dsh-typert-registry',
+          '@deepseek-ai/dsh-api-gateway',
+          '@deepseek-ai/dsh-api-remotes',
+        ]) {
+          const plugin = instantiate(id)
+          await client.plugin({ inject: plugin.inject, apply: plugin.apply })
+        }
+        const { SessionEventStream } = instantiate('@deepseek-ai/dsh-api-session-controller')
+        const completed = Promise.withResolvers()
+        const received = []
+        stream = new SessionEventStream(client.remote, { kind: 'session', sessionId: 'built-session' }, {
+          publish(change) {
+            if (change.type !== 'assistant-stream') return
+            received.push(change.frame)
+            if (change.frame.type === 'end') completed.resolve()
+          },
+          failed: completed.reject,
+        })
+        await stream.open({ maxMessages: 50 })
+        await completed.promise
+        await stream.dispose()
+        console.log(JSON.stringify({ requests, received, carrierClosed }))
+      } finally {
+        await stream?.dispose()
+        await client.fiber.dispose()
+      }
+    `
+
+    const result = await runPlainNode(script)
+    expect(result.exitCode, `stderr:\n${result.stderr}`).toBe(0)
+    const output = JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
+      requests: unknown[]
+      received: { type: string; revision: number; chunk?: { text: string } }[]
+      carrierClosed: boolean
+    }
+    expect(output.requests).toEqual([{
+      channel: '/api',
+      endpoint: 'session/follow',
+      payload: { args: { request: {
+        address: { kind: 'session', sessionId: 'built-session' },
+        assistantStream: true,
+        assistantStreamBatch: true,
+        maxMessages: 50,
+      } } },
+    }])
+    expect(output.received.map(frame => [frame.type, frame.revision])).toEqual([
+      ['start', 1], ['chunk', 2], ['end', 3],
+    ])
+    expect(output.received[1]?.chunk?.text).toBe('complete stream')
+    expect(output.carrierClosed).toBe(true)
+  })
+
   it('runs root and Agent-scoped calls through generated bundles and real HTTP', async () => {
     const urls = Object.fromEntries(Object.entries({
       agent: 'packages/core/agent/lib/index.js',

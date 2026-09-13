@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-13-bounded-assistant-follow-batches.md
-2026-09-13-bounded-assistant-follow-batches.md: f133d5d103932bb0bd42f58e0f4bc3883a3b5327
-2026-09-13-bounded-assistant-follow-batches.zh.md: 57fb302b1fed73480107f264eb5556664ab59a60
+2026-09-13-bounded-assistant-follow-batches.md: 9c70a7279565f3249fcc7e275ba074f196380516
+2026-09-13-bounded-assistant-follow-batches.zh.md: dc3d434ce6d76a0928bf88520c0e68ddef182d7c

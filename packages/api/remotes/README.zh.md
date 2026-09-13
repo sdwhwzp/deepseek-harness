@@ -55,6 +55,8 @@ Host entry 为每条 Client 流独立注册一组 allowlist listener 和一个�
 
 包内 `clientBundle(..., { hostPhase: true })` 让 Host tsdown 打包 Host 入口，让后续 Client tsdown 只打包 browser 入口。普通 Client 插件仍使用单一 Client project，并在 Client tsdown 阶段一起生成 Node loader 入口和 browser bundle；只有两组源码需要不同 compiler face 时才拆分。
 
+浏览器 bundle 内嵌其选定的 `/remote` codec。因此，部署发生变化的 Remote 请求时，必须随所属包一起重新构建并发布本装配；仅替换所属包的生成文件不会更新浏览器的请求校验。[构建产物 Client 回归测试](tests/built-lib.e2e.ts)检查 Session 适配器的批次选项经过本装配实际 codec 后是否到达 Connection 载体。部署必须针对组合后的包集合运行该检查，因为完整源码构建无法发现混合安装。
+
 <a id="model-experience"></a>
 ## 模型体验
 

@@ -20,6 +20,8 @@ Host 在发布每个响应之前重新检查 principal-access，批次也不例�
 
 Client 按顺序展开每个批次成员，沿用已有 revision、密集 index 和 settlement 校验。优化改变传输外层消息及鉴权决策的数量，不改变底层流成员。未请求批次选项的调用方收到标量帧；未启用 Assistant 流时请求批次选项无效。[内嵌流决策](../architecture/2026-09-01-v2-embedded-assistant-streams.zh.md)仍负责持久 attempt 证据，[按帧合并发布](../testing/2026-08-03-opt-in-reasoning-chunk-browser-stress.zh.md)则独立约束接收后的渲染工作。
 
+发布批次选项时，必须包含由同一份请求声明构建的 Session Controller 与 [API Remotes 装配](../../../../packages/api/remotes/README.zh.md#build-boundary)。API Remotes 内嵌生成的 Client codec：不包含批次字段的装配会在发送请求前移除该字段，即使已安装的 Session Controller 的 Client 与 Host 都支持它。刷新浏览器会加载已安装的装配，无法修复过期的装配产物。
+
 ## 测量
 
 组件测量在 macOS、Node.js 22.21.1 的 Vitest 中通过源码运行生产 Session Controller 与历史跟随实现。它提供发布工作的证据，不代表构建产物、网络或浏览器的延迟。并行构建可能影响样本，因此不据此设定时间阈值。
@@ -39,6 +41,8 @@ Client 按顺序展开每个批次成员，沿用已有 revision、密集 index 
 ## 验证
 
 [鉴权回归测试](../../../../packages/api/session-controller/tests/assistant-stream-authorization.host.spec.ts)比较包含 1,610 个分片、开始帧、持久事件屏障与结束帧的完整有序输出。包含开场的检查次数从 1,615 次降至 18 次。原标量实现无法通过检查次数上限断言，批次实现通过。这个基于计数的负向控制不依赖主机计时。
+
+[构建产物 Client 回归测试](../../../../packages/api/remotes/tests/built-lib.e2e.ts)组合运行发布的 Session 适配器、Gateway 与 API Remotes bundle，仅替换 Connection 载体。它检查序列化后的批次选项、每个批次成员的有序接收与取消清理。不包含批次字段的线上装配无法通过传出请求断言。针对完整重建工作区运行测试只验证该产物集合；部署验证还必须覆盖选定的发布产物。
 
 ## 考虑过的替代方案
 

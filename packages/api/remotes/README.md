@@ -55,6 +55,8 @@ That exception is not just a `files` entry. The root `tsconfig.base.json` maps `
 
 The package-local `clientBundle(..., { hostPhase: true })` makes Host tsdown bundle the Host entry and the later Client tsdown bundle only the browser entry. Ordinary Client plugins remain single Client projects and produce both their Node loader entry and browser bundle during Client tsdown; split only when the two source sets require different compiler faces.
 
+The browser bundle inlines its selected `/remote` codecs. Deploying a changed Remote request therefore requires rebuilding and publishing this assembly with the owning package; replacing the owner's generated files alone leaves the browser's request validation unchanged. The [built Client regression](tests/built-lib.e2e.ts) checks that the Session adapter's batch opt-in reaches the Connection carrier through this assembly's actual codec. A deployment must run that check against its assembled package set, since a clean source build cannot detect a mixed installation.
+
 <a id="model-experience"></a>
 ## Model Experience
 
