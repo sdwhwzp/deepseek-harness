@@ -12,6 +12,8 @@ import type {
 import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { Branded } from '@deepseek-ai/dsh-brand'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { DEFAULT_MAX_REQUEST_IMAGE_BYTES, resolveProfiles } from '../src/config.ts'
@@ -121,6 +123,27 @@ describe('PiAiAdapter provider routing', () => {
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(server.headers[0]?.['x-company']).toBe('private')
     expect(server.headers[0]?.['user-agent']).toBe(userAgent())
+  })
+
+  it('sends the session id under the configured header, for a provider that routes per conversation', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url, { sessionHeader: 'x-opencode-session' })
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: brandString<Branded<'SessionId'>>('conversation-7') })
+    expect(server.headers[0]?.['x-opencode-session']).toBe('conversation-7')
+  })
+
+  it('omits the session header when the request carries no session', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url, { sessionHeader: 'x-opencode-session' })
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[0]?.['x-opencode-session']).toBeUndefined()
+  })
+
+  it('sends no session header when the route names none', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: brandString<Branded<'SessionId'>>('conversation-7') })
+    expect(server.headers[0]?.['x-opencode-session']).toBeUndefined()
   })
 
   it('forwards common stream options and profile reasoning', async () => {

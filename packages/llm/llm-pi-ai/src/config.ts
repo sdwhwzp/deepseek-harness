@@ -18,7 +18,7 @@ import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import {
@@ -149,6 +149,15 @@ export interface PiAiProviderProfile {
   defaultInput?: PiAiModality[]
   /** Provider request headers, validated against Fetch when the profile resolves; Harness attribution wins reserved names. */
   headers?: Record<string, string>
+  /**
+   * Header name carrying the calling session's id on every completion request,
+   * for a provider that routes or caches per conversation — OpenCode Go
+   * refuses a request without `x-opencode-session`. The value is the Harness
+   * session id, stable for one conversation, so a static {@link headers} entry
+   * cannot stand in: it would pin every conversation to one routing bucket.
+   * A request that carries no session id is sent without the header.
+   */
+  sessionHeader?: string
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */
@@ -331,6 +340,7 @@ const profile = z.object({
   defaultMaxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
   defaultInput: z.array(z.union(MODALITIES)).default([...DEFAULT_INPUT]),
   headers: z.dict(z.string()),
+  sessionHeader: z.string(),
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
   cacheRetention: z.union(['none', 'short', 'long']),
@@ -381,6 +391,33 @@ function rejectRemovedFields(provider: string, source: PiAiProviderProfile): voi
   }
 }
 
+/**
+ * Reject a session-header name Fetch cannot send, or one the Harness owns.
+ *
+ * Attribution names win collisions when the request is built, so a route
+ * naming one here would configure a header that silently never carries the
+ * session id.
+ * @param provider - route name, for the diagnostic.
+ * @param name - the configured header name, or undefined when the route sends none.
+ * @throws when the name is unusable or reserved.
+ */
+function assertValidSessionHeader(provider: string, name: string | undefined): void {
+  if (name === undefined) return
+  try {
+    new Headers([[name, 'probe']])
+  } catch {
+    throw new Error(
+      `llm-pi-ai: provider "${provider}" sessionHeader "${name}" is not a valid HTTP field name`,
+    )
+  }
+  if (new Set(Object.keys(attributionHeaders()).map(entry => entry.toLowerCase())).has(name.toLowerCase())) {
+    throw new Error(
+      `llm-pi-ai: provider "${provider}" sessionHeader "${name}" is a Harness attribution header;`
+      + ' attribution wins that name and the session id would never be sent',
+    )
+  }
+}
+
 /** Reject a profile header that Fetch cannot put on a provider request. */
 function assertValidHeaders(provider: string, headers: Readonly<Record<string, string>> | undefined): void {
   for (const [name, value] of Object.entries(headers ?? {})) {
@@ -422,6 +459,7 @@ export function resolveProfiles(
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`)
     }
     assertValidHeaders(provider, source.headers)
+    assertValidSessionHeader(provider, source.sessionHeader)
     const streamIdleTimeoutMs = source.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
     if (!Number.isFinite(streamIdleTimeoutMs)
       || streamIdleTimeoutMs <= 0
@@ -495,6 +533,7 @@ export function resolveProfiles(
       requestImageMaxBytes,
       retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
+      ...rest.sessionHeader === undefined ? {} : { sessionHeader: rest.sessionHeader },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
       configuredMaxTokens: catalog?.configuredMaxTokens ?? new Map(),
       modelErrors: catalog?.modelErrors ?? new Map(),

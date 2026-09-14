@@ -107,3 +107,25 @@ describe('request image policy bounds', () => {
     }).toThrow(message)
   })
 })
+
+describe('session header', () => {
+  /** Resolve one hand-declared route carrying the caller's session-header value. */
+  const resolveWith = (sessionHeader: unknown): (() => unknown) =>
+    () => resolveProfiles({
+      'acme-gateway': { api: 'openai-completions', baseURL: 'https://acme.test', models: [{ id: 'm' }], sessionHeader },
+    } as never, 'deferred')
+
+  it('accepts the header a per-conversation provider requires', () => {
+    expect(resolveWith('x-opencode-session')).not.toThrow()
+  })
+
+  it('rejects a name Fetch cannot put on a request', () => {
+    expect(resolveWith('x opencode session')).toThrow(/not a valid HTTP field name/u)
+  })
+
+  it('rejects an attribution name, which would never carry the session id', () => {
+    // Attribution wins collisions when the request is built, so this route
+    // would look configured while sending the user agent under that name.
+    expect(resolveWith('User-Agent')).toThrow(/attribution header/u)
+  })
+})

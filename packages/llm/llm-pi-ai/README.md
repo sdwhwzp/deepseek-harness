@@ -33,6 +33,8 @@ Choose this adapter when the same composition serves several providers, when a r
 
 ### Configure provider routes
 
+A profile may set `sessionHeader` when the provider routes or caches per conversation: every completion request then carries the calling session's id under that header name, and a request without a session id — a configuration probe, a one-shot utility call — is sent without it. OpenCode Go refuses a request that omits `x-opencode-session`. A static `headers` entry cannot substitute, because the value must differ between conversations and stay the same within one; resolution refuses a name Fetch cannot send or one the Harness attribution headers own, since attribution wins that name and the id would never reach the provider.
+
 Each profile may set a `retryPolicy`; omission uses normal mode with five retries. `apiKeyEnv` is a credential reference resolved per request through the harness credential seam, so no secret enters the configuration file; a reference that resolves to nothing fails the request with `MISSING_CREDENTIAL`. Omitting it leaves the route configured-but-keyless, which for an installed catalog route defers to pi-ai's provider-native ambient discovery.
 
 ```yaml
@@ -59,6 +61,7 @@ Each profile may set a `retryPolicy`; omission uses normal mode with five retrie
         apiKeyEnv: ACME_GATEWAY_API_KEY
         api: openai-completions
         baseURL: https://gateway.acme.example/v1
+        sessionHeader: x-opencode-session # per-conversation routing; sent only when the request has a session
         compat:
           thinkingFormat: deepseek
         models:
@@ -188,7 +191,7 @@ Provider tokenization governs exact input. Retained images add the stable attach
 
 #### KV Cache effect
 
-Conversion preserves logical request order, while image handles and offload placeholders add model-visible text. A changed execution-world path rewrites a historical handle and can prevent reuse from that image even when attachment identity and request bytes stay stable. Changing adapter instance, provider, model, or another upstream token has the same suffix effect. Crossing the image bound replaces an earlier image with placeholder text, so reuse ends at that message until the offloaded prefix stabilizes.
+A route naming `sessionHeader` gives the provider one stable key per conversation, which is what a provider-side prompt cache keys reuse on; every request in a session carries the same value and two sessions never share one. Conversion preserves logical request order, while image handles and offload placeholders add model-visible text. A changed execution-world path rewrites a historical handle and can prevent reuse from that image even when attachment identity and request bytes stay stable. Changing adapter instance, provider, model, or another upstream token has the same suffix effect. Crossing the image bound replaces an earlier image with placeholder text, so reuse ends at that message until the offloaded prefix stabilizes.
 
 ### Provider response
 
