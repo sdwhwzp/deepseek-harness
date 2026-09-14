@@ -123,10 +123,11 @@ export function TodoPanel({ todos, t }: TodoPanelProps) {
 /** Props for the projected todo dock. */
 export type TodoDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'conversation'>
 
-/** Renders the current todo projection, or nothing when it is absent. */
-export function TodoDock({ useProjection, t }: TodoDockProps) {
+/** Shows the current plan only while its Session is running; retained history is not active work. */
+export function TodoDock({ useProjection, useSession, t }: TodoDockProps) {
+  const running = useSession(session => session.running)
   const todos = useProjection('todos')
-  return <TodoPanel todos={todos ?? []} t={t} />
+  return running ? <TodoPanel todos={todos ?? []} t={t} /> : null
 }
 
 /** Registers the projected todo dock. */

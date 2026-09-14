@@ -106,7 +106,7 @@ describe('TodoPanel', () => {
 function dockProps(store: ReturnType<typeof createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>>): TodoDockProps {
   const useProjection = (_key: string, selector?: (v: unknown) => unknown) =>
     bindSnapshotSelector(store)(s => (selector ?? (v => v))(s.value))
-  return { useProjection, t } as unknown as TodoDockProps
+  return { useProjection, useSession: () => true, t } as unknown as TodoDockProps
 }
 
 describe('TodoDock', () => {
@@ -119,6 +119,26 @@ describe('TodoDock', () => {
     expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
     // The pre-first-write whole value (null) retires the strip (the panel owns no data).
     act(() => { store.set({ value: null }) })
+    expect(screen.queryByTestId('todo-panel')).toBeNull()
+  })
+
+  it('removes the dock when a turn settles even if its todo list remains unfinished', () => {
+    const store = createSnapshotStore({ running: true })
+    const useSession = bindSnapshotSelector(store)
+    const props = { ...dockProps(createSnapshotStore({ value: LIST })), useSession } as TodoDockProps
+    render(<TodoDock {...props} />)
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    act(() => { store.set({ running: false }) })
+    expect(screen.queryByTestId('todo-panel')).toBeNull()
+    act(() => { store.set({ running: true }) })
+    expect(screen.getByRole('button', { expanded: false })).toBeTruthy()
+    expect(LIST.map(item => item.status)).toEqual(['completed', 'in_progress', 'pending'])
+  })
+
+  it('hides an unfinished historical list when opening an idle Session', () => {
+    const props = { ...dockProps(createSnapshotStore({ value: LIST })), useSession: () => false } as TodoDockProps
+    render(<TodoDock {...props} />)
     expect(screen.queryByTestId('todo-panel')).toBeNull()
   })
 

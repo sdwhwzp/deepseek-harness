@@ -36,6 +36,8 @@ Target packages declaration-merge their snapshot and Location data maps, then re
 <a id="shell-and-standard-props"></a>
 ## Shell and standard props
 
+The todo dock is visible only while the Session is running. Settling a turn hides its retained plan without marking unfinished items completed or changing persisted events.
+
 The composer registers the File command action and owns its label, availability, and native file-dialog callback. Menu availability and invocation both consult the mounted composer's current attachment-intake policy. Unmounting or locking the composer disables that action; disposing the plugin removes its registration. The callback binding stays inside the input module.
 
 Claimed commands retain their identity and highlight when only their arguments and trailing separator are deleted; editing the command name releases the claim. The same rules apply to every command and locale, including `/goal`, `/目标`, `/plan`, and `/计划`. Command hints and ordinary placeholders remain hidden throughout IME composition and reappear only after the editor commits the final text and the corresponding input is empty.
