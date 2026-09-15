@@ -26,7 +26,7 @@ English | [中文](README.zh.md)
 
 History pages and follow opening snapshots carry one `{ type: 'event', event: SessionWireEvent }` record per durable Session event. The Client retains each accepted record as one durable `SessionEventLikeEntry`; Assistant token boundaries remain inside the compact stream on `assistant/message` or `assistant/attempt`. Tool arguments, result content, failures, and `tool/result.data.meta` pass through unchanged; the controller does not resolve a Tool definition, run a presenter, or attach UI data.
 
-The Client journal validates exact V3 event envelopes before publishing follow snapshots, live entries, or history pages. It reuses the browser-safe Session validators for required surface markers, exact replacement endpoints, earlier unique source seqs, embedded Assistant provenance, request-header omissions, and tool-error consistency. Invalid records fail without field stripping or normalization; range membership and source existence remain durable-log checks on the Host.
+The Client journal validates exact V3 event envelopes before publishing follow snapshots, live entries, or history pages. It reuses the browser-safe Session validators for required surface markers, exact replacement endpoints, earlier unique source seqs, embedded Assistant provider metadata, request-header omissions, and tool-error consistency. Invalid records fail without field stripping or normalization; range membership and source existence remain durable-log checks on the Host.
 
 Every operation that addresses an existing Session captures the Gateway's transport-verified principal and authorizes that exact Session before observation, resume, or mutation. List and search authorize candidate ids before summary projection, blank-artifact probes, or content ranking. Follow and control streams authorize their opening data and recheck each resource-addressed frame, so revocation cannot publish the next frame. Direct-subagent addresses authorize the ordinary parent before applying their independent lineage checks. Local-anonymous compositions retain their existing access only when neither request authentication nor a principal-access provider is mounted; incomplete authenticated compositions fail closed.
 
@@ -40,6 +40,8 @@ The Session object also carries local submission echoes: `session.beginSubmissio
 
 
 The user-invocable `skills/list` metadata includes the winning provider’s optional instruction-file `path`. The composer can preview that file without loading every skill body or activating a cold Agent.
+
+Fork copies history through the selected completed turn, including its `turn/end`. Events after that point, including queued input and model-setting changes, are excluded. An omitted or past-end anchor selects the last completed turn; an anchor inside an unfinished turn is rejected.
 
 <a id="session-media-references"></a>
 ## Session media references

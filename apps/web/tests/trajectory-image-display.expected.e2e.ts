@@ -3,6 +3,9 @@
 // idiom: real bundles via AppWebEntry, keyless fixture Connection RPC).
 // Opens the fixture history session whose turn 73 shares one image across a
 // user message, an assistant message, and a Tool result, then pins Trajectory:
+// idiom: real bundles via AppWebEntry, keyless RemoteMock transport).
+// Opens the fixture history session whose turn 73 carries an image in BOTH a
+// user message and an assistant message, and pins the Trajectory surfaces:
 // selecting the ledger record renders the shared ui-attachment gallery from
 // the durable session-log reference, and the browser URL is the SAME object
 // URL Chat resolved — one sessions.attachment read per session attachment.

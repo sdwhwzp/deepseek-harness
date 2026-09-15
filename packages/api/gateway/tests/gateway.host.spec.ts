@@ -1412,7 +1412,7 @@ function contextProvider(context: Context) {
 }
 
 function strictCodec(typeSymbol: string, schema: z.ZodType): InvocationDescriptor['result'] {
-  return { mode: 'strict', typeSymbol, schema }
+  return { mode: 'strict', typeSymbol, create: () => schema }
 }
 
 function createDescriptor(): InvocationDescriptor {

@@ -60,7 +60,7 @@ export interface HostPromptDeliverer {
  * @param parent - exact live direct parent authorizing delivery.
  * @param childId - durable direct-child session id.
  * @param content - host-authored content to deliver.
- * @param source - durable host-protocol provenance.
+ * @param source - durable host-protocol source descriptor.
  * @param signal - caller cancellation before inbox acceptance.
  * @param principal - authenticated owner of the Host request.
  * @returns the accepted message's inbox id.
@@ -91,7 +91,7 @@ export function queueHostSubagentPrompt(
  * @param parent - exact live direct parent authorizing delivery.
  * @param childId - durable direct-child session id.
  * @param content - host-authored content to deliver.
- * @param source - durable host-protocol provenance.
+ * @param source - durable host-protocol source descriptor.
  * @param signal - caller cancellation before inbox acceptance.
  * @returns the accepted message's inbox id.
  */

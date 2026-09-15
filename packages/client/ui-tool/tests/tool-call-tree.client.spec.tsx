@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { ToolCallOwnerProps, ToolImagesOwnerProps, ToolTreeProps } from '../src/client/contract/slots.ts'
@@ -20,7 +20,7 @@ const root = (callId: string, call: ToolResultNode['call']): ToolResultNode => (
 })
 
 function props(
-  block: ToolResultNode,
+  block: ToolCallBlock,
   selectedCallId?: string,
   home?: string,
   owners?: ToolCallOwnerProps[],
@@ -28,12 +28,11 @@ function props(
 ): ToolTreeProps {
   const snapshot = {} as SessionSnapshot
   const useSession = ((selector: (value: SessionSnapshot) => unknown) => selector(snapshot)) as ToolTreeProps['useSession']
+  // The tree renders two slots: the toolview and this fork's generic result
+  // gallery. Route each owner to its own capture so a test can assert either.
   const renderSlot = ((key: string, owner: ToolCallOwnerProps | ToolImagesOwnerProps, options?: { fallback?: React.ReactNode }) => {
-    if (key === 'tool.call.result-images') {
-      imageOwners?.push(owner as ToolImagesOwnerProps)
-      return <div data-testid="tool-result-image" />
-    }
-    owners?.push(owner as ToolCallOwnerProps)
+    if (key === 'tool.call.result-images') imageOwners?.push(owner as ToolImagesOwnerProps)
+    else owners?.push(owner as ToolCallOwnerProps)
     return options?.fallback ?? null
   }) as unknown as ToolTreeProps['renderSlot']
   return {
@@ -44,7 +43,7 @@ function props(
       kind: 'tool-call',
       id: block.callId,
       target: 'chat',
-      anchorSeq: block.seq,
+      anchorSeq: 'seq' in block ? block.seq : 0,
       location: { kind: 'session' },
       visibility: 'visible',
       data: { root: block },
@@ -98,10 +97,44 @@ describe('ToolCallTree', () => {
     ])
   })
 
+  it('dispatches a running call by its wire name and forwards inspect', () => {
+    const owners: ToolCallOwnerProps[] = []
+    const block: ToolCallBlock = {
+      callId: 'running', name: 'bash', argsRaw: '{"command":"pwd"}',
+      turn: 1, step: 0, time: 1_000, subCalls: [],
+    }
+    const treeProps = props(block, undefined, undefined, owners)
+    render(<ToolCallTree {...treeProps} />)
+
+    expect(owners[0]?.toolName).toBe('bash')
+    const inspect = owners[0]?.inspect
+    expect(inspect).toBeDefined()
+    inspect?.()
+    expect(treeProps.inspectCall).toHaveBeenCalledExactlyOnceWith('running')
+  })
+
   it('abbreviates a POSIX home path in the generic tool summary', () => {
     const block = root('w1', { name: 'read', argsRaw: '{"path":"/h/docs/a.ts"}' })
     const view = render(<ToolCallTree {...props(block, 'w1', '/h')} />)
     expect(view.getByText('~/docs/a.ts')).toBeTruthy()
+  })
+
+  it('renders an Auto denial generically before keyed slot dispatch', () => {
+    const block = {
+      ...root('denied', { name: 'skill', argsRaw: '{"name":"deploy"}' }),
+      isError: true,
+      error: {
+        name: 'AutoReviewDeniedError',
+        code: 'AUTO_REVIEW_DENIED',
+        reason: 'not authorized',
+      },
+    }
+    const renderSlot = vi.fn(() => <div data-testid="keyed-skill" />)
+    const view = render(<ToolCallTree {...props(block)} renderSlot={renderSlot as ToolTreeProps['renderSlot']} />)
+
+    expect(renderSlot).not.toHaveBeenCalled()
+    expect(view.queryByTestId('keyed-skill')).toBeNull()
+    expect(view.getByText('Auto review 已拒绝')).toBeTruthy()
   })
 
   it('renders generic root and nested result images through their authorized slot', () => {

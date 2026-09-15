@@ -32,6 +32,7 @@ const CONFIGURATION_ONLY_DEV_DEPENDENCIES = {
 /** Workspace packages whose complete runtime surface is safe across duplicate installations. */
 const DUPLICATE_SAFE_PACKAGES: readonly string[] = [
   '@deepseek-ai/dsh-brand',
+  '@deepseek-ai/dsh-lazy-require',
   '@deepseek-ai/dsh-typert-protocol',
   '@deepseek-ai/dsh-util-crypto',
   '@deepseek-ai/dsh-util-values',
@@ -59,6 +60,7 @@ const PEER_REQUIRED_HOST_EXPORTS = {
     'requirePrincipalAccess',
     'resolvePrincipalAccess',
   ],
+  '@deepseek-ai/dsh-subprocess': ['SubprocessExecutableNotFoundError'],
   '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'scopeOf', 'scopeTarget'],
   '@deepseek-ai/dsh-session': ['SESSION_FORMAT_VERSION'],
   '@deepseek-ai/dsh-session-persistence': ['SessionPersistenceNotFoundError'],

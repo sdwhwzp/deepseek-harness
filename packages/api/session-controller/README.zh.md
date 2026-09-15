@@ -26,7 +26,7 @@ kind: "package-reference"
 
 历史页与 follow opening 快照为每个持久 Session 事件携带一条 `{ type: 'event', event: SessionWireEvent }` record。Client 把每条已接受 record 保留为一个持久 `SessionEventLikeEntry`；Assistant token 边界保留在 `assistant/message` 或 `assistant/attempt` 的紧凑流内。工具参数、结果内容、失败信息和 `tool/result.data.meta` 原样通过；控制器不解析工具定义、不运行展示转换器，也不附加 UI 数据。
 
-Client journal 在发布 follow 快照、live entry 或历史页之前验证精确的 V3 事件 envelope。它复用浏览器安全的 Session validator，检查必需的 surface marker、精确的 replacement endpoint、更早且唯一的 source seq、内嵌 Assistant 来源、request header 可选字段的省略规则以及工具错误一致性。无效 record 直接失败，不删除字段或归一化；范围成员与来源存在性仍由 Host 的持久日志检查。
+Client journal 在发布 follow 快照、live entry 或历史页之前验证精确的 V3 事件 envelope。它复用浏览器安全的 Session validator，检查必需的 surface marker、精确的 replacement endpoint、更早且唯一的 source seq、内嵌 Assistant 提供方元数据、request header 可选字段的省略规则以及工具错误一致性。无效 record 直接失败，不删除字段或归一化；范围成员与来源存在性仍由 Host 的持久日志检查。
 
 每个寻址既有 Session 的操作都会捕获 Gateway 经传输验证的 principal，并在观察、恢复或修改之前对该 Session 逐一鉴权。列表与搜索在摘要投影、空产物探测或内容排序之前先对候选 id 鉴权。follow 与 control 流对其开场数据鉴权，并对每一帧以资源寻址的内容复检，因此撤销权限后不会再发出下一帧。直接子代地址先对普通父代鉴权，再套用其独立的血缘检查。仅当既未挂载请求认证也未挂载 principal-access 提供方时，本地匿名组合才保留其既有访问权；认证组合不完整时一律 fail closed。
 
@@ -40,6 +40,8 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 
 面向用户调用的 `skills/list` 元数据包含胜出提供方可选的指令文件 `path`。输入框可据此预览文件，无需加载每个 skill 的正文或激活冷态 Agent。
+
+分叉复制截至选中已结束轮次的历史，并包含其 `turn/end`。该位置之后的事件均被排除，包括排队输入和模型设置变更。省略锚点或锚点超出日志末尾时，选择最后一个已结束轮次；位于未结束轮次内的锚点会被拒绝。
 
 <a id="session-media-references"></a>
 ## 会话媒体引用

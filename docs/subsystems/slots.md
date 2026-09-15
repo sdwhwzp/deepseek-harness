@@ -152,6 +152,7 @@ root
 │     │  └─ conversation.approval.detail
 │     ├─ conversation.composer.bar
 │     │  ├─ conversation.input.attachments
+│     │  ├─ conversation.input.permission
 │     │  ├─ conversation.input.plan
 │     │  └─ conversation.input.model
 │     ├─ conversation.input.overlay
@@ -166,7 +167,8 @@ root
 ├─ rightbar
 │  └─ rightbar.session
 │     ├─ sidebar.right.pane.tab
-│     │  └─ sidebar.right.tab.guide
+│     │  ├─ sidebar.right.tab.guide
+│     │  └─ sidebar.right.tab.guide.entry
 │     ├─ sidebar.right.pane.tab.title
 │     └─ sidebar.right.tab.menu.item
 └─ shell.overlay

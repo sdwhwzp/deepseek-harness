@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-01-v2-embedded-assistant-streams.md
-2026-09-01-v2-embedded-assistant-streams.md: cb2aed1209bd1360dae2c6b13983771ab962a454
-2026-09-01-v2-embedded-assistant-streams.zh.md: 1aa8c009878a6b829ec95d7f04602c20b2630943
+2026-09-01-v2-embedded-assistant-streams.md: 60453a0b5ba580b416315ed082bba46c0c129487
+2026-09-01-v2-embedded-assistant-streams.zh.md: 4ff2d57d1c64b59a14d098704d2f86edaaf82b9a
