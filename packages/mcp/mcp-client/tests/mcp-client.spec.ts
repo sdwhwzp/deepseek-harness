@@ -204,6 +204,44 @@ describe('syncTools', () => {
     expect(ctx.tools.get('add')).toBeUndefined()
   })
 
+  it('strips root composition keywords a model provider would reject', async () => {
+    const warns: string[] = []
+    ctx.logger.warn = ((message: unknown) => { warns.push(String(message)) }) as typeof ctx.logger.warn
+    const happy = {
+      type: 'object',
+      properties: {
+        fnum: { type: 'string' },
+        depCode: { type: 'string' },
+        arrCode: { type: 'string' },
+        date: { type: 'string' },
+      },
+      required: ['date'],
+      oneOf: [
+        { required: ['fnum'], not: { required: ['depCode', 'arrCode'] } },
+        { required: ['depCode', 'arrCode'], not: { required: ['fnum'] } },
+      ],
+    }
+    const nullable = { type: 'object', properties: { cabin: { anyOf: [{ type: 'string' }, { type: 'null' }] } } }
+    const client = createMockClient([
+      { name: 'flight_happy', description: 'Either a flight number or a city pair', inputSchema: happy },
+      { name: 'seat', description: 'Nested anyOf is untouched', inputSchema: nullable },
+    ])
+
+    await syncTools(client as never, ctx, defaultOpts, new Map())
+
+    const registered = new Map(ctx.tools.schemas().map(schema => [schema.name, schema.parameters]))
+    expect(registered.get('mcp__srv__flight_happy')).toEqual({
+      type: 'object',
+      properties: happy.properties,
+      required: ['date'],
+    })
+    // Only the root is normalized: a property union is legal on the wire.
+    expect(registered.get('mcp__srv__seat')).toEqual(nullable)
+    expect(warns).toEqual([
+      'mcp-client(srv): dropped root oneOf from tool "flight_happy" input schema — no model provider accepts a composition keyword at the parameters root',
+    ])
+  })
+
   it('lets two servers publish the same raw name side by side', async () => {
     const clientA = createMockClient([{ name: 'search', inputSchema: { type: 'object' } }])
     const clientB = createMockClient([{ name: 'search', inputSchema: { type: 'object' } }])

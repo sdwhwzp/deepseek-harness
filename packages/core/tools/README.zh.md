@@ -129,7 +129,7 @@ ctx.tools.register(defineTool({
 <a id="extension-points"></a>
 ### 扩展点
 
-工具插件调用 `ctx.tools.register()`，其 schema 会自动流入提示词组装。`tools/pre-execute` 是可重排的允许／拒绝／询问门禁；`ctx.tools.guard()` 在其后添加单调的拥有方策略；`tools/execute` 为超时、重试或指标包装规范化后的规范分发；`tools/post-execute` 可以替换内容或值、通过反馈阻止，或附加有序上下文；`tools/result` 观测不可变的最终结果。MCP 服务器发现工具后，用服务器的 schema 调用 `ctx.tools.register()`。
+工具插件调用 `ctx.tools.register()`，其 schema 会自动流入提示词组装。`tools/pre-execute` 是可重排的允许／拒绝／询问门禁；`ctx.tools.guard()` 在其后添加单调的拥有方策略；`tools/execute` 为超时、重试或指标包装规范化后的规范分发；`tools/post-execute` 可以替换内容或值、通过反馈阻止，或附加有序上下文；`tools/result` 观测不可变的最终结果。MCP 服务器发现工具后，用服务器的 schema 调用 `ctx.tools.register()`。每次注册的 `parameters` 必须以对象为根，且根上不得出现 `oneOf`/`anyOf`/`allOf`/`not`：工具参数永远是一个 JSON 对象，其中一个 schema 违反这一点时，提供方会拒绝整个请求——连同请求里的其他所有工具。转发外部 schema 的桥接方需要先把该根节点归一化。
 
 </details>
 

@@ -238,6 +238,28 @@ describe('ToolRuntime', () => {
       .toThrow('must declare output { schema, render, presentationMeta? }')
   })
 
+  it('rejects a parameters schema no model provider accepts at its root', async () => {
+    const ctx = await setup()
+    const withRoot = (root: Record<string, unknown>): ToolDefinition =>
+      ({ ...echoTool, name: 'bridged', parameters: root })
+
+    expect(() => ctx.tools.register(withRoot({
+      type: 'object',
+      properties: { fnum: { type: 'string' }, depCode: { type: 'string' } },
+      oneOf: [{ required: ['fnum'] }, { required: ['depCode'] }],
+    })))
+      .toThrow('tool "bridged" parameters.oneOf is not supported at the parameters root')
+    expect(() => ctx.tools.register(withRoot({ type: 'object', anyOf: [], allOf: [], not: {} })))
+      .toThrow('parameters.anyOf is not supported at the parameters root; tool "bridged" parameters.allOf is not supported at the parameters root; tool "bridged" parameters.not is not supported at the parameters root')
+    expect(() => ctx.tools.register(withRoot({ properties: {} })))
+      .toThrow('tool "bridged" parameters.type must be "object" (tool arguments are always one JSON object)')
+    expect(() => ctx.tools.register(withRoot([] as unknown as Record<string, unknown>)))
+      .toThrow('tool "bridged" parameters must be a schema object')
+
+    ctx.tools.register(withRoot({ type: 'object', properties: { text: { type: 'string' } } }))
+    expect(ctx.tools.schemas().map(schema => schema.name)).toContain('bridged')
+  })
+
   it('rejects lossy and schema-mismatched body values before post-execute', async () => {
     const ctx = await setup()
     ctx.tools.register(defineTool({

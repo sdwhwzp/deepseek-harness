@@ -404,6 +404,42 @@ export function assertObjectJsonSchema(schema: unknown): asserts schema is Objec
   if (violations.length > 0) throw new JsonSchemaError(violations)
 }
 
+/**
+ * Root keywords no tool-call API accepts on a model-facing parameters schema.
+ * Tool arguments are always one JSON object, so a union or negation at that
+ * root has nothing to range over; the Claude Messages API rejects the whole
+ * request with `input_schema does not support oneOf, allOf, or anyOf at the top
+ * level` rather than ignoring the keyword. A bridge that forwards an external
+ * schema strips exactly these before registering it.
+ */
+export const PARAMETERS_ROOT_COMPOSITION_KEYWORDS = ['oneOf', 'anyOf', 'allOf', 'not'] as const
+
+/**
+ * Assert the object root every model-facing parameters schema needs.
+ *
+ * Only the root is checked. Property schemas are left alone because a bridged
+ * external schema (an MCP server's `inputSchema`) legitimately carries
+ * vocabulary outside the enforced subset — `anyOf`, `format`, `$ref` — that
+ * providers accept below the root.
+ * @param parameters - raw model-facing parameters schema.
+ * @param label - subject named in violations, such as `tool "bash" parameters`.
+ * @returns Assertion that the root is an object schema declaring no composition keyword.
+ */
+export function assertToolParametersRoot(
+  parameters: unknown,
+  label: string,
+): asserts parameters is Record<string, unknown> {
+  if (!isJsonSchemaRecord(parameters)) throw new JsonSchemaError([`${label} must be a schema object`])
+  const violations: string[] = []
+  if (parameters.type !== 'object') {
+    violations.push(`${label}.type must be "object" (tool arguments are always one JSON object)`)
+  }
+  for (const keyword of PARAMETERS_ROOT_COMPOSITION_KEYWORDS) {
+    if (Object.hasOwn(parameters, keyword)) violations.push(`${label}.${keyword} is not supported at the parameters root`)
+  }
+  if (violations.length > 0) throw new JsonSchemaError(violations)
+}
+
 /** Safely test the lossless JSON boundary when a getter may throw. */
 function safelyIsJsonValue(value: unknown): boolean {
   try {

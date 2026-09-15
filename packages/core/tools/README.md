@@ -129,7 +129,7 @@ New sub-calls use `<parent>:ptc:<n>` ids. Consumers treat these ids as opaque an
 <a id="extension-points"></a>
 ### Extension points
 
-Tool plugins call `ctx.tools.register()` and their schemas flow into prompt assembly automatically. `tools/pre-execute` is the reorderable allow/deny/ask gate; `ctx.tools.guard()` adds monotonic owner policy after it; `tools/execute` wraps normalized canonical dispatch for timeout, retry, or metrics; `tools/post-execute` may replace content or value, block with feedback, or attach ordered contexts; `tools/result` observes the immutable final outcome. MCP servers discover tools and register them with the server's schemas.
+Tool plugins call `ctx.tools.register()` and their schemas flow into prompt assembly automatically. `tools/pre-execute` is the reorderable allow/deny/ask gate; `ctx.tools.guard()` adds monotonic owner policy after it; `tools/execute` wraps normalized canonical dispatch for timeout, retry, or metrics; `tools/post-execute` may replace content or value, block with feedback, or attach ordered contexts; `tools/result` observes the immutable final outcome. MCP servers discover tools and register them with the server's schemas. Every registration's `parameters` must be object-rooted and free of a root `oneOf`/`anyOf`/`allOf`/`not`: tool arguments are always one JSON object, and a provider refuses the whole request — every other tool in it included — when one schema breaks that. A bridge forwarding an external schema normalizes that root first.
 
 </details>
 

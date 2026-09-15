@@ -157,7 +157,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-初始发现成功后，每个已声明的 MCP 工具都会显示为名为 `mcp__<serverName>__<rawName>`（或其确定性规范化形式）的原生工具，并携带服务器提供的描述与输入 schema。成功的重新同步——包括自动重连后的同步——会替换整个世代；对插件执行 dispose 或重连预算耗尽会移除该世代。
+初始发现成功后，每个已声明的 MCP 工具都会显示为名为 `mcp__<serverName>__<rawName>`（或其确定性规范化形式）的原生工具，并携带服务器提供的描述与输入 schema。该 schema 逐字送达模型，只有根节点例外：根上的 `oneOf`、`anyOf`、`allOf`、`not` 会被丢弃，因为参数对象所在的位置不被任何工具调用 API 接受组合关键字。成功的重新同步——包括自动重连后的同步——会替换整个世代；对插件执行 dispose 或重连预算耗尽会移除该世代。
 
 #### Token 影响
 
@@ -193,6 +193,7 @@ kind: "package-reference"
 - **重连在传输关闭时触发**——崩溃的 stdio 子进程会触发重连；Streamable HTTP 失败按请求经 SDK 传输自身的恢复机制暴露，因此不可达的 HTTP 服务器会按调用重试，而非由 supervisor 重新 spawn。
 - **图片是唯一的持久丰富结果桥接**——PNG、JPEG、WebP 与 GIF 在确切能力得到证明后进入 Native 上下文。音频与嵌入资源载荷仍只存在于执行局部并带明确诊断，资源链接只以文本保留名称与 URI。
 - **不强制执行不受支持的 MCP 输出 schema**——已声明 schema 使用 harness 子集之外的词汇时，`structuredContent` 回退为 `JsonValue`。
+- **输入 schema 根上的组合关键字被丢弃而非遵守**——服务器用根 `oneOf`/`anyOf`/`allOf`/`not` 表达「二选一」时，该约束不会出现在模型读到的 schema 里；服务器仍会在 `tools/call` 时强制执行，丢弃动作会连同服务器名与工具名一起记入日志。
 - **要求基于任务的 MCP 工具在调用时被拒绝**——要求使用基于任务的执行（task-based execution）扩展的工具会抛出异常而非被桥接；该扩展未实现。
 
 <a id="dev-note"></a>

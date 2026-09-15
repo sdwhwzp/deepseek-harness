@@ -22,7 +22,7 @@ import { isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolDefinition, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
+import { assertSupportedJsonSchema, PARAMETERS_ROOT_COMPOSITION_KEYWORDS } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
@@ -166,7 +166,7 @@ export async function syncTools(
         publicName,
         tool.name,
         tool.description ?? '',
-        tool.inputSchema,
+        bridgedParameters(ctx, opts.serverName, tool.name, tool.inputSchema),
         supportedOutputSchema(tool.outputSchema),
         tool.execution?.taskSupport === 'required',
         opts,
@@ -227,6 +227,37 @@ interface PreparedProjection {
   content: ContentBlock[]
 }
 
+/**
+ * Strip the root composition keywords no model provider accepts, leaving every
+ * property schema untouched.
+ *
+ * The transport already guarantees the `type: "object"` root MCP requires, but
+ * `.catchall` admits anything beside it, and servers do ship a root `oneOf`
+ * spelling "pass either the flight number or the city pair". Registered
+ * verbatim that root fails the whole model request — every tool in it, not just
+ * this one — so the bridge drops the keyword and the server keeps enforcing the
+ * constraint on `tools/call`. Each drop is logged with the identity that has to
+ * fix it, because the model then sees a schema looser than the server's own.
+ * @param ctx - plugin context used to report what was dropped.
+ * @param serverName - local namespace, for the log line.
+ * @param rawName - the server's own tool name, for the log line.
+ * @param schema - the server's advertised input schema.
+ * @returns the same schema, or a root-normalized copy safe to register.
+ */
+function bridgedParameters(
+  ctx: Context,
+  serverName: string,
+  rawName: string,
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  const dropped = PARAMETERS_ROOT_COMPOSITION_KEYWORDS.filter(keyword => Object.hasOwn(schema, keyword))
+  if (dropped.length === 0) return schema
+  const removed = new Set<string>(dropped)
+  const normalized = Object.fromEntries(Object.entries(schema).filter(([key]) => !removed.has(key)))
+  ctx.logger.warn(`mcp-client(${serverName}): dropped root ${dropped.join('/')} from tool "${rawName}" input schema — no model provider accepts a composition keyword at the parameters root`)
+  return normalized
+}
+
 /** Keep a supported advertised schema; unsupported MCP vocabulary falls back to JsonValue. */
 function supportedOutputSchema(candidate: unknown): JsonSchemaNode | undefined {
   if (candidate === undefined) return undefined
@@ -245,7 +276,7 @@ function supportedOutputSchema(candidate: unknown): JsonSchemaNode | undefined {
  * @param publicName - registry-qualified public tool name.
  * @param rawName - MCP wire tool name.
  * @param description - model-facing tool description.
- * @param parameters - MCP input schema.
+ * @param parameters - root-normalized MCP input schema.
  * @param structuredSchema - supported structured-output schema, when advertised.
  * @param taskRequired - whether this MCP tool requires unsupported task execution.
  * @param opts - bridge timeout and namespace options.

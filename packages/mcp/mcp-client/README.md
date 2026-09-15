@@ -157,7 +157,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-After initial discovery succeeds, every advertised MCP tool appears as a native tool named `mcp__<serverName>__<rawName>` (or its deterministic normalized form) with the server-provided description and input schema. A successful re-sync — including the one after an automatic reconnect — replaces the generation; plugin disposal or an exhausted reconnect budget removes it.
+After initial discovery succeeds, every advertised MCP tool appears as a native tool named `mcp__<serverName>__<rawName>` (or its deterministic normalized form) with the server-provided description and input schema. The schema reaches the model verbatim except at its root: a root `oneOf`, `anyOf`, `allOf`, or `not` is dropped, because no tool-call API accepts a composition keyword where the arguments object goes. A successful re-sync — including the one after an automatic reconnect — replaces the generation; plugin disposal or an exhausted reconnect budget removes it.
 
 #### Token effect
 
@@ -193,6 +193,7 @@ These limits describe what you cannot do with this plugin and when it needs oper
 - **Reconnect triggers on transport close** — a crashed stdio child fires it; Streamable HTTP failures surface per request through the SDK transport's own recovery, so an unreachable HTTP server is retried per call rather than respawned by the supervisor.
 - **Image is the only durable rich-result bridge** — PNG, JPEG, WebP, and GIF enter Native context after exact capability proof. Audio and embedded-resource payloads remain execution-local with explicit diagnostics, while resource links preserve only their name and URI as text.
 - **Unsupported MCP output schemas are not enforced** — `structuredContent` falls back to `JsonValue` when the advertised schema uses vocabulary outside the harness subset.
+- **A root composition keyword in an input schema is dropped, not honored** — a server spelling "either this field or that pair" as a root `oneOf`/`anyOf`/`allOf`/`not` loses that constraint in the schema the model reads; the server still enforces it on `tools/call`, and the drop is logged with the server and tool name.
 - **Task-required MCP tools are rejected at call time** — a tool that requires the task-based execution extension throws instead of bridging; the extension is not implemented.
 
 <a id="dev-note"></a>

@@ -19,7 +19,7 @@ import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 // augmentation. The seam stays optional at runtime — see `serviceAsk`.
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { ToolCallView, ToolResultView } from './presentation.ts'
-import { assertSupportedJsonSchema, validateJsonSchemaValue } from './json-schema.ts'
+import { assertSupportedJsonSchema, assertToolParametersRoot, validateJsonSchemaValue } from './json-schema.ts'
 import type { JsonSchemaNode } from './json-schema.ts'
 import { createRunCodeTool, RUN_CODE_NAME } from './ptc.ts'
 import type { CodeSdkLanguage } from './ptc.ts'
@@ -83,6 +83,8 @@ export {
 export {
   assertSupportedJsonSchema,
   assertObjectJsonSchema,
+  assertToolParametersRoot,
+  PARAMETERS_ROOT_COMPOSITION_KEYWORDS,
   validateJsonSchemaValue,
   JsonSchemaError,
   type JsonSchemaNode,
@@ -1025,6 +1027,11 @@ export class ToolRuntime extends Service {
   /**
    * Register globally or in the calling agent scope. Scoped tools shadow
    * globals; duplicates within one layer and the reserved `run_code` name fail.
+   *
+   * `parameters` must be object-rooted and free of root composition keywords
+   * ({@link assertToolParametersRoot}) — a schema that is not reaches the
+   * provider verbatim and fails the whole request, not just this tool. A bridge
+   * forwarding an external schema normalizes that root before registering.
    * @param definition - tool schema, execution, and optional finalization/presentation callbacks.
    * @returns the exact disposer that unregisters the tool.
    */
@@ -1037,6 +1044,7 @@ export class ToolRuntime extends Service {
       throw new TypeError(`tool "${name}" must declare output { schema, render, presentationMeta? }`)
     }
     assertSupportedJsonSchema(output.schema)
+    assertToolParametersRoot(definition.parameters, `tool "${name}" parameters`)
     const timeoutMs = definition.timeoutMs
     if (timeoutMs !== undefined
       && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
