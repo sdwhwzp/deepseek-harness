@@ -53,10 +53,6 @@ const ToolCall = memo(function ToolCall({
           entryKey: toolName,
           fallback: <GenericToolCard {...owner} t={t} />,
         })}
-      {renderSlot('tool.call.toolview', owner, {
-        entryKey: toolName,
-        fallback: <GenericToolCard {...owner} t={t} />,
-      })}
       {images.length > 0 && renderSlot('tool.call.result-images', { images, loadImage, align: 'start' })}
       {children}
     </div>

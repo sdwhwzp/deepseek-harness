@@ -108,6 +108,11 @@ describe('keyed toolview hole through the real machinery', () => {
     // bash: the sample plugin's keyed registration took the row (root
     // session → global arm, decided inside the component off useSessions).
     expect(view.container.querySelector('[data-sample="bash"]')).not.toBeNull()
+    // Exactly one toolview per call: ToolCallTree once rendered the
+    // tool.call.toolview slot twice (a 0.1.6 merge left both the pre-Auto-review
+    // unconditional render and its replacement conditional render), doubling
+    // every tool row in the transcript.
+    expect(view.container.querySelectorAll('[data-sample="bash"]').length).toBe(1)
     expect(view.getByText('Bash')).toBeTruthy()
     expect(view.getByText('Build')).toBeTruthy()
     // mystery: no registration under that key → render-site fallback.
