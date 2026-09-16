@@ -544,11 +544,22 @@ export class AgentRegistry extends Service {
     entry.announcing = true
     entry.announced = true
     try {
-      await this.ctx.serial(entry.carrier, 'agent/created', {
+      const bailed: unknown = await this.ctx.serial(entry.carrier, 'agent/created', {
         agent: entry.agent,
         source,
         ...signal === undefined ? {} : { signal },
       })
+      // `serial` stops at the first listener whose result is not
+      // undefined/null/false, so one listener that returns a value — a
+      // disposer, a promise's payload — silently skips every listener after
+      // it. The event's contract is `undefined`; say so rather than let a
+      // plugin lose its per-agent setup with no trace.
+      if (bailed !== undefined) {
+        this.ctx.logger.warn(
+          `an agent/created listener returned ${typeof bailed} for agent "${entry.id}"; `
+          + 'serial dispatch stopped there and later listeners did not run (the contract is undefined)',
+        )
+      }
     } finally {
       entry.announcing = false
       if (entry.detachRequested) this.detachEntered(entry)
