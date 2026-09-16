@@ -2768,6 +2768,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the exact disposer that unregisters the tool.',
       },
       {
+        signature: 'override(definition: ToolDefinition): () => void',
+        description: 'Replace a tool name for the calling agent scope, whoever provided it.\n\n`register` refuses a name the same scope already holds, which is the right answer for two compositions that each believe they own it. An Agent whose workspace changes where a capability must execute is the other case: an Agent preset mounts `bash` and the file tools into the Agent scope, and a Session opened on a paired local folder has to run those same names on the user\'s computer instead of this Host. Without a deliberate replacement the Host-side tool stays, and it succeeds against the wrong machine rather than failing, so the model cannot tell.\n\nThe replacement wins over every registration visible to this scope, including one made in the same scope, and reaches scopes nested inside it. Disposing it restores whatever was there before, because the original entry was never removed. A second replacement of one name in one scope fails.',
+        parameters: [{ name: 'definition', description: 'the tool that takes the name for this scope.' }],
+        returns: 'the exact disposer that restores the previous owner.',
+        throws: ['when called on an unscoped context, on the reserved transport name, or when this scope already replaced that name.'],
+      },
+      {
         signature: 'restrict(filter: ToolRestriction): () => void',
         description: 'Restrict global tools for the calling agent scope. Empty filters, unknown names, scope-local names, and reserved transport names fail. Restrictions intersect; scoped registrations remain visible.',
         parameters: [{ name: 'filter', description: 'global-tool mask: `allow` (keep only) and/or `deny` (remove).' }],
@@ -6363,7 +6370,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    override(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',

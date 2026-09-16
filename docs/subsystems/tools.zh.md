@@ -528,6 +528,29 @@ presentAs(mode: ToolPresentationMode): () => void
 register(definition: ToolDefinition): () => void
 
 /**
+ * Replace a tool name for the calling agent scope, whoever provided it.
+ *
+ * `register` refuses a name the same scope already holds, which is the right
+ * answer for two compositions that each believe they own it. An Agent whose
+ * workspace changes where a capability must execute is the other case: an
+ * Agent preset mounts `bash` and the file tools into the Agent scope, and a
+ * Session opened on a paired local folder has to run those same names on the
+ * user's computer instead of this Host. Without a deliberate replacement the
+ * Host-side tool stays, and it succeeds against the wrong machine rather than
+ * failing, so the model cannot tell.
+ *
+ * The replacement wins over every registration visible to this scope,
+ * including one made in the same scope, and reaches scopes nested inside it.
+ * Disposing it restores whatever was there before, because the original entry
+ * was never removed. A second replacement of one name in one scope fails.
+ * @param definition - the tool that takes the name for this scope.
+ * @returns the exact disposer that restores the previous owner.
+ * @throws when called on an unscoped context, on the reserved transport name,
+ *   or when this scope already replaced that name.
+ */
+override(definition: ToolDefinition): () => void
+
+/**
  * Restrict global tools for the calling agent scope. Empty filters, unknown
  * names, scope-local names, and reserved transport names fail. Restrictions
  * intersect; scoped registrations remain visible.

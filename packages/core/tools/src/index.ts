@@ -721,6 +721,13 @@ export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefin
 /** One scope's complete tool-registry contribution. */
 class ToolLayer implements ScopeLayer {
   readonly tools: NamedEntries<ToolDefinition>
+  /**
+   * Deliberate replacements for names this scope or an ancestor already
+   * provides, applied after {@link tools} in the same traversal step. A second
+   * replacement of one name in the same scope is still refused: two answers to
+   * "who owns this name here" is a contradiction, not a merge.
+   */
+  readonly overrides: NamedEntries<ToolDefinition>
   readonly restrictions = new AnonymousEntries<CompiledToolRestriction>()
   readonly guards = new AnonymousEntries<ToolGuard>()
   /**
@@ -733,13 +740,15 @@ class ToolLayer implements ScopeLayer {
   constructor(scope: ScopeKey | undefined) {
     this.tools = new NamedEntries(name => new Error(scope === undefined
       ? `tool "${name}" is already registered (for a per-agent variant, register through that agent's \`agent.ctx\` instead)`
-      : `tool "${name}" is already registered in this scope`))
+      : `tool "${name}" is already registered in this scope; to replace the existing one for this scope, call tools.override() instead`))
+    this.overrides = new NamedEntries(name => new Error(
+      `tool "${name}" is already overridden in this scope; one composition owns one replacement`))
   }
 
   /** Whether every contribution table in this aggregate layer is empty. */
   isEmpty(): boolean {
-    return this.tools.isEmpty() && this.restrictions.isEmpty() && this.guards.isEmpty()
-      && this.mode === undefined
+    return this.tools.isEmpty() && this.overrides.isEmpty() && this.restrictions.isEmpty()
+      && this.guards.isEmpty() && this.mode === undefined
   }
 
   /** Whether every compiled restriction in this layer admits a global tool name. */
@@ -1052,6 +1061,21 @@ export class ToolRuntime extends Service {
    * @returns the exact disposer that unregisters the tool.
    */
   register(definition: ToolDefinition): () => void {
+    this.assertRegistrable(definition)
+    return this.layers.effect(
+      this.ctx,
+      layer => layer.tools.insert(definition.name, definition),
+      { label: 'tools.register()' },
+    )
+  }
+
+  /**
+   * Validate one definition before either registration path retains it.
+   * @param definition - the tool a composition is contributing.
+   * @throws TypeError when the declared output, parameters, or timeout are unusable.
+   * @throws Error when the definition names the reserved transport.
+   */
+  private assertRegistrable(definition: ToolDefinition): void {
     const name = definition.name
     const output = (definition as Partial<ToolDefinition>).output
     if (output === undefined || typeof output !== 'object'
@@ -1072,10 +1096,39 @@ export class ToolRuntime extends Service {
     if (name === RUN_CODE_NAME) {
       throw new Error(`tool name "${RUN_CODE_NAME}" is reserved for the PTC mode presentation transport and cannot be registered or shadowed`)
     }
+  }
+
+  /**
+   * Replace a tool name for the calling agent scope, whoever provided it.
+   *
+   * `register` refuses a name the same scope already holds, which is the right
+   * answer for two compositions that each believe they own it. An Agent whose
+   * workspace changes where a capability must execute is the other case: an
+   * Agent preset mounts `bash` and the file tools into the Agent scope, and a
+   * Session opened on a paired local folder has to run those same names on the
+   * user's computer instead of this Host. Without a deliberate replacement the
+   * Host-side tool stays, and it succeeds against the wrong machine rather than
+   * failing, so the model cannot tell.
+   *
+   * The replacement wins over every registration visible to this scope,
+   * including one made in the same scope, and reaches scopes nested inside it.
+   * Disposing it restores whatever was there before, because the original entry
+   * was never removed. A second replacement of one name in one scope fails.
+   * @param definition - the tool that takes the name for this scope.
+   * @returns the exact disposer that restores the previous owner.
+   * @throws when called on an unscoped context, on the reserved transport name,
+   *   or when this scope already replaced that name.
+   */
+  override(definition: ToolDefinition): () => void {
+    const scope = scopeOf(this.ctx)
+    if (scope === undefined) {
+      throw new Error('tools.override() requires a scoped context (agent.ctx): replacing a name for every agent is what a plain registration already does')
+    }
+    this.assertRegistrable(definition)
     return this.layers.effect(
       this.ctx,
-      layer => layer.tools.insert(name, definition),
-      { label: 'tools.register()' },
+      layer => layer.overrides.insert(definition.name, definition),
+      { label: 'tools.override()' },
     )
   }
 
@@ -1177,9 +1230,13 @@ export class ToolRuntime extends Service {
     // Inherited surface, nearest ancestor last: a nearer scope's same-name
     // entry shadows a farther one, and the global layer is the farthest.
     const inherited = new Map<string, ToolDefinition>(this.layers.global.tools.entries())
+    for (const [name, definition] of this.layers.global.overrides.entries()) inherited.set(name, definition)
     for (const layer of layers) {
       if (layer === own) continue
       for (const [name, definition] of layer.tools.entries()) inherited.set(name, definition)
+      // An ancestor's replacement outranks its own registrations and reaches
+      // every scope nested inside it, exactly as a registration there does.
+      for (const [name, definition] of layer.overrides.entries()) inherited.set(name, definition)
     }
     const visible = new Map<string, ToolDefinition>()
     const knownNames = new Set<string>()
@@ -1192,9 +1249,15 @@ export class ToolRuntime extends Service {
       if (layers.every(layer => layer.admits(name))) visible.set(name, definition)
     }
     // The scope's own registrations last, shadowing an inherited name and
-    // outside the filter above.
+    // outside the filter above. Its replacements come after them: a scope that
+    // deliberately replaced a name owns it even against a registration made in
+    // the same scope, which is the case a preset-composed Agent produces.
     if (own !== undefined) {
       for (const [name, definition] of own.tools.entries()) {
+        knownNames.add(name)
+        visible.set(name, definition)
+      }
+      for (const [name, definition] of own.overrides.entries()) {
         knownNames.add(name)
         visible.set(name, definition)
       }

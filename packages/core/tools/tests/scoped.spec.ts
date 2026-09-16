@@ -4,7 +4,7 @@ import type { Events } from '@deepseek-ai/cordis'
 import { bindScopeParent, createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type { PreToolDecision, ToolDefinition, ToolExecution, ToolExecutionInput, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 
@@ -114,6 +114,85 @@ describe('scoped tool registration', () => {
     await scope.dispose()
     expect(ctx.tools.get('mine', key)).toBeUndefined()
     expect(ctx.tools.schemas(key)).toEqual([])
+  })
+})
+
+describe('override()', () => {
+  it('takes a name its own scope already registered, which a preset-composed agent produces', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'a')
+    // An Agent preset mounts its tools into the Agent scope first.
+    scope.ctx.tools.register(tool('bash', 'ran:host'))
+    expect(() => scope.ctx.tools.register(tool('bash', 'ran:paired'))).toThrow(/already registered in this scope/)
+
+    scope.ctx.tools.override(tool('bash', 'ran:paired'))
+    expect(await run(ctx, 'bash', key)).toBe('ran:paired')
+    expect(ctx.tools.schemas(key).map(t => t.name)).toEqual(['bash'])
+  })
+
+  it('takes a name an ancestor provided without disturbing other scopes', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'a')
+    const other = await mintAgentScope(ctx, 'b')
+    ctx.tools.register(tool('read', 'ran:host'))
+    scope.ctx.tools.override(tool('read', 'ran:paired'))
+
+    expect(await run(ctx, 'read', key)).toBe('ran:paired')
+    expect(await run(ctx, 'read', other.key)).toBe('ran:host')
+    expect(await run(ctx, 'read')).toBe('ran:host')
+  })
+
+  it('restores the previous owner when its disposer runs', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'a')
+    ctx.tools.register(tool('read', 'ran:host'))
+    const lift = scope.ctx.tools.override(tool('read', 'ran:paired'))
+    expect(await run(ctx, 'read', key)).toBe('ran:paired')
+    lift()
+    // The original entry was never removed, so lifting the replacement is enough.
+    expect(await run(ctx, 'read', key)).toBe('ran:host')
+  })
+
+  it('reaches scopes nested inside the one that replaced the name', async () => {
+    const ctx = await mount()
+    const parent = await mintAgentScope(ctx, 'parent')
+    ctx.tools.register(tool('bash', 'ran:host'))
+    parent.scope.ctx.tools.override(tool('bash', 'ran:paired'))
+
+    // A subagent forked from a paired Session runs on the same computer as its
+    // parent, so it inherits the replacement rather than falling back to Host.
+    const childKey = { id: 'child' as SessionId } as Agent
+    bindScopeParent(childKey, parent.key)
+    await ctx.plugin(Object.assign((inner: Context) => { createScope(inner, childKey) },
+      { inject: ['tools', 'systemPrompt'] }))
+    expect(await run(ctx, 'bash', childKey)).toBe('ran:paired')
+  })
+
+  it('refuses a second replacement of one name, an unscoped caller, and the reserved transport', async () => {
+    const ctx = await mount()
+    const { scope } = await mintAgentScope(ctx, 'a')
+    scope.ctx.tools.override(tool('bash'))
+    expect(() => scope.ctx.tools.override(tool('bash'))).toThrow(/already overridden in this scope/)
+    expect(() => ctx.tools.override(tool('bash'))).toThrow(/requires a scoped context/)
+    expect(() => scope.ctx.tools.override(tool(RUN_CODE_NAME))).toThrow(/reserved/)
+  })
+
+  it('validates the definition exactly as register does', async () => {
+    const ctx = await mount()
+    const { scope } = await mintAgentScope(ctx, 'a')
+    const broken = { ...tool('bash'), output: undefined } as unknown as ToolDefinition
+    expect(() => scope.ctx.tools.override(broken)).toThrow(/must declare output/)
+  })
+
+  it('disposing the scope unwinds its replacements', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'a')
+    ctx.tools.register(tool('read', 'ran:host'))
+    scope.ctx.tools.override(tool('read', 'ran:paired'))
+    expect(await run(ctx, 'read', key)).toBe('ran:paired')
+    await scope.dispose()
+    expect(ctx.tools.get('read', key)?.description).toBe('tool read')
+    expect(await run(ctx, 'read')).toBe('ran:host')
   })
 })
 
