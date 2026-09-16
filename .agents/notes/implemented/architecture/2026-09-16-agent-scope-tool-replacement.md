@@ -2,6 +2,8 @@
 
 Status: implemented
 
+English | [中文](2026-09-16-agent-scope-tool-replacement.zh.md)
+
 ## Problem
 
 `ToolLayer` keeps one `NamedEntries` per scope and `NamedEntries.insert` rejects a repeated name. `view()` then lets a scope's own registrations shadow everything it inherits. Together those give a clear rule for two compositions that each believe they own a name: the second one is a bug, and it fails loudly.
