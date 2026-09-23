@@ -9987,7 +9987,7 @@ importers:
   packages/sdk/client:
     dependencies:
       '@deepseek-ai/dsh':
-        specifier: workspace:~
+        specifier: workspace:*
         version: link:../../../apps/cli
     devDependencies:
       '@deepseek-ai/cordis':
