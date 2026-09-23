@@ -39,7 +39,7 @@ v4→v5 的唯一实质差异是 identity 新增两个 lineage 字段；v6 只�
 5. **identity 匹配比结构准入更严格**：缺失 `formatVersion` 的记录绝不匹配当前 Session，因此前代行不能播种投影，而会从权威日志重新折叠。格式匹配后，`identityMatches` 才把缺失 lineage 归一化为 unseeded（`?? false` / `?? 0`）：对 unseeded 会话精确，对 seeded 期望则匹配失败。v5 投毒 home 因而可以安全启动，但其未绑定行不会作为当前值暴露。
 6. **schema 校验兜底：`invalidRecords: 'backup-and-skip'`（仅本域声明）**。读兼容之外仍然解析失败的存量记录不再让整个域拒开：domain 层调用后端的 `KvUnit.backupRecord`（json per-record 实现＝把文档改名为 `<key>.json.bak.<YYYYMMDDHHmm>`，字节留档、不再被读取），用 `logger.error` 打印具体失败信息（域名、表、键、移动去向、zod 失败原因），随后当该记录不存在继续启动；下一次冷读会重建并重写该会话的缓存。**该策略是域级显式声明，缺省仍为 fail-loud**——其他业务域的存量数据校验失败照旧整域拒载；后端没有 `backupRecord` 能力（single 布局、行存储）时也回退 fail-loud。命名沿革：quarantine → backup-and-skip（用户裁决：词要同时含"备份"与"跳过"两义，且与 `.bak` 后缀同源；skip-backup 因 CLI `--skip-X` 惯例存在"不备份"反读而弃用）。对本域而言，该策略取代了 [2026-07-28 存储恢复提案](../../proposed/architecture/2026-07-28-storage-root-and-derived-medium-recovery.zh.md)中 reset/destroy 的恢复途径；该提案对权威介质与整介质损坏仍然有效。
 
-7. **前代值是列表提示，而非折叠捷径**：Session 列表启动仍只读取元数据与缓存，绝不打开冷日志正文。日志头是权威来源；生命周期匹配的检查点证明一个持久前缀，可以落后但不能领先于日志。`cachedPredecessorListHints` 公开标题及下文指定迁移中的元数据，每个值都经过当前投影版本与 schema 校验。`asOfSeq: -1` 丢弃迁移中可能重映射的序号。其余行仍隐藏，`hydratePrepared`/`coldSnapshot` 仍严格匹配格式身份，因为历史规范化可能改变投影语义。
+7. **predecessor title 是列表 hint，而不是 fold shortcut**：Session list 启动保持 metadata/cache-only，绝不打开冷 log body。log header 是权威来源；生命周期匹配的 checkpoint 是 durable prefix witness，可以落后但不能领先日志。因此 `cachedPredecessorTitle` 只公开仍通过当前 title unit `stateVersion` 与 schema 的 predecessor `title` row。两条相邻 Session format edge 都保留 title 文本。该 hint 的 `asOfSeq` 是存储 title row 自己的水位；因为改变日志事件数量的迁移会重新映射该坐标，Session list 把该 block 标为 `kind: 'cached'`，客户端不会拿它与建连 Session 的 seq 比较（[只读面按 lifecycle 身份匹配与 cached 行](2026-09-19-projection-cache-listing-identity-and-cached-rows.zh.md)）。其他 predecessor row 继续隐藏，`hydratePrepared`/`coldSnapshot` 仍要求严格格式 identity，因为即使物理存储一致，normalizer 仍可能改变 `blank` 或 `lastPromptAt` 等值。
 
 ### v3-v6 → v7 处置
 
@@ -55,11 +55,9 @@ v4→v5 的唯一实质差异是 identity 新增两个 lineage 字段；v6 只�
 | identity 匹配的 v7 当前记录 | 正常服务缓存值 |
 | 格式匹配但缺 lineage 的记录 | unseeded 调用方可以使用；seeded 调用方拒绝并回落冷折叠 |
 
-### V2→V3 列表元数据
+### 前代列表元数据
 
-当存储格式恰为 2、列表格式恰为 3 时，`cachedPredecessorListHints()` 也接纳 `sessionListMetadata`。该迁移保留 `turn/start` 是否存在及人工消息的时间戳，因此版本兼容的行可保留空白状态和最近活动时间。缺少格式代号或其他格式迁移仍只公开标题。缓存仍是可能过时的持久前缀提示；两类行都不能作为 hydration 的起点，`asOfSeq: -1` 会丢弃迁移中可能重映射的旧序号。
-
-丢弃 V2 的空白标记会使仅含配置事件的 Session 在升级后以目录名显示。Loader 回归测试记录空白和非空白会话的列表输出，拒绝无关生命周期、不支持的迁移、行版本不匹配和无效值，并证明没有发生冷 stat、正文读取、Session 激活或缓存重写。迁移测试覆盖仅配置、零步骤、人工输入及插件输入日志中的两个元数据字段。
+空白状态和最近活动时间须按当前 Session 格式推导。前代缓存只提供标题；显式冷观察会在不激活 Agent 的情况下重建列表元数据。部署验证须在重建后检查已有空白 Session，再切换服务 profile。
 
 ## 备选方案
 

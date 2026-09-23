@@ -231,7 +231,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * verbatim fails the whole model request, every tool in it, not just this
  * one — so the bridge drops the keyword and the server keeps enforcing the
  * constraint on `tools/call`. Properties the dropped branches declare are
- * hoisted to the root (first declaration wins) and a field every branch
+ * hoisted to the root with alternative field schemas, and a field every branch
  * requires stays required, so the model still sees the union's fields. Each
  * drop is logged with the identity that has to fix it, because the model then
  * sees a schema looser than the server's own.
@@ -255,9 +255,16 @@ function bridgedParameters(
     .filter((branch): branch is Record<string, unknown> => isPlainObject(branch) && isPlainObject(branch['properties']))
   if (branches.length > 0) {
     const properties: Record<string, unknown> = { ...(isPlainObject(normalized['properties']) ? normalized['properties'] : {}) }
+    const alternatives = new Map<string, unknown[]>()
     for (const branch of branches) {
-      for (const [key, value] of Object.entries(branch['properties'] as Record<string, unknown>)) properties[key] ??= value
+      for (const [key, value] of Object.entries(branch['properties'] as Record<string, unknown>)) {
+        if (Object.hasOwn(properties, key)) continue
+        const values = alternatives.get(key) ?? []
+        if (!values.some(existing => isDeepStrictEqual(existing, value))) values.push(value)
+        alternatives.set(key, values)
+      }
     }
+    for (const [key, values] of alternatives) properties[key] = values.length === 1 ? values[0] : { anyOf: values }
     normalized['properties'] = properties
     const requiredEverywhere = branches
       .map(branch => Array.isArray(branch['required']) ? (branch['required'] as unknown[]).filter((v): v is string => typeof v === 'string') : [])
@@ -292,7 +299,7 @@ export function createMcpToolDefinition(
     parameters: bridgedParameters(ctx, options.serverName ?? name, rawName, inputSchema),
     output: createOutput(rawName, supportedOutputSchema(options.outputSchema)),
     execute: createExecutor(ctx, options, projections),
-    finalizeContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {
+    projectContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {
       const projection = projections.get(exec)
       if (projection === undefined) return undefined
       projections.delete(exec)
@@ -317,7 +324,7 @@ function createOutput(rawName: string, structuredSchema: JsonSchemaNode | undefi
       additionalProperties: false,
     },
     render(_args: unknown, value: JsonValue) {
-      return [{ type: 'text', text: modelText(value as unknown as McpResult, rawName) }]
+      return [{ type: 'text', text: modelText(value as McpResult, rawName) }]
     },
   }
 }

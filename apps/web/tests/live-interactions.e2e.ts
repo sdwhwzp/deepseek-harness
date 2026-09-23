@@ -50,6 +50,7 @@ const AUTH_PROVIDER_MESSAGE = 'Authentication Fails, Your api key: sk-preview-se
 // model call.
 const PROMPT = 'Reply with a one-sentence description of event sourcing, then stop.'
 const RUNNING_DRAFT = 'Queue this follow-up while the current turn is running.'
+const RETRY_PARTIAL = 'This partial reply must disappear when the attempt fails.'
 
 /** turn/end reasons observed, in order. */
 function turnEndReasons(events: SessionEvent[]): string[] {
@@ -268,16 +269,14 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
   it.skipIf(MODE === 'record')('recovers a transient SERVER failure after displaying a partial reply', async () => {
     const derived = deriveReplayScript(parseSessionLog(await readFile(FIXTURE, 'utf8')))
     expect(derived).toHaveLength(1)
-    const partial = 'Discarded partial before retry'
     await launch(() => ({
       patches: [
         { at: 0, entry: {
-          kind: 'throw',
+          kind: 'throw', message: 'upstream 503', code: 'SERVER',
           chunks: [
             { type: 'block-start', index: 0, blockType: 'text' },
-            { type: 'text-delta', index: 0, text: partial },
+            { type: 'text-delta', index: 0, text: RETRY_PARTIAL },
           ],
-          message: 'upstream 503', code: 'SERVER',
         } },
         // Append the fixture's own success as the retry attempt — single-
         // sourced from the recording, never copied into a committed sidecar.
@@ -289,24 +288,25 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     page.on('console', (message) => {
       if (message.type() === 'error') renderErrors.push(message.text())
     })
-    const displayed = Promise.withResolvers<undefined>()
-    const disposeBarrier = scaffold!.ctx.on('llm/stream', async function* (_options, next) {
+    const releaseFailure = Promise.withResolvers<undefined>()
+    // Retirement must follow a visible partial, not race the first browser paint.
+    const stopHolding = scaffold!.ctx.on('llm/stream', async function* (_request, next) {
       for await (const chunk of next()) {
         yield chunk
-        if (chunk.type === 'text-delta' && chunk.text === partial) await displayed.promise
+        if (chunk.type === 'text-delta' && chunk.text === RETRY_PARTIAL) await releaseFailure.promise
       }
-    }, { prepend: true })
+    })
     try {
       const { settled } = await sendPrompt(60_000)
-      await page.locator('[data-streaming="true"]').getByText(partial, { exact: true }).waitFor()
-      displayed.resolve(undefined)
+      await page.getByText(RETRY_PARTIAL, { exact: true }).waitFor({ timeout: 15_000 })
+      releaseFailure.resolve(undefined)
       await settled
     } finally {
-      displayed.resolve(undefined)
-      disposeBarrier()
+      releaseFailure.resolve(undefined)
+      stopHolding()
     }
     expect(turnEndReasons(sessionEvents).at(-1)).toBe('completed')
-    await expect.poll(() => page.getByText(partial, { exact: true }).count()).toBe(0)
+    await expect.poll(() => page.getByText(RETRY_PARTIAL, { exact: true }).count()).toBe(0)
     await expect.poll(() => page.locator('[data-streaming="true"]').count()).toBe(0)
     await page.getByRole('button', { name: 'Send message', exact: true }).waitFor()
     expect(renderErrors).toEqual([])
@@ -314,6 +314,9 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     // only on change, so attempt count is invisible there).
     expect(sessionEvents.filter(e => e.type === 'llm/retry').length).toBeGreaterThanOrEqual(1)
     await expect.poll(() => page.getByText('event sourcing', { exact: false }).count(), { timeout: 10_000 }).toBeGreaterThan(0)
+    await expect.poll(() => page.getByText(RETRY_PARTIAL, { exact: true }).count()).toBe(0)
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
     // Golden of the recovered end-state: the discarded partial stays absent,
     // while the settled retry row remains as durable recovery context.
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)

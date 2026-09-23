@@ -45,7 +45,7 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 随附的 `web` 模板还包含 `dshmarket` 插件市场组合包，因此全新的 `web` profile 无需额外安装即可打开插件市场。
 
-使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。
+使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。`--dump-config-schema` 会导入组合树中插件声明的 schema，并打印描述 entry 与 patch 的 JSON Schema，而不是配置值；检查不受信任的插件前，请阅读 [schema dump 的安全性与范围](reference/README.zh.md#config-schema-dump)。
 
 层的确切优先级、flag、关闭行为、部署默认值和源码执行方式，以 [CLI 行为参考](reference/README.zh.md)为准。[启动与重载失败表](../../packages/boot/app-boot/README.zh.md#startup-and-reload-failures)对比 optional、required 插件启动失败与配置 HMR 的行为。
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sessionFormatCatalog } from '../src/index.ts'
+import { sessionFormatCatalog, createSessionFormatCatalogWithChildren } from '../src/index.ts'
 
 const header = { type: 'session', version: 0, id: 'principal-history', createdAt: 1, delegationDepth: 0 }
 const principal = { source: 'gateway', id: 'account-2', username: 'reader', role: 'user' }
@@ -19,7 +19,7 @@ function history(identity: unknown = principal) {
 function restore(rows: unknown[], version = 0) {
   // Released v2 headers carry isSeeded; earlier generations refuse the member.
   const physical = version === 2 ? { ...header, version, isSeeded: false } : { ...header, version }
-  const run = sessionFormatCatalog.createRestore(
+  const run = createSessionFormatCatalogWithChildren([]).createRestore(
     physical,
     { recovery: 'strict', validation: 'current' },
   )

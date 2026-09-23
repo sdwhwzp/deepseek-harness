@@ -232,7 +232,7 @@ describe('syncTools', () => {
     ])
   })
 
-  it('normalizes the root for a native definition built from a discriminated union and hoists its branch fields', () => {
+  it('preserves every discriminated action when normalizing the root for a native definition', async () => {
     const warns: string[] = []
     ctx.logger.warn = ((message: unknown) => { warns.push(String(message)) }) as typeof ctx.logger.warn
     const definition = createMcpToolDefinition(ctx, {
@@ -244,15 +244,35 @@ describe('syncTools', () => {
         anyOf: [
           { type: 'object', properties: { action: { const: 'list' } }, required: ['action'] },
           { type: 'object', properties: { action: { const: 'new' }, url: { type: 'string' } }, required: ['action'] },
+          { type: 'object', properties: { action: { const: 'select' }, tabId: { type: 'string' } }, required: ['action', 'tabId'] },
+          { type: 'object', properties: { action: { const: 'close' }, tabId: { type: 'string' } }, required: ['action', 'tabId'] },
         ],
       },
-      call: () => Promise.resolve({ content: [] }),
+      call: async (args) => {
+        if (!['list', 'new', 'select', 'close'].includes(String(args['action']))) throw new Error('invalid action')
+        return { content: [] }
+      },
     })
     expect(definition.parameters).toEqual({
       type: 'object',
-      properties: { action: { const: 'list' }, url: { type: 'string' } },
+      properties: {
+        action: { anyOf: [{ const: 'list' }, { const: 'new' }, { const: 'select' }, { const: 'close' }] },
+        url: { type: 'string' }, tabId: { type: 'string' },
+      },
       required: ['action'],
     })
+    ctx.tools.register(definition)
+    for (const action of ['list', 'new', 'select', 'close']) {
+      const result = await ctx.tools.execute({
+        signal: testToolSignal, callId: ToolCallId(action), name: 'stagehand_tabs',
+        arguments: { action, tabId: 'tab-1', url: 'https://example.invalid/' },
+      })
+      expect(result.isError).not.toBe(true)
+    }
+    const invalid = await ctx.tools.execute({
+      signal: testToolSignal, callId: ToolCallId('invalid'), name: 'stagehand_tabs', arguments: { action: 'erase' },
+    })
+    expect(invalid.isError).toBe(true)
     expect(warns).toEqual([
       'mcp-client(stagehand_tabs): dropped root anyOf from tool "tabs" input schema — no model provider accepts a composition keyword at the parameters root',
     ])
@@ -738,6 +758,70 @@ describe('tool execution', () => {
 
     expect(textAt(result.content)).toContain('image admission rejected the result: too many images')
     expect(textAt(result.content)).not.toContain('storage rejected')
+  })
+
+  it('keeps admitted images when post-execute shortens only the text', async () => {
+    const rich = await mountRichRegistry()
+    const blocks = [
+      { type: 'text', text: 'long text'.repeat(1000) },
+      { type: 'image', mimeType: 'image/png', data: 'AQ==' },
+    ] satisfies JsonValue[]
+    const client = createMockClient([{ name: 'img', inputSchema: { type: 'object' } }], { content: blocks })
+    rich.ctx.on('tools/post-execute', async (_exec, result, next): Promise<PostToolDecision> => {
+      await next()
+      expect(result.content.map(block => block.type)).toEqual(['text', 'image'])
+      return { kind: 'accept', content: result.content.map(block => block.type === 'text'
+        ? { type: 'text', text: block.text.slice(0, 20) }
+        : block) }
+    })
+    try {
+      await syncTools(client as never, rich.ctx, defaultOpts, new Map())
+      const result = await rich.ctx.tools.execute({
+        signal: testToolSignal, callId: ToolCallId('shortened'), name: 'mcp__srv__img',
+        arguments: {}, agent: agentOn() as never,
+      })
+      expect(result.isError).toBe(false)
+      expect(result.content.map(block => block.type)).toEqual(['text', 'image'])
+      expect(textAt(result.content)).toBe('long text'.repeat(1000).slice(0, 20))
+      if (result.isError) throw new Error('expected MCP success')
+      expect(result.value).toEqual({ content: blocks })
+    } finally {
+      await rich.ctx.fiber.dispose()
+    }
+  })
+
+  it.each(['value', 'renderer'] as const)('keeps a dispatch %s replacement instead of prepared images', async (replacement) => {
+    const rich = await mountRichRegistry()
+    try {
+      const client = createMockClient(
+        [{ name: 'img', inputSchema: { type: 'object' } }],
+        { content: [{ type: 'image', mimeType: 'image/png', data: 'AQ==' }] },
+      )
+      const registrations = await syncTools(client as never, rich.ctx, defaultOpts, new Map())
+      rich.ctx.on('tools/execute', async (_exec, next) => {
+        const result = await next()
+        if (result.isError) throw new Error('expected MCP success before dispatch replacement')
+        if (replacement === 'value') {
+          return { ...result, value: { content: [{ type: 'text', text: 'dispatch replacement' }] } }
+        }
+        const definition = rich.ctx.tools.get('mcp__srv__img')!
+        registrations.get('mcp__srv__img')!()
+        rich.ctx.tools.register({
+          ...definition,
+          output: { ...definition.output, render: () => [{ type: 'text', text: 'dispatch replacement' }] },
+        })
+        return { ...result }
+      })
+      const result = await rich.ctx.tools.execute({
+        signal: testToolSignal, callId: ToolCallId(`dispatch-${replacement}`), name: 'mcp__srv__img',
+        arguments: {}, agent: agentOn() as never,
+      })
+      expect(result.isError).toBe(false)
+      expect(rich.attachments.saved).toHaveLength(1)
+      expect(result.content).toEqual([{ type: 'text', text: 'dispatch replacement' }])
+    } finally {
+      await rich.ctx.fiber.dispose()
+    }
   })
 
   it('lets post-execute replacement win over a prepared image projection', async () => {

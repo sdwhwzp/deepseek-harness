@@ -1,4 +1,5 @@
 /** Test-only direct Remote face over the Session Controller's internal controllers. */
+import type { SessionControllerInternals } from '../src/index.ts'
 
 import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
@@ -9,6 +10,7 @@ import type {
   ImageAttachmentLimits,
 } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionProjectionsValue } from '../src/types.ts'
 import {
   SessionPersistenceNotFoundError,
   SessionPersistenceRevision,
@@ -47,6 +49,7 @@ import type {
   SessionListValue,
   SessionOpenWorkspacePathRequest,
   SessionOpenWorkspacePathValue,
+  SessionWorkspacePathApplication,
   SessionPage,
   SessionPageRequest,
   SessionPromptRequest,
@@ -57,12 +60,16 @@ import type {
   SessionSearchValue,
   SessionSelectModelRequest,
   SessionSelectModelValue,
+  SessionProjectionsRequest,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
 } from '../src/types.ts'
 
 /** Direct test face matching the generated `ctx.remote.session` unary methods. */
 export interface TestSessionRemote {
+  workspacePathApplications(
+    request: { readonly sessionId: SessionId; readonly path: string }, signal?: AbortSignal,
+  ): Promise<RemoteResult<readonly SessionWorkspacePathApplication[]>>
   canOpenWorkspacePath(): Promise<RemoteResult<boolean>>
   list(request: SessionListRequest, signal?: AbortSignal): Promise<RemoteResult<SessionListValue>>
   search(request: SessionSearchRequest, signal?: AbortSignal): Promise<RemoteResult<SessionSearchValue>>
@@ -80,6 +87,7 @@ export interface TestSessionRemote {
     signal?: AbortSignal,
   ): Promise<RemoteResult<SessionOpenWorkspacePathValue>>
   page(request: SessionPageRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPage>>
+  projections(request: SessionProjectionsRequest, signal?: AbortSignal): Promise<RemoteResult<SessionProjectionsValue>>
   follow(request: SessionFollowRequest, signal?: AbortSignal): AsyncIterable<SessionFollowFrame>
   control(signal?: AbortSignal): AsyncIterable<SessionControlFrame>
 }
@@ -91,6 +99,8 @@ export interface TestSessionRemoteDefaults {
   readonly nativeOpen?: boolean
   readonly saveDefaultModelSelection?: (selection: AgentModelSelection) => void | Promise<void>
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
+  readonly fileApplications?: SessionControllerInternals['fileApplications']
+  readonly openFileApplication?: SessionControllerInternals['openFileApplication']
   readonly revealPath?: (path: string, signal: AbortSignal) => Promise<void>
   readonly canOpenPath?: () => boolean
   /** Leave `attachments` unprovided so a case can observe an attachment-free composition. */
@@ -99,7 +109,8 @@ export interface TestSessionRemoteDefaults {
 
 const installed = new WeakMap<Context, SessionController>()
 
-const TEST_IMAGE_LIMITS: ImageAttachmentLimits = Object.freeze({
+/** Image defaults exposed by the fixture controller. */
+export const TEST_IMAGE_LIMITS: ImageAttachmentLimits = Object.freeze({
   maxImageBytes: 5 * 1024 * 1024,
   maxImagesPerMessage: 20,
   maxMessageImageBytes: 100 * 1024 * 1024,
@@ -287,6 +298,8 @@ function installControllers(
       },
       {
         ...defaults.openPath === undefined ? {} : { openPath: defaults.openPath },
+        ...defaults.fileApplications === undefined ? {} : { fileApplications: defaults.fileApplications },
+        ...defaults.openFileApplication === undefined ? {} : { openFileApplication: defaults.openFileApplication },
         ...defaults.revealPath === undefined ? {} : { revealPath: defaults.revealPath },
         ...defaults.canOpenPath === undefined ? {} : { canOpenPath: defaults.canOpenPath },
       },
@@ -333,6 +346,9 @@ export function createSessionTestRemote(
 ): TestSessionRemote {
   const direct = createSessionTestController(ctx, defaults)
   return {
+    workspacePathApplications: (request, signal = new AbortController().signal) => remoteResult(
+      () => direct.workspacePathApplications(request, signal), signal,
+    ),
     canOpenWorkspacePath: () => remoteResult(() => direct.canOpenWorkspacePath()),
     list: (request, signal = new AbortController().signal) => remoteResult(
       () => direct.list(request, signal),
@@ -360,6 +376,10 @@ export function createSessionTestRemote(
     ),
     page: (request, signal = new AbortController().signal) => remoteResult(
       () => direct.page(request, signal),
+      signal,
+    ),
+    projections: (request, signal = new AbortController().signal) => remoteResult(
+      () => direct.projections(request, signal),
       signal,
     ),
     follow: (request, signal = new AbortController().signal) => direct.follow(request, signal),

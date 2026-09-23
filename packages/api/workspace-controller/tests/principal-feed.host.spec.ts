@@ -44,17 +44,17 @@ describe('principalWorkspaceFollow', () => {
     const ctx = new Context()
     const one = workspace('one', ['session-one'])
     await expect(collect(ctx, undefined,
-      { type: 'baseline', value: { items: [one], archivedSessionIds: [SessionId('archived')] } },
+      { type: 'baseline', value: { pinnedSessionIds: [], items: [one], archivedSessionIds: [SessionId('archived')] } },
       { type: 'order', workspaceIds: [one.workspaceId] },
     )).resolves.toEqual([
-      { type: 'baseline', value: { items: [one], archivedSessionIds: [SessionId('archived')] } },
+      { type: 'baseline', value: { pinnedSessionIds: [], items: [one], archivedSessionIds: [SessionId('archived')] } },
       { type: 'order', workspaceIds: [one.workspaceId] },
     ])
   })
 
   it('fails closed for either half of an authenticated deployment', async () => {
     await expect(collect(new Context(), PRINCIPAL, {
-      type: 'baseline', value: { items: [], archivedSessionIds: [] },
+      type: 'baseline', value: { pinnedSessionIds: [], items: [], archivedSessionIds: [] },
     })).rejects.toMatchObject({
       code: 'PRINCIPAL_ACCESS_DENIED', reason: 'provider-required',
     })
@@ -62,7 +62,7 @@ describe('principalWorkspaceFollow', () => {
     const withoutPrincipal = new Context()
     withoutPrincipal.provide('principalAccess', { resolve: vi.fn() } as never)
     await expect(collect(withoutPrincipal, undefined, {
-      type: 'baseline', value: { items: [], archivedSessionIds: [] },
+      type: 'baseline', value: { pinnedSessionIds: [], items: [], archivedSessionIds: [] },
     })).rejects.toMatchObject({
       code: 'PRINCIPAL_ACCESS_DENIED', reason: 'principal-required',
     })
@@ -88,6 +88,7 @@ describe('principalWorkspaceFollow', () => {
       {
         type: 'baseline',
         value: {
+          pinnedSessionIds: [SessionId('session-hidden'), SessionId('session-visible')],
           items: [visible, hidden],
           archivedSessionIds: [SessionId('session-visible'), SessionId('session-hidden')],
         },
@@ -98,20 +99,23 @@ describe('principalWorkspaceFollow', () => {
         type: 'archived',
         archivedSessionIds: [SessionId('session-hidden'), SessionId('session-visible')],
       },
+      { type: 'pinned', pinnedSessionIds: [SessionId('session-hidden'), SessionId('session-visible')] },
       { type: 'upsert', workspace: revoked },
       { type: 'remove', workspaceId: visible.workspaceId },
     )).resolves.toEqual([
       {
         type: 'baseline',
         value: {
+          pinnedSessionIds: [SessionId('session-visible')],
           items: [workspace('visible', ['session-visible'])],
           archivedSessionIds: [SessionId('session-visible')],
         },
       },
       { type: 'order', workspaceIds: [visible.workspaceId] },
       { type: 'archived', archivedSessionIds: [SessionId('session-visible')] },
+      { type: 'pinned', pinnedSessionIds: [SessionId('session-visible')] },
       { type: 'remove', workspaceId: visible.workspaceId },
     ])
-    expect(resolve).toHaveBeenCalledTimes(3)
+    expect(resolve).toHaveBeenCalledTimes(4)
   })
 })

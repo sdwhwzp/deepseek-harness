@@ -3,6 +3,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import {
   RpcId,
   type ClientRequest,
@@ -13,7 +14,9 @@ import { bridge } from './http-bridge.ts'
 import { isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
+import { OperatorPeer } from './operator-peer.ts'
 import type {
+  PeerAdmission,
   ConnectionIndexRequest,
   ConnectionIndexResponse,
   ConnectionPrincipalRequest,
@@ -61,6 +64,10 @@ declare module '@deepseek-ai/cordis' {
 
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
+  /** Default local operator; authenticated accounts receive separate scopes. */
+  readonly operator: PeerScope
+  private readonly accountPeers = new Map<string, { peer: PeerScope; principal: AuthenticatedPrincipal }>()
+  private readonly peerPrincipals = new WeakMap<PeerScope, AuthenticatedPrincipal>()
   private readonly interceptors = new Map<string, Set<ConnectionRpcInterceptor>>()
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
 
@@ -76,6 +83,12 @@ export class HostConnectionService extends Service implements HostConnectionHand
     private readonly browserAuth: BrowserAuth,
   ) {
     super(ctx, 'connection')
+    this.operator = new OperatorPeer(ctx)
+    ctx.effect(() => async () => {
+      const peers = [this.operator, ...[...this.accountPeers.values()].map(entry => entry.peer)]
+      this.accountPeers.clear()
+      await Promise.all(peers.map(peer => peer.dispose()))
+    }, 'client-connection: request Peers')
   }
 
   /** Generic channel registry scoped to the Context reading this service. */
@@ -124,6 +137,47 @@ export class HostConnectionService extends Service implements HostConnectionHand
     if (provider === undefined) return undefined
     const principal = await provider.authenticate(request)
     return principal === undefined ? undefined : authenticatedPrincipal(principal)
+  }
+
+  /**
+   * Authenticate a carrier request and isolate its deployment account scope.
+   * @param request - HTTP or WebSocket upgrade request.
+   * @returns the admitted Peer and principal, or a rejection status.
+   */
+  async admitRequest(request: ConnectionPrincipalRequest): Promise<PeerAdmission> {
+    const authorization = await this.authorizeRequest(request)
+    if (!authorization.accepted) return { rejection: authorization.status }
+    const { principal } = authorization
+    return {
+      peer: this.peerForPrincipal(principal),
+      ...(principal === undefined ? {} : { principal }),
+    }
+  }
+
+  /**
+   * Read the identity verified for a deployment account's Peer.
+   * @param peer - Peer owned by this Connection.
+   * @returns its immutable principal, or undefined for a local operator.
+   */
+  principalOfPeer(peer: PeerScope): AuthenticatedPrincipal | undefined {
+    return this.peerPrincipals.get(peer)
+  }
+
+  private peerForPrincipal(principal: AuthenticatedPrincipal | undefined): PeerScope {
+    if (principal === undefined) return this.operator
+    const key = JSON.stringify([principal.source, principal.id, principal.username, principal.role])
+    const known = this.accountPeers.get(key)
+    if (known !== undefined) return known.peer
+    const peer = new OperatorPeer(this.ctx)
+    this.accountPeers.set(key, { peer, principal })
+    this.peerPrincipals.set(peer, principal)
+    return peer
+  }
+
+  /** A request that passes the fence and authentication speaks for the operator. */
+  admit(request: ConnectionTrustRequest): PeerAdmission {
+    const rejection = this.requestRejection(request)
+    return rejection === undefined ? { peer: this.operator } : { rejection }
   }
 
   /** Authenticate an index request through the process-token exchange or cookie. */
@@ -180,7 +234,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
           interceptor = candidate
         }
         if (interceptor === undefined) return new Response('not found', { status: 404 })
-        return rpcFetchHandler(channel, interceptor.handler, principal).fetch(request)
+        return rpcFetchHandler(channel, interceptor.handler, this.peerForPrincipal(principal)).fetch(request)
       },
     }
   }
@@ -216,15 +270,15 @@ export class HostConnectionService extends Service implements HostConnectionHand
       kind: 'prefix',
       path: channel,
       handler: async (req, res) => {
-        const authorization = await this.authorizeRequest(req)
-        if (!authorization.accepted) {
-          res.writeHead(authorization.status)
-          res.end(authorization.status === 401 ? 'unauthorized' : 'forbidden')
+        const admission = await this.admitRequest(req)
+        if ('rejection' in admission) {
+          res.writeHead(admission.rejection)
+          res.end(admission.rejection === 401 ? 'unauthorized' : 'forbidden')
           return
         }
         await bridge(req, res, {
           requestBodyMode: () => 'buffered',
-          fetch: request => rpcFetchHandler(channel, handler, authorization.principal).fetch(request),
+          fetch: request => rpcFetchHandler(channel, handler, admission.peer).fetch(request),
         })
       },
     }
@@ -262,7 +316,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
 function rpcFetchHandler(
   channel: string,
   handler: ConnectionRpcHandler,
-  principal: AuthenticatedPrincipal | undefined,
+  peer: PeerScope,
 ): ConnectionFetchHandler {
   return {
     requestBodyMode: () => 'buffered',
@@ -298,7 +352,7 @@ function rpcFetchHandler(
       }
 
       try {
-        const result = await handler(endpoint, message.payload, request.signal, principal)
+        const result = await handler(endpoint, message.payload, request.signal, peer)
         return fullResponse(message.rpcId, result)
       } catch (error) {
         return new Response(`handler failure: ${String(error)}`, { status: 500 })
@@ -352,9 +406,23 @@ function errorResponse(rpcId: RpcIdType, error: ConnectionRpcFailure): Response 
   return fullResponse(rpcId, { ok: false, error })
 }
 
-function fullResponse(rpcId: RpcIdType, result: ConnectionRpcResult<unknown>): Response {
-  const body: ConnectionServerResponse = { type: 'server-response', rpcId, result }
-  return Response.json(body)
+function fullResponse(rpcId: RpcIdType, result: Awaited<ReturnType<ConnectionRpcHandler>>): Response {
+  if (!result.ok) {
+    const body: ConnectionServerResponse = { type: 'server-response', rpcId, result }
+    return Response.json(body)
+  }
+  const { attachments, ...success } = result
+  const body: ConnectionServerResponse = { type: 'server-response', rpcId, result: success }
+  if (attachments === undefined || attachments.length === 0) return Response.json(body)
+  const parts = new FormData()
+  const attachmentMetadata = attachments.map((attachment, index) => {
+    const part = `bytes-${index}`
+    // FileSystem bytes may have SharedArrayBuffer backing, which BlobPart excludes.
+    parts.set(part, new Blob([new Uint8Array(attachment.bytes)]))
+    return { path: [...attachment.path], codec: 'bytes' as const, part }
+  })
+  parts.set('metadata', JSON.stringify({ ...body, attachments: attachmentMetadata }))
+  return new Response(parts)
 }
 
 function assertChannel(channel: string): void {

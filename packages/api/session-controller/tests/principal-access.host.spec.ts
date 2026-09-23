@@ -128,6 +128,8 @@ describe('Session Controller principal access', () => {
         content: [{ type: 'text', text: 'hidden prompt' }],
       }, signal),
       () => controller.cancel({ sessionId: hidden.id }),
+      () => controller.projections({ sessionId: hidden.id }, signal),
+      () => controller.workspacePathApplications({ sessionId: hidden.id, path: '/hidden/file.txt' }, signal),
       () => controller.openWorkspacePath({
         sessionId: hidden.id, path: '/hidden/file.txt',
       }, signal),

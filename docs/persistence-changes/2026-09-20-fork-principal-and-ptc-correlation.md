@@ -9,7 +9,7 @@ English | [中文](2026-09-20-fork-principal-and-ptc-correlation.zh.md)
 
 ## Summary
 
-Records optional authenticated-principal fields on queued inputs and turn facts, plus the root tool-call sequence on PTC dispatch events.
+Records optional authenticated-principal fields on queued inputs and turn facts, plus root tool-call sequences on PTC dispatch events against the V4 Session inventory.
 
 ## Table of Contents
 
@@ -27,16 +27,20 @@ id: 2026-09-20-fork-principal-and-ptc-correlation
 baseline: false
 changes:
   - root: "event:agent/inbox/spliced"
-    previous: "2026-09-14-image-offload"
-    after: "04099928dfb41064f13b163f2a3a5aa2bd59369e4dcd679f13f3317bab4d53fd"
+    previous: "2026-09-16-session-format-v4"
+    after: "fb911dfe70f07d7ec51cab5b937d89366ef8085cfd7b2f3dbd819bbc76185c8a"
+    decision: same-version
+  - root: "event:session/title-llm-request"
+    previous: "2026-09-16-session-format-v4"
+    after: "4f1959776af618db1e6a764cc1814b8621d91c9e7abf826947a811a11f624e81"
     decision: same-version
   - root: "event:step/start"
     previous: "2026-09-11-initial"
     after: "e45e981c9edcdd8ac4a5ffa272c28ae489ddfe1c8e5b470aebd38d4c2fb5c30e"
     decision: same-version
   - root: "event:tool/ptc-dispatch"
-    previous: "2026-09-14-image-offload"
-    after: "0441c8b328c191656598ddbf831c529979076453f24595557610839b2a004223"
+    previous: "2026-09-16-session-format-v4"
+    after: "4465bc52bed5d33d47c737509c16a1b41ebc17673c03e4ecb3c3a11f02481e89"
     decision: same-version
   - root: "event:tool/ptc-dispatch-start"
     previous: "2026-09-11-initial"
@@ -47,20 +51,20 @@ changes:
     after: "171a37e51ed002a77b9976094748fb961f573bfa5a65e5a17c0c645964a96a6d"
     decision: same-version
   - root: "event:user/message"
-    previous: "2026-09-14-image-offload"
-    after: "6cfa6375a1763421c2f18ba7a608aa79fbad51c258a68e6f1b9ee06e83e1fac6"
+    previous: "2026-09-16-session-format-v4"
+    after: "8590c9e7c0f4787f8b02742a82b6d5165c95ec84834634162ceb9cb7fcdd3938"
     decision: same-version
 ```
 
 <a id="compatibility"></a>
 ## Compatibility
 
-Existing events may omit these fields. Principal readers retain their legacy missing-principal behavior; authenticated execution supplies the account identity independently. PTC readers use rootCallSeq when available to distinguish repeated provider call ids and retain legacy correlation when absent. The fields do not alter message content or require a Session format increment.
+Existing V4 events may omit these fields. Authenticated execution supplies verified account identity independently; absence never grants access. PTC readers use rootCallSeq when available to distinguish repeated provider call ids and retain legacy correlation when absent. Released V3 data uses the explicit V3-to-V4 migration with historical child facts. No committed Session format generation is changed.
 
 <a id="verification"></a>
 ## Verification
 
-The focused API, principal-access, tool, agent-loop, subagent and export suites passed 2527 tests; the single timed-out cold-delivery test passed in an isolated rerun. The Host and Client typecheck and complete build passed.
+The full unit suite completed, followed by passing focused account authorization, Session migration, workspace feed, Connection, Gateway, workflow and UI regression tests. pnpm run build passed on Node 22.21.1.
 
 <a id="dev-note"></a>
 ## Dev Note

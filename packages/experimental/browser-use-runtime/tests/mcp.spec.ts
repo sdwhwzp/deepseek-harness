@@ -39,7 +39,7 @@ class FixtureModel extends LlmAdapter {
   }
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
-    if (options.tools?.some(tool => tool.name === TOOL) && options.messages.at(-1)?.content[0]?.type === 'text') {
+    if (options.tools?.some(tool => tool.name === TOOL) && options.messages.at(-1)?.role === 'user') {
       const call = { type: 'tool-call' as const, id: ToolCallId('visit'), name: TOOL, arguments: '{"label":"fixture"}' }
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id: call.id, name: call.name, argumentsDelta: call.arguments }
@@ -171,13 +171,13 @@ describe('Session MCP Loader composition', () => {
     expect(model.requests).toHaveLength(2)
     expect(model.requests[0]?.tools?.find(tool => tool.name === TOOL)).toMatchObject({ description: 'Visit the fixture page.', parameters: { required: ['label'], additionalProperties: false } })
     expect(JSON.stringify(first.agent.session.snapshotEvents())).toContain('Visit 1: fixture')
-    expect((await execute(ctx, first.agent)).content).toEqual([{ type: 'text', text: 'Visit 2: direct' }])
+    expect((await execute(ctx, first.agent)).content).toEqual([{ type: 'text', text: expect.stringMatching(/^Visit 2: direct\n\{"counter":2,"pid":\d+\}$/) as string }])
     first.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Visit once more.' }], source: { kind: 'user' } }))
     await first.agent.whenIdle()
     expect(model.requests).toHaveLength(4)
     expect(JSON.stringify(first.agent.session.snapshotEvents())).toContain('Visit 3: fixture')
     await warm(ctx, second.agent)
-    expect((await execute(ctx, second.agent)).content).toEqual([{ type: 'text', text: 'Visit 1: direct' }])
+    expect((await execute(ctx, second.agent)).content).toEqual([{ type: 'text', text: expect.stringMatching(/^Visit 1: direct\n\{"counter":1,"pid":\d+\}$/) as string }])
     expect(ctx.tools.schemas()).toEqual([])
     expect(ctx.tools.schemas(first.agent)).toHaveLength(2)
     const initial = await events(root)
@@ -188,7 +188,7 @@ describe('Session MCP Loader composition', () => {
     expect(ctx.tools.schemas(first.agent)).toEqual([])
     const resumed = await ctx.agents.create({ sessionId: SessionId('first') })
     await warm(ctx, resumed.agent)
-    expect((await execute(ctx, resumed.agent)).content).toEqual([{ type: 'text', text: 'Visit 1: direct' }])
+    expect((await execute(ctx, resumed.agent)).content).toEqual([{ type: 'text', text: expect.stringMatching(/^Visit 1: direct\n\{"counter":1,"pid":\d+\}$/) as string }])
     await browser.dispose()
     expect(ctx.browserUse.providerName).toBeUndefined()
     const closed = await events(root)
@@ -320,7 +320,7 @@ describe('Session MCP Loader composition', () => {
     registerIndependentTool(ctx)
     expect((await execute(ctx, owner.agent, 'unrelated')).content).toEqual([{ type: 'text', text: 'Independent.' }])
     await warm(ctx, child.agent)
-    expect((await execute(ctx, child.agent)).content).toEqual([{ type: 'text', text: 'Visit 1: direct' }])
+    expect((await execute(ctx, child.agent)).content).toEqual([{ type: 'text', text: expect.stringMatching(/^Visit 1: direct\n\{"counter":1,"pid":\d+\}$/) as string }])
   })
 
   it('denies inherited browser resources and instructions while keeping unrelated MCP servers usable', async () => {
@@ -553,7 +553,7 @@ describe('Session MCP Loader composition', () => {
     await writeFile(join(root, 'release'), '')
     const owner = await resuming
     expect(ctx.tools.schemas(owner.agent).some(tool => tool.name === TOOL)).toBe(true)
-    expect((await execute(ctx, owner.agent)).content).toEqual([{ type: 'text', text: 'Visit 1: direct' }])
+    expect((await execute(ctx, owner.agent)).content).toEqual([{ type: 'text', text: expect.stringMatching(/^Visit 1: direct\n\{"counter":1,"pid":\d+\}$/) as string }])
     await owner.dispose()
   })
 

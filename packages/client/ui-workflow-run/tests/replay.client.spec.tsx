@@ -60,7 +60,10 @@ function liveList(): SessionListState {
   }
   return {
     ids: [PARENT_ID, ...childIds], byId, phase: 'ready',
-    subagentsByParent: {}, jobsBySession: {},
+    projectionsBySession: { [PARENT_ID]: {
+      state: 'ready', error: null,
+      values: { subagentCatalog: childIds.map(id => ({ id, mode: 'one-shot' as const, createdAt: 0 })) },
+    } },
   }
 }
 
@@ -82,11 +85,14 @@ function props(node: ChatConversationViewNode, sessions: SessionListState): Work
     }),
     useInput: () => { throw new Error('unused') },
     inputActions: {
+      captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
+      insertText: () => false,
       setDraft: () => {}, addAttachments: () => false, removeAttachment: () => {},
       pruneAttachments: () => {}, submit: () => {},
     },
     useWorkspaces: s => s(workspaceSnapshot()),
     useTurnData: () => undefined,
+    useDisclosure: () => { throw new Error('unused') },
     openFile: () => {}, openSkill: () => {}, inspectCall: () => {}, forkAt: () => {},
     loadImage: () => Promise.reject(new Error('not used')), renderMessageImages: () => null, fileMentions: () => undefined,
     openSession: vi.fn(), t: makeTranslate(zh),

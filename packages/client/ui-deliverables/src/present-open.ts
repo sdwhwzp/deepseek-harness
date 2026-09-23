@@ -38,13 +38,13 @@ export function registerPresentOpen(ctx: Context): void {
     await Promise.allSettled(pending)
   })
   const routes = [
-    [CHANGED_FILES_PATH, 'GET', handleChangesSummary],
-    [PRESENT_OPEN_PATH, 'POST', handlePresentOpen], [CHANGES_OPEN_PATH, 'POST', handleChangesOpen], [CHANGES_DIFF_PATH, 'GET', handleChangesDiff],
+    [CHANGED_FILES_PATH, ['GET'], handleChangesSummary],
+    [PRESENT_OPEN_PATH, ['GET', 'POST'], handlePresentOpen], [CHANGES_OPEN_PATH, ['GET', 'POST'], handleChangesOpen], [CHANGES_DIFF_PATH, ['GET'], handleChangesDiff],
   ] as const
-  for (const [path, method, handler] of routes) {
+  for (const [path, methods, handler] of routes) {
     ctx.connection.fetch.register({
       path,
-      methods: [method],
+      methods: [...methods],
       requestBody: 'buffered',
       fetch: (request, principal) => {
         const task = handler(ctx, new Request(request, {
@@ -111,9 +111,19 @@ async function openVerified(ctx: Context, request: Request, sessionId: SessionId
     return new Response('Path has no verified Host path.', { status: 422 })
   }
   request.signal.throwIfAborted()
+  if (request.method === 'GET') {
+    await requireSessionRead(ctx, request, sessionId, principal)
+    return Response.json(await ctx.typertGateway.invoke({
+      namespace: 'session', method: 'workspacePathApplications', args: { request: { sessionId, path } },
+      signal: request.signal, ...(principal === undefined ? {} : { principal }),
+    }),
+    { headers: { 'cache-control': 'no-store' } })
+  }
+  const application = new URL(request.url).searchParams.get('application')
   await ctx.typertGateway.invoke({
     namespace: 'session', method: 'openWorkspacePath',
-    args: { request: { sessionId, path, ...(action === 'reveal' ? { action } : {}) } },
+    args: { request: { sessionId, path, ...(action === 'reveal' ? { action }
+      : application === null ? {} : { application }) } },
     signal: request.signal, ...(principal === undefined ? {} : { principal }),
   })
   return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
@@ -190,6 +200,8 @@ async function handleChangesDiff(ctx: Context, request: Request, principal: Prin
 }
 
 async function handleChangesOpen(ctx: Context, request: Request, principal: Principal): Promise<Response> {
+  const action = new URL(request.url).searchParams.get('action') ?? 'open'
+  if (action !== 'open' && action !== 'reveal') return new Response('Invalid file action.', { status: 400 })
   const coordinates = changedFileCoordinates(request)
   if (coordinates instanceof Response) return coordinates
   const { id, seq, index } = coordinates
@@ -203,7 +215,7 @@ async function handleChangesOpen(ctx: Context, request: Request, principal: Prin
     const file = changes.files[index]
     if (file === undefined) return new Response('Changed file not found in this summary.', { status: 404 })
     const { absolutePath: path } = await ctx.workspaceFiles.stat({ sessionId: id, workspaceRoot }, file.path, request.signal)
-    return await openVerified(ctx, request, id, path, 'open', principal)
+    return await openVerified(ctx, request, id, path, action, principal)
   } catch (error: unknown) {
     request.signal.throwIfAborted()
     return new Response('Changed file unavailable.', { status: failureStatus(error) })

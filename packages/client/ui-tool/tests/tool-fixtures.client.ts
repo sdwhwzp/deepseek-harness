@@ -1,14 +1,15 @@
 /** Shared Chat-slice and Session-event fixtures for Tool row tests. */
 import type { SessionLiveEventEntry } from '@deepseek-ai/dsh-api-session-controller/client'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
-import { isJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
+import { MessageId, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { isJsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   ChatConversationViewNode, ChatSnapshot, ConversationNode, RunningToolCall, ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 
-function jsonFixture(value: unknown): JsonValue {
+function jsonFixture<T>(value: T): T {
   if (!isJsonValue(value)) throw new Error('tool event fixture must be lossless JSON')
-  return value as JsonValue
+  return value
 }
 
 /** Build the canonical Chat slice consumed by Tool rows and details tests. */
@@ -34,6 +35,7 @@ export function toolChatSnapshot(
     nodes: {
       get: key => byKey.get(key),
       source: key => ({ getSnapshot: () => byKey.get(key), subscribe: () => () => {} }),
+      turnDataSource: () => { throw new Error('unused') },
       processSource: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
       values: () => nodes,
     },
@@ -92,7 +94,7 @@ export function toolSessionEvents(nodes: readonly ToolResultNode[]): readonly Se
           name: node.call.name,
           arguments: node.call.argsRaw,
         },
-      } as unknown as SessionLiveEventEntry['event'],
+      } as SessionLiveEventEntry['event'],
     }
     entries.push(callEntry)
     const resultEntry: SessionLiveEventEntry = {
@@ -105,15 +107,12 @@ export function toolSessionEvents(nodes: readonly ToolResultNode[]): readonly Se
           turn: 1,
           step: 1,
           message: {
-            id: `result-${node.callId}`,
-            role: 'user',
-            source: { kind: 'tool', callId: node.callId },
-            content: [{
-              type: 'tool-result',
-              toolCallId: node.callId,
-              content: node.content.map(block => ({ ...block })),
-              isError: node.isError,
-            }],
+            id: MessageId(`result-${node.callId}`),
+            role: 'tool',
+            source: { kind: 'tool', callId: ToolCallId(node.callId) },
+            toolCallId: ToolCallId(node.callId),
+            content: node.content.map(block => ({ ...block })),
+            isError: node.isError,
           },
           ...(node.error === undefined ? {} : { error: node.error }),
           ...(node.meta === undefined ? {} : { meta: node.meta }),
@@ -122,7 +121,7 @@ export function toolSessionEvents(nodes: readonly ToolResultNode[]): readonly Se
         // The real loop cites the call event (agent-loop tool-calls.ts), and the
         // Tool Definition derives its lifecycle identity from that citation.
         sourceEventSeqs: [SessionSeq(callSeq)],
-      } as unknown as SessionLiveEventEntry['event'],
+      } as SessionLiveEventEntry['event'],
     }
     entries.push(resultEntry)
   }

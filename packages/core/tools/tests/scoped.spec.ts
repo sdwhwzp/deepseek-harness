@@ -180,8 +180,8 @@ describe('override()', () => {
   it('validates the definition exactly as register does', async () => {
     const ctx = await mount()
     const { scope } = await mintAgentScope(ctx, 'a')
-    const broken = { ...tool('bash'), output: undefined } as unknown as ToolDefinition
-    expect(() => scope.ctx.tools.override(broken)).toThrow(/must declare output/)
+    const broken: unknown = { ...tool('bash'), output: undefined }
+    expect(() => scope.ctx.tools.override(broken as ToolDefinition)).toThrow(/must declare output/)
   })
 
   it('disposing the scope unwinds its replacements', async () => {

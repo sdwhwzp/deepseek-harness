@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { BrowserAuth } from '../src/browser-auth.ts'
 import { HostConnectionService } from '../src/rpc-host.ts'
 import type { RequestPrincipalProvider } from '../src/rpc.ts'
@@ -22,6 +22,29 @@ async function mounted(provider?: RequestPrincipalProvider): Promise<{
 }
 
 describe('Connection exact Fetch routes', () => {
+  it('isolates account scopes and replaces the scope when verified privileges change', async () => {
+    let identity: AuthenticatedPrincipal = { source: 'gateway', id: 'alice', username: 'Alice', role: 'user' }
+    const { connection, dispose } = await mounted({ authenticate: () => identity })
+    onTestFinished(dispose)
+    const request = { method: 'GET', url: '/api', headers: { host: 'localhost' } }
+    const alice = await connection.admitRequest(request)
+    const repeated = await connection.admitRequest(request)
+    identity = { ...identity, id: 'bob', username: 'Bob' }
+    const bob = await connection.admitRequest(request)
+    identity = { source: 'gateway', id: 'alice', username: 'Alice', role: 'admin' }
+    const elevated = await connection.admitRequest(request)
+    if ('rejection' in alice || 'rejection' in repeated || 'rejection' in bob || 'rejection' in elevated) {
+      throw new Error('fixture authentication did not admit the accounts')
+    }
+    expect(repeated.peer).toBe(alice.peer)
+    expect(alice.peer).not.toBe(connection.operator)
+    expect(bob.peer).not.toBe(alice.peer)
+    expect(elevated.peer).not.toBe(alice.peer)
+    expect(connection.principalOfPeer(alice.peer)).toMatchObject({ id: 'alice', role: 'user' })
+    expect(connection.principalOfPeer(bob.peer)).toMatchObject({ id: 'bob', role: 'user' })
+    expect(connection.principalOfPeer(elevated.peer)).toEqual(identity)
+  })
+
   it('dispatches owned methods and returns 404 for unclaimed requests', async () => {
     const { connection, dispose: disposeFiber } = await mounted()
     const route = vi.fn(async (request: Request) =>

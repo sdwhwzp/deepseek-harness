@@ -151,7 +151,7 @@ describe('sessionStats projection unit (registry drive)', () => {
 
 /** Build one synthetic committed event with a controlled timestamp. */
 function at(time: number, type: string, data: unknown, envelope: Record<string, unknown> = {}): SessionEvent {
-  return { type, seq: time, time, data, ...envelope } as unknown as SessionEvent
+  return { type, seq: time, time, data, ...envelope } as SessionEvent
 }
 
 function attemptAt(

@@ -1,12 +1,12 @@
 [
   {
-    "id": "conversation",
+    "id": "blank",
     "blank": false,
-    "updatedAt": 200
+    "updatedAt": 100
   },
   {
-    "id": "blank",
-    "blank": true,
+    "id": "conversation",
+    "blank": false,
     "updatedAt": 100
   },
   {

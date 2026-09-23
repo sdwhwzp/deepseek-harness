@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, ToolCallId  } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
@@ -16,6 +17,13 @@ import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'order-probe': { kind: 'order-probe' } & ContextFormed
+    'test': { kind: 'test' } & ContextFormed
+  }
+}
 
 const testToolSignal = new AbortController().signal
 
@@ -819,7 +827,7 @@ describe('the sub-dispatch scheduler (native concurrency contract)', () => {
           kind: 'accept' as const,
           additionalContexts: [createUserMessage({
             content: [{ type: 'text' as const, text: `ctx:${String(postExec.callId)}` }],
-            source: { kind: 'plugin' as const, plugin: 'order-probe' },
+            source: { kind: 'order-probe' as const },
           })],
         }
       }
@@ -1323,7 +1331,7 @@ describe('the run_code dispatch bridge', () => {
           kind: 'accept' as const,
           additionalContexts: [createUserMessage({
             content: [{ type: 'text' as const, text: `context for ${exec.callId}` }],
-            source: { kind: 'plugin' as const, plugin: 'test' },
+            source: { kind: 'test' as const },
           })],
         })
       }
@@ -1340,12 +1348,12 @@ describe('the run_code dispatch bridge', () => {
       {
         role: 'user',
         content: [{ type: 'text', text: 'context for call-1:ptc:1' }],
-        source: { kind: 'plugin', plugin: 'test' },
+        source: { kind: 'test' },
       },
       {
         role: 'user',
         content: [{ type: 'text', text: 'context for call-1:ptc:2' }],
-        source: { kind: 'plugin', plugin: 'test' },
+        source: { kind: 'test' },
       },
     ])
   })
@@ -1376,7 +1384,7 @@ describe('the run_code dispatch bridge', () => {
 
     expect(result.additionalContexts).toMatchObject([{
       role: 'user',
-      source: { kind: 'plugin', plugin: 'tools-ptc' },
+      source: { kind: 'ptc-mode' },
       content: [
         { type: 'text', text: 'image result' },
         { type: 'image', attachment: { mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
@@ -1426,7 +1434,7 @@ describe('the run_code dispatch bridge', () => {
         kind: 'accept',
         additionalContexts: [createUserMessage({
           content: [{ type: 'text', text: 'nested context' }],
-          source: { kind: 'plugin', plugin: 'test' },
+          source: { kind: 'test' },
         })],
       })
     })
@@ -1442,7 +1450,7 @@ describe('the run_code dispatch bridge', () => {
       id: expect.any(String) as unknown,
       role: 'user',
       content: [{ type: 'text', text: 'nested context' }],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'test' },
     }])
   })
 

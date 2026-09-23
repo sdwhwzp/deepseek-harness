@@ -1,11 +1,18 @@
 import { Context } from '@deepseek-ai/cordis'
 import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { inboxProjectionDefinition, ReactLoopInbox } from '../src/inbox.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'principal-fixture': { kind: 'principal-fixture' } & ContextFormed
+  }
+}
 
 function unsupportedInbox(): Agent['inbox'] {
   const rejectMutation = (): never => {
@@ -288,7 +295,7 @@ describe('principal grouping', () => {
     const a = message('a')
     const internal = createUserMessage({
       content: [{ type: 'text', text: 'internal' }],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'principal-fixture', form: 'recall' },
     })
     const anonymous = createUserMessage({
       content: [{ type: 'text', text: 'anonymous' }],

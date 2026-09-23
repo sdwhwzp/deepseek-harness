@@ -14,8 +14,8 @@ function callName(node: ToolCallBlock): string {
 
 /** One atomic call dispatched through the Tool-owned keyed slot. */
 const ToolCall = memo(function ToolCall({
-  renderSlot, callId, toolName, block, openFile, cwd, home, inspectCall, loadImage, t, children,
-}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 'loadImage' | 't'> & {
+  renderSlot, callId, toolName, block, openFile, cwd, home, inspectCall, loadImage, useDisclosure, t, children,
+}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 'loadImage' | 'useDisclosure' | 't'> & {
   callId: string
   toolName: string
   block: ToolCallBlock
@@ -30,8 +30,9 @@ const ToolCall = memo(function ToolCall({
     cwd,
     home,
     loadImage,
-    inspect: () => { inspectCall(callId) },
-  }), [callId, toolName, block, openFile, cwd, home, loadImage, inspectCall])
+    useDisclosure,
+    inspect: inspectCall === undefined ? undefined : () => { inspectCall(callId) },
+  }), [callId, toolName, block, openFile, cwd, home, loadImage, inspectCall, useDisclosure])
   // Complete read_image cards own their collapsed gallery. Other results keep
   // their image references even when tool-specific metadata is unavailable.
   const images = useMemo(() => 'kind' in block && imageCardModel(block, cwd, home) === null
@@ -60,8 +61,8 @@ const ToolCall = memo(function ToolCall({
 })
 
 const ToolCallBranch = memo(function ToolCallBranch({
-  renderSlot, block, cwd, home, openFile, inspectCall, loadImage, t,
-}: Pick<ToolTreeProps, 'renderSlot' | 'cwd' | 'openFile' | 'inspectCall' | 'loadImage' | 't'> & {
+  renderSlot, block, cwd, home, openFile, inspectCall, loadImage, useDisclosure, t,
+}: Pick<ToolTreeProps, 'renderSlot' | 'cwd' | 'openFile' | 'inspectCall' | 'loadImage' | 'useDisclosure' | 't'> & {
   block: ToolCallBlock
   home?: string | undefined
 }) {
@@ -75,6 +76,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
       cwd={cwd}
       home={home}
       inspectCall={inspectCall}
+      useDisclosure={useDisclosure}
       loadImage={loadImage}
       t={t}
     >
@@ -89,6 +91,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
               home={home}
               openFile={openFile}
               inspectCall={inspectCall}
+              useDisclosure={useDisclosure}
               loadImage={loadImage}
               t={t}
             />
@@ -106,7 +109,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
  * @returns the Tool call tree.
  */
 export function ToolCallTree({
-  renderSlot, node, cwd, openFile, inspectCall, loadImage, useHostInfo, t,
+  renderSlot, node, cwd, openFile, inspectCall, loadImage, useDisclosure, useHostInfo, t,
 }: ToolTreeProps) {
   const home = useHostInfo(info => info.home)
   const block = node.data.root
@@ -118,6 +121,7 @@ export function ToolCallTree({
       home={home}
       openFile={openFile}
       inspectCall={inspectCall}
+      useDisclosure={useDisclosure}
       loadImage={loadImage}
       t={t}
     />

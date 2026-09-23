@@ -60,8 +60,9 @@ const PEER_REQUIRED_HOST_EXPORTS = {
     'requirePrincipalAccess',
     'resolvePrincipalAccess',
   ],
+  '@deepseek-ai/dsh-client-connection': ['OperatorPeer'],
   '@deepseek-ai/dsh-subprocess': ['SubprocessExecutableNotFoundError'],
-  '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'scopeOf', 'scopeTarget'],
+  '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'createScope', 'scopeOf', 'scopeTarget'],
   '@deepseek-ai/dsh-session': ['SESSION_FORMAT_VERSION'],
   '@deepseek-ai/dsh-session-persistence': ['SessionPersistenceNotFoundError'],
 } as const satisfies HostDependencyExports

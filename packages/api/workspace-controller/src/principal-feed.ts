@@ -46,6 +46,7 @@ export async function* principalWorkspaceFollow(
         const sessionIds = [
           ...frame.value.items.flatMap(workspace => workspace.sessionIds),
           ...frame.value.archivedSessionIds,
+          ...frame.value.pinnedSessionIds,
         ]
         const access = await resolvePrincipalAccess(ctx, principal, { workspaceIds, sessionIds }, signal)
         visibleWorkspaceIds.clear()
@@ -60,6 +61,8 @@ export async function* principalWorkspaceFollow(
           value: {
             items,
             archivedSessionIds: frame.value.archivedSessionIds
+              .filter(sessionId => access.readableSessionIds.has(sessionId)),
+            pinnedSessionIds: frame.value.pinnedSessionIds
               .filter(sessionId => access.readableSessionIds.has(sessionId)),
           },
         }
@@ -99,6 +102,11 @@ export async function* principalWorkspaceFollow(
           archivedSessionIds: frame.archivedSessionIds
             .filter(sessionId => access.readableSessionIds.has(sessionId)),
         }
+        break
+      }
+      case 'pinned': {
+        const access = await resolvePrincipalAccess(ctx, principal, { sessionIds: frame.pinnedSessionIds }, signal)
+        yield { type: 'pinned', pinnedSessionIds: frame.pinnedSessionIds.filter(id => access.readableSessionIds.has(id)) }
         break
       }
       default: assertNever(frame)

@@ -12,6 +12,8 @@ import {
 } from '@deepseek-ai/dsh-principal-access'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
+  WorkspaceActiveSessionError,
+  WorkspaceArchivedSessionPinError,
   WorkspaceId,
   WorkspaceMoveInvalidError,
   WorkspaceOrderInvalidError,
@@ -30,8 +32,11 @@ import type {
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspacePinSessionRequest,
+  WorkspacePinValue,
   WorkspaceRenameRequest,
   WorkspaceUnarchiveSessionRequest,
+  WorkspaceUnpinSessionRequest,
   WorkspaceValue,
 } from './types.ts'
 
@@ -223,8 +228,11 @@ export class WorkspaceCommands {
   }
 
   /**
-   * Add one known Session to the registry-global archive set.
-   * @param request - Session identity to archive.
+   * Add one known Session to the registry-global archive set. Without
+   * `stopActivity` a Session with running work is refused as
+   * `workspace/session-active` with the activity the registry's providers
+   * reported; with it, the providers stop that work first.
+   * @param request - Session identity to archive and whether to stop its work.
    * @param principal - transport-verified caller, when authenticated.
    * @returns the readable subset of the resulting archive set.
    */
@@ -244,8 +252,15 @@ export class WorkspaceCommands {
       hiddenResource,
     )
     try {
-      await this.ctx.workspaceRegistry.archiveSession(request.sessionId)
+      await this.ctx.workspaceRegistry.archiveSession(
+        request.sessionId,
+        request.stopActivity === true ? { stopActivity: true } : {},
+      )
     } catch (error) {
+      if (error instanceof WorkspaceActiveSessionError) {
+        throw new RemoteError('workspace/session-active', error.message,
+          { sessionId: request.sessionId, activity: error.activity }, { cause: error })
+      }
       if (!(error instanceof WorkspaceUnknownSessionError)) throw error
       throw sessionNotFound(request.sessionId, error.message, error)
     }
@@ -294,11 +309,57 @@ export class WorkspaceCommands {
    * archived is not an error: the call is idempotent, so a lost race with
    * another surface resolves as a no-op.
    * @param request - Session identity to unarchive.
-   * @returns the complete resulting archive set.
+   * @param principal - transport-verified caller, when authenticated.
+   * @returns the readable subset of the resulting archive set.
    */
-  async unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+  async unarchiveSession(
+    request: WorkspaceUnarchiveSessionRequest, principal: AuthenticatedPrincipal | undefined,
+  ): Promise<WorkspaceArchiveValue> {
+    const access = await this.authorize(principal, {
+      sessionIds: unique([...this.ctx.workspaceRegistry.archivedSessionIds, request.sessionId]),
+    }, [{ kind: 'session', id: request.sessionId }], hiddenResource)
     await this.ctx.workspaceRegistry.unarchiveSession(request.sessionId)
-    return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
+    return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds].filter(id => access.readableSessionIds.has(id)) }
+  }
+
+  /**
+   * Add one known unarchived Session to the registry-global pin set.
+   * @param request - Session identity to pin.
+   * @param principal - transport-verified caller, when authenticated.
+   * @returns readable pinned Sessions, most recently pinned first.
+   */
+  async pinSession(request: WorkspacePinSessionRequest, principal: AuthenticatedPrincipal | undefined): Promise<WorkspacePinValue> {
+    const access = await this.authorize(principal, {
+      sessionIds: unique([...this.ctx.workspaceRegistry.pinnedSessionIds, request.sessionId]),
+    }, [{ kind: 'session', id: request.sessionId }], hiddenResource)
+    try {
+      await this.ctx.workspaceRegistry.pinSession(request.sessionId)
+    } catch (error) {
+      if (error instanceof WorkspaceUnknownSessionError) {
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
+      }
+      if (error instanceof WorkspaceArchivedSessionPinError) {
+        throw new RemoteError('gateway/bad-request', error.message, {}, { cause: error })
+      }
+      throw error
+    }
+    return { pinnedSessionIds: [...this.ctx.workspaceRegistry.pinnedSessionIds].filter(id => access.readableSessionIds.has(id)) }
+  }
+
+  /**
+   * Drop one Session from the registry-global pin set. An id that is not
+   * pinned is not an error: the call is idempotent, so a lost race with
+   * another surface resolves as a no-op.
+   * @param request - Session identity to unpin.
+   * @param principal - transport-verified caller, when authenticated.
+   * @returns readable pinned Sessions, most recently pinned first.
+   */
+  async unpinSession(request: WorkspaceUnpinSessionRequest, principal: AuthenticatedPrincipal | undefined): Promise<WorkspacePinValue> {
+    const access = await this.authorize(principal, {
+      sessionIds: unique([...this.ctx.workspaceRegistry.pinnedSessionIds, request.sessionId]),
+    }, [{ kind: 'session', id: request.sessionId }], hiddenResource)
+    await this.ctx.workspaceRegistry.unpinSession(request.sessionId)
+    return { pinnedSessionIds: [...this.ctx.workspaceRegistry.pinnedSessionIds].filter(id => access.readableSessionIds.has(id)) }
   }
 
   private requireWorkspace(workspaceId: WorkspaceId): Workspace {

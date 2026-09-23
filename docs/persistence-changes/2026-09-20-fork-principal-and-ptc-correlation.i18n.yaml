@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-09-20-fork-principal-and-ptc-correlation.md
-2026-09-20-fork-principal-and-ptc-correlation.md: 76c8bc012fe2dcb11c91e91920c7b59fec9d8f53
-2026-09-20-fork-principal-and-ptc-correlation.zh.md: 27e399ca1e7bd5e47c84788c0682b1668e477246
+2026-09-20-fork-principal-and-ptc-correlation.md: 98fd92697df8915bf57d4cd72a91f6efbcc956e1
+2026-09-20-fork-principal-and-ptc-correlation.zh.md: 523db6059c5c91b521f87d48f98c11e80d0ded1a

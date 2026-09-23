@@ -1034,6 +1034,7 @@ await new Promise(() => {})`))
   it("carries the delegating step's owner to every child the script spawns", async () => {
     const ctx = new Context()
     await ctx.plugin(SessionProjectionRegistry)
+    await mountPtcRuntime(ctx)
     await ctx.plugin(SubagentRuntime)
     const owners: (AuthenticatedPrincipal | undefined)[] = []
     const provider: SubagentProvider = {
@@ -1071,6 +1072,7 @@ await new Promise(() => {})`))
   it('a run started without an owner leaves its children unowned rather than guessing', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionProjectionRegistry)
+    await mountPtcRuntime(ctx)
     await ctx.plugin(SubagentRuntime)
     const owners: (AuthenticatedPrincipal | undefined)[] = []
     ctx.subagents.registerProvider({

@@ -180,11 +180,31 @@ describe('ConversationNodeAssembler', () => {
       .not.toBe(conversationContextKey('tool', 'ab', ''))
   })
 
+  it('reports boundary changes only when the owning Turn location changes', () => {
+    const index = new ConversationLocationIndex()
+    const boundaries = [
+      at(SessionSeq(1), 'turn/start', { turn: 1 }),
+      at(SessionSeq(2), 'step/start', { turn: 1, step: 1 }),
+      at(SessionSeq(3), 'step/end', { turn: 1, step: 1 }),
+      at(SessionSeq(4), 'turn/end', { turn: 1 }),
+    ]
+    for (const boundary of boundaries) {
+      index.appendBoundary(boundary)
+      expect(index.takeChangedTurns()).toEqual([1])
+      const turn = index.snapshot().turns.get(1)
+      index.appendBoundary(boundary)
+      expect(index.snapshot().turns.get(1)).toBe(turn)
+      expect(index.takeChangedTurns()).toEqual([])
+    }
+  })
+
   it('publishes Location data through stable per-key sources', () => {
     const index = new ConversationLocationIndex()
     const turnStart = at(SessionSeq(1), 'turn/start', { turn: 1 })
     const stepStart = at(SessionSeq(2), 'step/start', { turn: 1, step: 1 })
     index.rebuild([input(turnStart), input(stepStart)])
+    expect(index.takeChangedTurns()).toEqual([1])
+    expect(index.takeChangedTurns()).toEqual([])
     const location = index.locationOf(stepStart)
     if (location.kind !== 'step') throw new Error('scope probe requires a Step Location')
     const source = location.step.data.source('scope-probe')
@@ -200,6 +220,7 @@ describe('ConversationNodeAssembler', () => {
     }])).toBe(true)
     expect(source.getSnapshot()).toBe(initial)
     expect(listener).not.toHaveBeenCalled()
+    expect(index.takeChangedTurns()).toEqual([1])
 
     index.publishData()
     expect(listener).toHaveBeenCalledOnce()
@@ -212,6 +233,7 @@ describe('ConversationNodeAssembler', () => {
     }])
     index.publishData()
     expect(listener).not.toHaveBeenCalled()
+    expect(index.takeChangedTurns()).toEqual([1])
 
     const changed = { value: 2 }
     index.replaceData([{

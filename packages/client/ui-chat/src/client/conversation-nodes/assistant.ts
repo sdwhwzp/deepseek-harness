@@ -284,7 +284,7 @@ function publishedAssistantData(
   return location?.kind === 'step' ? location.step.data.get('assistant-step') : undefined
 }
 
-/** Per-step Assistant streaming/final/interruption Definition. */
+/** Per-step Assistant lifecycle; materialized keys survive cleared stream content as hidden Nodes. */
 export const assistantDefinition: ConversationNodeDefinition<AssistantState> = {
   kind: 'assistant-step',
   target: 'chat',
@@ -332,16 +332,15 @@ export const assistantDefinition: ConversationNodeDefinition<AssistantState> = {
     }
   },
   buildViewNode: (context) => {
+    const current = context.current.get('chat')
     const state = context.state ?? fallbackState(context)
-    if (state === undefined) return null
     const data = publishedAssistantData(context)
-    if (data === undefined) return null
+    if (state === undefined || data === undefined) {
+      return current == null ? null : { ...current, visibility: 'hidden' }
+    }
     const settled = data.finalNode
     const visible = settled === undefined ? state.visibleBlocks > 0 : hasVisibleContent(data.blocks)
-    if (settled === undefined && !visible) {
-      const current = context.current.get('chat')
-      if (current === undefined || current === null) return null
-    }
+    if (settled === undefined && !visible && current == null) return null
     const anchorSeq = settled?.seq ?? state.firstVisibleSeq ?? context.matches[0]?.event.seq ?? 0
     return chatNode(context, 'assistant-step', anchorSeq, data, {
       visibility: settled?.interrupted === true || visible ? 'visible' : 'hidden',

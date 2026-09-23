@@ -24,6 +24,7 @@ import {
   type SessionLogCompressionLevel,
   type SessionLogExportReady,
 } from './archive.ts'
+import { SESSION_LOG_EXPORT_PATH } from './routes.ts'
 
 export {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
@@ -46,8 +47,7 @@ export type {
 export const name = 'session-log-download'
 export const inject = ['commands', 'connection']
 
-/** Stable browser download path retained across the transport migration. */
-export const SESSION_LOG_EXPORT_PATH = '/api/session.export'
+export { SESSION_LOG_EXPORT_PATH } from './routes.ts'
 
 /** Session-log archive policy. */
 export interface Config {

@@ -1,4 +1,4 @@
-/** Listing-only V2 metadata remains usable after the V3 format upgrade. */
+/** Predecessor titles remain readable without trusting obsolete list metadata. */
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,7 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import SessionStore, { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionProjectionCache, { projectionCacheDomainSpec } from '@deepseek-ai/dsh-session-projection-cache'
@@ -24,7 +24,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 
-it('loads predecessor cache documents through Cordis and preserves blankness without opening Sessions', async () => {
+it('loads predecessor cache documents through Cordis and serves titles without opening Sessions', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-predecessor-list-'))
   roots.push(root)
   const directory = join(root, projectionCacheDomainSpec.name, 'sessions')
@@ -37,12 +37,12 @@ it('loads predecessor cache documents through Cordis and preserves blankness wit
     { id: 'invalid-row', blank: 'invalid' },
     { id: 'v1', blank: true, formatVersion: 1 },
     { id: 'unbound', blank: true, formatVersion: null },
-    { id: 'future', blank: true, formatVersion: 4 },
+    { id: 'future', blank: true, formatVersion: 5 },
     { id: 'seeded', blank: true, seeded: true },
     { id: 'denied', blank: true },
   ]
   const headers: SessionHeader[] = cases.map(value => ({
-    id: SessionId(value.id), version: 3, createdAt: 100,
+    id: SessionId(value.id), version: 4, createdAt: 100,
     cwd: '/work/WebDAV', isSeeded: value.seeded ?? false,
   }))
   for (const value of cases) {
@@ -82,13 +82,13 @@ it('loads predecessor cache documents through Cordis and preserves blankness wit
     ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
     ['@deepseek-ai/dsh-session-projection-cache', SessionProjectionCache],
   ])
-  ctx.loader.internal = {
+  Reflect.set(ctx.loader, 'internal', {
     version: 'v2',
     async import(specifier: string) {
       if (!modules.has(specifier)) throw new Error(`unexpected Loader import: ${specifier}`)
       return modules.get(specifier)
     },
-  } as unknown as NonNullable<typeof ctx.loader.internal>
+  })
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
   ctx.sessionProjections.register(titleProjectionDefinition)
@@ -98,7 +98,7 @@ it('loads predecessor cache documents through Cordis and preserves blankness wit
   } as never)
   const open = vi.fn(() => { throw new Error('listing must not open a Session') })
   ctx.provide('sessionPersistence', { open, stat: open } as never)
-  const hints = vi.spyOn(ctx.sessionProjectionCache, 'cachedPredecessorListHints')
+  const hints = vi.spyOn(ctx.sessionProjectionCache, 'cachedPredecessorTitle')
   const rows = await list.list(undefined, async ids => new Set(ids.filter(id => id !== 'denied')))
   await expect(JSON.stringify(rows.map(row => ({
     id: row.sessionId, blank: row.blank, updatedAt: row.updatedAt,
@@ -106,10 +106,10 @@ it('loads predecessor cache documents through Cordis and preserves blankness wit
     fileURLToPath(new URL('./expected/predecessor-list.json', import.meta.url)),
   )
   expect(rows.find(row => row.sessionId === 'blank')?.projections).toEqual({
-    asOfSeq: -1, values: { title: null, sessionListMetadata: { blank: true, lastPromptAt: null } },
+    kind: 'cached', asOfSeq: 3, values: { title: null },
   })
   expect(hints.mock.calls.some(([header]) => header.id === 'denied')).toBe(false)
-  expect(ctx.sessionProjectionCache.cachedSnapshot(headers[0]!, SessionLogOffset(0))).toBeUndefined()
+  expect(ctx.sessionProjectionCache.cachedSnapshot(headers[0]!)).toBeUndefined()
   expect(ctx.sessions.get(SessionId('blank'))).toBeUndefined()
   expect(open).not.toHaveBeenCalled()
   expect(await readFile(join(directory, 'blank.json'), 'utf8')).toBe(original)

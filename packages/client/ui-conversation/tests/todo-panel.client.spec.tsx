@@ -64,8 +64,10 @@ describe('TodoPanel', () => {
     expect(items.map(li => li.getAttribute('data-status'))).toEqual(['completed', 'in_progress', 'pending'])
     expect(screen.getByText('搭骨架')).toBeTruthy()
     expect(screen.getByText('写组件')).toBeTruthy()
-    // Each status row carries an SVG glyph (not a text bullet).
-    expect(items.every(li => li.querySelector('svg') !== null)).toBe(true)
+    expect(items.map(li => li.querySelector('[data-state]')?.getAttribute('data-state')))
+      .toEqual(['done', 'ongoing', 'idle'])
+    expect(screen.getAllByRole('img').map(node => node.getAttribute('aria-label')))
+      .toEqual(['已完成', '进行中', '待处理'])
   })
 
   it('collapse hides an expanded list; expand restores; header keeps the count summary', () => {
@@ -106,7 +108,7 @@ describe('TodoPanel', () => {
 function dockProps(store: ReturnType<typeof createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>>): TodoDockProps {
   const useProjection = (_key: string, selector?: (v: unknown) => unknown) =>
     bindSnapshotSelector(store)(s => (selector ?? (v => v))(s.value))
-  return { useProjection, useSession: () => true, t } as unknown as TodoDockProps
+  return { useProjection, useSession: () => true, t } as TodoDockProps
 }
 
 describe('TodoDock', () => {

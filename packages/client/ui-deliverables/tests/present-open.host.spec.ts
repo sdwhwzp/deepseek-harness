@@ -48,8 +48,9 @@ async function fixture() {
   })
   ctx.provide('sessionQuery', { readEvent } as never)
   const opener = vi.fn(async (_request: { sessionId: SessionId; path: string; action?: 'reveal' }, _signal: AbortSignal) => ({ opened: true as const }))
-  ctx.provide('sessionController', { resolveAgent, openWorkspacePath: opener, workspaceDesktop: () => ({ name: 'desktop', available: true, fileManager: 'finder' }) } as never)
-  const invoke = vi.fn(async (request: InvokeRemoteRequest) => opener(
+  const applications = vi.fn(async () => [{ id: 'player', name: 'Player', default: true, icon: null }])
+  ctx.provide('sessionController', { workspacePathApplications: applications, resolveAgent, openWorkspacePath: opener, workspaceDesktop: () => ({ name: 'desktop', available: true, fileManager: 'finder' }) } as never)
+  const invoke = vi.fn(async (request: InvokeRemoteRequest) => request.method === 'workspacePathApplications' ? applications() : opener(
     request.args['request'] as { sessionId: SessionId; path: string; action?: 'reveal' },
     request.signal!,
   ))
@@ -61,15 +62,15 @@ async function fixture() {
   const open = (query = '?sessionId=owner&seq=7&index=0', signal?: AbortSignal) => handler.fetch(new Request(
     `http://localhost${PRESENT_OPEN_PATH}${query}`, { method: 'POST', signal: signal ?? null },
   ))
-  return { root, cwd, ctx, fiber, file, session, readEvent, open, opener, handler, resolveAgent, invoke }
+  return { applications, root, cwd, ctx, fiber, file, session, readEvent, open, opener, handler, resolveAgent, invoke }
 }
 
 describe('Presented workspace file native open route', () => {
   it('opens the source itself with current bytes and leaves it intact at disposal', async () => {
     const { cwd, open, file, fiber, opener, handler, ctx } = await fixture()
     const source = await realpath(join(cwd, file.path))
-    expect(presentedFileUrl(SessionId('owner'), 7, 0)).toBe(`${PRESENT_OPEN_PATH}?sessionId=owner&seq=7&index=0`)
-    expect((await handler.fetch(new Request(`http://localhost${PRESENT_OPEN_PATH}`))).status).toBe(404)
+    expect(presentedFileUrl(SessionId('owner'), 7, 0)).toBe('api/present.open?sessionId=owner&seq=7&index=0')
+    expect((await handler.fetch(new Request(`http://localhost${PRESENT_OPEN_PATH}`))).status).toBe(400)
     expect((await handler.fetch(new Request('http://localhost/api/present.download?sessionId=owner&seq=7&index=0'))).status).toBe(404)
     for (const contents of ['current source', 'edited source']) {
       await writeFile(source, contents)
@@ -263,4 +264,19 @@ it('fails closed when authenticated native opening lacks its deployment provider
   ctx.provide('principalAccess', { resolve: vi.fn() } as never)
   expect((await open()).status).toBe(401)
   expect(readEvent).not.toHaveBeenCalled()
+})
+
+it('queries handlers only after file authorization and forwards explicit application choices', async () => {
+  const { handler, applications, opener, open, ctx } = await fixture()
+  const url = 'http://localhost/api/present.open?sessionId=owner&seq=7&index=0'
+  const response = await handler.fetch(new Request(url))
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual([{ id: 'player', name: 'Player', default: true, icon: null }])
+  expect(opener).not.toHaveBeenCalled()
+  expect((await open('?sessionId=owner&seq=7&index=0&application=player')).status).toBe(204)
+  expect(opener.mock.lastCall?.[0]).toMatchObject({ application: 'player' })
+  expect((await handler.fetch(new Request(url.replace('index=0', 'index=999')))).status).toBe(404)
+  vi.spyOn(ctx.fs, 'processPathFromHostPath').mockReturnValue(undefined)
+  expect((await handler.fetch(new Request(url))).status).toBe(422)
+  expect(applications).toHaveBeenCalledOnce()
 })

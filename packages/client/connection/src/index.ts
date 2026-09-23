@@ -14,6 +14,7 @@ import { HostConnectionService } from './rpc-host.ts'
 import { ConnectionRecoveryConfigSchema, resolveConnectionConfig, type ConnectionRecoveryConfig } from './recovery-config.ts'
 
 export type {
+  PeerAdmission,
   ConnectionFetchMethod,
   ConnectionFetchHandler,
   ConnectionFetchRoute,
@@ -21,8 +22,10 @@ export type {
   ConnectionIndexResponse,
   ConnectionPrincipalRequest,
   ConnectionRpcEndpointMatcher,
+  ConnectionRpcAttachment,
   ConnectionRpcFailure,
   ConnectionRpcHandler,
+  ConnectionRpcHandlerResult,
   ConnectionRequestRejection,
   ConnectionRequestAuthorization,
   ConnectionRpcResult,
@@ -36,7 +39,9 @@ export type {
   RpcMessage,
   ServerResponse,
 } from './rpc.ts'
+export type { PeerId, PeerScope, RemoteInvocation } from '@deepseek-ai/dsh-typert-protocol'
 export { RpcId, transportError } from './rpc.ts'
+export { OperatorPeer } from './operator-peer.ts'
 export {
   clientRequestSchema,
   rpcErrorSchema,
@@ -144,18 +149,15 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
       kind: 'prefix',
       path: API_PATH,
       handler: async (req, res) => {
-        // Authorization resolves the caller's identity, not just an accept/reject:
-        // the shared fetch handler binds it so every RPC carries the principal
-        // its Session ownership check is decided against.
-        const authorization = await connection.authorizeRequest(req)
-        if (!authorization.accepted) {
-          res.writeHead(authorization.status)
-          res.end(authorization.status === 401 ? 'unauthorized' : 'forbidden')
+        const admission = await connection.admitRequest(req)
+        if ('rejection' in admission) {
+          res.writeHead(admission.rejection)
+          res.end(admission.rejection === 401 ? 'unauthorized' : 'forbidden')
           return
         }
         await webCtx.waterfall('connection/request', req, res, () => bridge(req, res, {
           requestBodyMode: probe => fetchHandler.requestBodyMode(probe),
-          fetch: request => fetchHandler.fetch(request, authorization),
+          fetch: request => fetchHandler.fetch(request, admission),
         }, maxRequestBodyBytes))
       },
     }
