@@ -91,11 +91,13 @@ No preset id, PTC dispatch event tag, file attachment, or physical filename is r
 | `data.message.content[0].content` | Direct `data.message.content`, including empty content |
 | `data.message.content[0].isError` | Optional `data.message.isError` |
 | Wrapper `type: 'tool-result'` | Removed with the wrapper |
-| Message `id`, `source`, event fields | Retained; no message or call id is minted |
+| Message `id`, `source`, event fields | Retained; duplicate call ids follow the rule below |
 
 The wrapper alone supplies the interpreted call id, content, and optional error flag. Other wrapper fields become `plugin:result:<original-field>`; outer message fields other than `id`, `role`, `source`, and `content` become `plugin:message:<original-field>`. Complete original names remain in the suffix, including existing prefixes. Distinct owners and colliding names retain separate values; own `__proto__` and `constructor` data stays intact. No metadata container or new content type is added.
 
 A malformed canonical wrapper raises a format error. Nested results are unsupported by this converter and refuse without publishing a successor. The transformation does not repair contradictory `data.error`; native target validation requires it to accompany the wrapper's `isError: true`. Converter support may expand later while preserving the established native V4 representation.
+
+When one V3 assistant message advertises the same tool id more than once, [tool identity conversion](src/tool-identities.ts) gives later occurrences distinct ids. Calls must match advertisement order, names, and arguments; each result must reference exactly one recorded call through `sourceEventSeqs`. The conversion preserves all calls, results, arguments, and original ids in extension fields. Ambiguous results, overlapping advertisements, and dependent PTC events refuse migration. Native V4 still rejects repeated advertisements.
 
 <a id="extension-data"></a>
 ### Extension data
@@ -268,7 +270,7 @@ Fork seed construction belongs to core Session, not this migration. Native V4 ad
 
 Started fork calls use `TOOL_OUTCOME_UNKNOWN` error results and retain their recorded start references. They follow ordinary started-call validation; the special not-started identity rules above do not apply to them. Fork construction closes its open tail with `turn/end.reason.kind: 'forked'` and leaves completed earlier steps and turns unchanged.
 
-The ordinary interrupted not-started repair retains its canonical historical integer suffix and exact crash-recovery text. Both forms must settle an advertised call under the lifecycle rules. The stage preserves existing fork/call/message ids; it does not infer ancestry from their string prefixes or execute a tool.
+The ordinary interrupted not-started repair retains its canonical historical integer suffix and exact crash-recovery text. Both forms must settle an advertised call under the lifecycle rules. The stage preserves existing fork/message ids; it does not infer ancestry from their string prefixes or execute a tool.
 
 <a id="native-recovery"></a>
 ### Validation entry points and recovery
@@ -320,11 +322,11 @@ Historical requests retain their recorded messages and model configuration. The 
 
 #### Token effect
 
-The conversion changes no request text or token-bearing data.
+The conversion retains request text and arguments. Disambiguated historical tool ids can change request tokens.
 
 #### KV Cache effect
 
-The edge preserves the recorded request prefix. Provider cache availability and eviction remain outside this library.
+The edge preserves the recorded request prefix except for disambiguated historical tool ids. Provider cache availability and eviction remain outside this library.
 
 ## Known Limitations and Deferred Work
 

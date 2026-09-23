@@ -5,6 +5,7 @@ import type { SessionFormatEvent, SessionFormatEventRun, SessionFormatJsonObject
 import { assertReleasedV3Header } from '@deepseek-ai/dsh-session-format-v2-to-v3'
 import { mapEventMessages, rewriteV3MessageSource } from './sources.ts'
 import { liftToolResult } from './tool-role.ts'
+import { V3ToolIdentities } from './tool-identities.ts'
 import { migrateV3EventContent } from './content.ts'
 import { namespaceV3OpaqueEvent, RELEASED_V3_EVENT_TYPES } from './extension-identities.ts'
 import { assertReleasedV4Header, validateDeliveryAccepted } from './validation.ts'
@@ -45,6 +46,7 @@ class ReleasedV3ToV4Stage implements SessionFormatMigrationStage {
   private cut: number | undefined
   private sourceCut: number | undefined
   private readonly mapping: number[] = []
+  private readonly toolIdentities = new V3ToolIdentities()
   private turn: number | undefined
   private stepOpen = false
   private nextTurnSpliced = false
@@ -99,7 +101,7 @@ class ReleasedV3ToV4Stage implements SessionFormatMigrationStage {
         `format v3 contains unknown event type ${JSON.stringify(event.type)} at seq ${event.seq}`,
       )
     }
-    const remapped = remapV3References(event, targetSeq, this.mapping)
+    const remapped = remapV3References(this.toolIdentities.transform(event), targetSeq, this.mapping)
     this.mapping.push(targetSeq)
     const rewritten = mapEventMessages(remapped, (message) => {
       const source = message['source']

@@ -91,11 +91,13 @@ const artifact = restore.finish()
 | `data.message.content[0].content` | 直接作为 `data.message.content`，包括空内容 |
 | `data.message.content[0].isError` | 可选的 `data.message.isError` |
 | Wrapper 的 `type: 'tool-result'` | 随 wrapper 移除 |
-| 消息 `id`、`source` 和事件字段 | 保留；不生成新的消息或调用 id |
+| 消息 `id`、`source` 和事件字段 | 保留；重复调用 id 遵循下述规则 |
 
 只有 wrapper 提供具有解释语义的调用 id、content 和可选错误标志。Wrapper 的其他字段变为 `plugin:result:<原字段名>`；外层消息除 `id`、`role`、`source` 和 `content` 外的字段变为 `plugin:message:<原字段名>`。后缀保留完整原名称，包括已有前缀。不同 owner 与重名字段分别保留值；`__proto__` 和 `constructor` 的自有数据保持完整。不添加 metadata 容器或新的内容类型。
 
 格式错误的 canonical wrapper 引发格式错误。当前转换器不支持嵌套结果，遇到时拒绝且不发布 successor。转换不会修复矛盾的 `data.error`；原生目标校验要求它与 wrapper 的 `isError: true` 同时出现。后续可以扩展转换器支持范围，同时保持既定的原生 V4 表示。
+
+当一条 V3 assistant 消息多次声明同一工具 id 时，[工具身份转换](src/tool-identities.ts)为后续出现的调用分配不同 id。调用必须按声明顺序匹配名称和参数；每个结果必须通过 `sourceEventSeqs` 引用恰好一个已记录调用。转换保留全部调用、结果、参数，并将原始 id 保存在扩展字段中。结果有歧义、声明重叠或存在依赖这些 id 的 PTC 事件时拒绝迁移。原生 V4 仍拒绝重复声明。
 
 <a id="extension-data"></a>
 ### 扩展数据
@@ -268,7 +270,7 @@ Fork 种子构造归核心 Session 所有，不属于此迁移。原生 V4 接�
 
 已经开始的 fork 调用使用 `TOOL_OUTCOME_UNKNOWN` 错误结果，并保留记录的开始引用。它们遵循普通已开始调用的校验；上文专用于 not-started 的身份规则不适用于它们。Fork 构造通过 `turn/end.reason.kind: 'forked'` 关闭开放尾部，保留先前已结束的 step 和 turn。
 
-普通 interrupted not-started 修复保留 canonical 历史整数后缀和精确的崩溃恢复文本。两种形式都必须按生命周期规则结算一个已声明调用。Stage 保留已有 fork／call／message id；它不从字符串前缀推断祖先关系，也不执行工具。
+普通 interrupted not-started 修复保留 canonical 历史整数后缀和精确的崩溃恢复文本。两种形式都必须按生命周期规则结算一个已声明调用。Stage 保留已有 fork／message id；它不从字符串前缀推断祖先关系，也不执行工具。
 
 <a id="native-recovery"></a>
 ### 校验入口与恢复
@@ -320,11 +322,11 @@ Fork 种子构造归核心 Session 所有，不属于此迁移。原生 V4 接�
 
 #### Token 影响
 
-转换不改变请求文本或承载 token 的数据。
+转换保留请求文本和参数。消除历史工具 id 歧义可能改变请求 token。
 
 #### KV Cache 影响
 
-该迁移边保留记录的请求前缀。提供方缓存的可用性和淘汰策略不属于本库职责。
+除消除历史工具 id 歧义外，该迁移边保留记录的请求前缀。提供方缓存的可用性和淘汰策略不属于本库职责。
 
 ## 已知限制与待办工作
 

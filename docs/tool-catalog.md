@@ -377,8 +377,23 @@ List, create, select, or close a Stagehand browser tab.
   "type": "object",
   "properties": {
     "action": {
-      "type": "string",
-      "const": "list"
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "list"
+        },
+        {
+          "type": "string",
+          "const": "new"
+        },
+        {
+          "type": "string",
+          "enum": [
+            "select",
+            "close"
+          ]
+        }
+      ]
     },
     "url": {
       "type": "string",
