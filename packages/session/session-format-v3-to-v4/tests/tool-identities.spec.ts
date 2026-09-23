@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createSessionFormatCatalogWithChildren, sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
 import type { SessionFormatEvent, SessionFormatJsonObject } from '@deepseek-ai/dsh-session-format'
 import { V3ToolIdentities } from '../src/tool-identities.ts'
+import { BlockAssembler, expandAssistantStream } from '@deepseek-ai/dsh-llm'
+import type { AssistantStreamRecord } from '@deepseek-ai/dsh-llm'
 
 const header = { type: 'session', version: 3, id: 'duplicates', createdAt: 1, isSeeded: false, delegationDepth: 0 }
 const coords = { turn: 1, step: 1 }
@@ -27,7 +29,7 @@ describe('V3 repeated tool identities', () => {
     const source = fixture()
     const before = structuredClone(source)
     const artifact = restore(source)
-    expect(artifact.events[2]).toMatchObject({ data: { message: { content: [{ id: 'same' }, { id: 'v3-tool-2-1-same', 'plugin:v3:toolCallId': 'same' }] } } })
+    expect(artifact.events[2]).toMatchObject({ data: { message: { content: [{ id: 'same' }, { id: 'v3-tool-2-1-same' }] }, 'plugin:v3:toolCallIds': [{ index: 1, id: 'same' }] } })
     expect(artifact.events[4]).toMatchObject({ data: { callId: 'v3-tool-2-1-same' } })
     expect(artifact.events[5]).toMatchObject({ sourceEventSeqs: [4], data: { message: { toolCallId: 'v3-tool-2-1-same', content: [{ text: 'response-4' }] } } })
     expect(artifact.events[6]).toMatchObject({ sourceEventSeqs: [3], data: { message: { toolCallId: 'same', content: [{ text: 'response-3' }] } } })
@@ -84,7 +86,7 @@ describe('V3 repeated tool identities', () => {
 
   it('refuses to overwrite metadata while preserving a duplicate identity', () => {
     const cases: Array<{ seq: number; data: SessionFormatJsonObject }> = [
-      { seq: 2, data: { message: { content: [
+      { seq: 2, data: { 'plugin:v3:toolCallIds': [], message: { content: [
         { type: 'tool-call', id: 'same', name: 'web_fetch', arguments: '{}' },
         { type: 'tool-call', id: 'same', name: 'web_fetch', arguments: '{}', 'plugin:v3:toolCallId': 'older' },
       ] } } },
@@ -97,6 +99,44 @@ describe('V3 repeated tool identities', () => {
       for (const event of rows.slice(0, seq)) ids.transform(event)
       expect(() => ids.transform({ ...rows[seq]!, data })).toThrow('metadata collides')
     }
+  })
+
+  it.each(['packed', 'raw', 'closed'])('keeps %s streamed calls consistent with the migrated message', (mode) => {
+    const rows = fixture()
+    const data = rows[2]!.data as SessionFormatJsonObject
+    const message = data['message'] as SessionFormatJsonObject
+    const blocks = message['content'] as SessionFormatJsonObject[]
+    const text = { type: 'text', text: 'Calling both tools' }
+    const stream = [
+      { type: 'text-chunks', time0: 1, index: 20, dt: [], texts: [text.text] },
+      ...[9, 2].flatMap((index, position) => [
+        { type: 'chunk', time: 2, chunk: { type: 'block-start', index, blockType: 'tool-call' } },
+        mode === 'raw'
+          ? { type: 'chunk', time: 3, chunk: { type: 'tool-call-delta', index, id: 'same', name: 'web_fetch', argumentsDelta: '{}' } }
+          : { type: 'tool-call-chunks', time0: 3, index, id: 'same', name: 'web_fetch', dt: [1], args: ['{', '}'] },
+        ...(mode === 'closed' ? [{ type: 'chunk', time: 5, chunk: { type: 'block-end', index, block: blocks[position]! } }] : []),
+      ]),
+      { type: 'chunk', time: 6, chunk: { type: 'finish', reason: { kind: 'tool-calls' } } },
+    ]
+    rows[2] = { ...rows[2]!, data: { ...data, stream, message: { ...message, content: [text, ...blocks] } } }
+    const before = structuredClone(rows)
+    const artifact = restore(rows)
+    const migrated = artifact.events[2]!.data as SessionFormatJsonObject
+    const assembler = new BlockAssembler()
+    for (const { chunk } of expandAssistantStream(migrated['stream'] as readonly AssistantStreamRecord[])) assembler.push(chunk)
+    expect(assembler.blocks()).toEqual((migrated['message'] as SessionFormatJsonObject)['content'])
+    expect(migrated['plugin:v3:toolCallIds']).toEqual([{ index: 2, id: 'same' }])
+    expect((migrated['stream'] as SessionFormatJsonObject[]).map(record => record['time0'] ?? record['time'])).toEqual(stream.map(record => 'time0' in record ? record.time0 : record.time))
+    expect(rows).toEqual(before)
+    expect(restore(artifact.events, 4)).toEqual(artifact)
+  })
+
+  it('refuses a nonempty stream with missing advertised blocks', () => {
+    const rows = fixture()
+    rows[2] = { ...rows[2]!, data: { ...(rows[2]!.data as SessionFormatJsonObject), stream: [{ type: 'chunk', time: 1, chunk: { type: 'finish', reason: { kind: 'stop' } } }] } }
+    expect(() => restore(rows)).toThrow('stream does not match')
+    rows[2] = { ...rows[2], data: { ...(rows[2].data as SessionFormatJsonObject), stream: [null] } }
+    expect(() => restore(rows)).toThrow('stream does not match')
   })
 
   it('refuses a duplicate result whose original wrapper or recorded reference is inconsistent', () => {

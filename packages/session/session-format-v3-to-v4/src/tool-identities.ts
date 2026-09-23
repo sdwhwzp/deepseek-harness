@@ -1,6 +1,6 @@
 /** Disambiguate repeated V3 advertisements using their ordered calls and recorded result references. */
 import { SessionFormatUnsupportedMigrationError, isSessionFormatJsonObject } from '@deepseek-ai/dsh-session-format'
-import type { SessionFormatEvent, SessionFormatJsonValue } from '@deepseek-ai/dsh-session-format'
+import type { SessionFormatEvent, SessionFormatJsonObject, SessionFormatJsonValue } from '@deepseek-ai/dsh-session-format'
 
 interface Occurrence {
   readonly original: string
@@ -8,6 +8,38 @@ interface Occurrence {
   readonly name: SessionFormatJsonValue | undefined
   readonly arguments: SessionFormatJsonValue | undefined
   started: boolean
+}
+
+/** Stream indices name blocks in first-seen order, independently of their numeric value. */
+function rewriteStream(
+  stream: SessionFormatJsonValue | undefined,
+  content: readonly SessionFormatJsonValue[],
+  rewritten: readonly SessionFormatJsonValue[],
+): SessionFormatJsonValue | undefined {
+  if (!Array.isArray(stream) || stream.length === 0) return stream
+  const positions = new Map<number, number>()
+  const records = stream as readonly SessionFormatJsonValue[]
+  const mapped = records.map((record) => {
+    if (!isSessionFormatJsonObject(record)) return record
+    const chunk = record['type'] === 'chunk' ? record['chunk'] : record
+    if (!isSessionFormatJsonObject(chunk) || typeof chunk['index'] !== 'number') return record
+    const index = chunk['index']
+    const position = positions.get(index) ?? positions.size
+    positions.set(index, position)
+    const original = content[position]
+    const replacement = rewritten[position]
+    if (!isSessionFormatJsonObject(original) || !isSessionFormatJsonObject(replacement)
+      || typeof replacement['id'] !== 'string' || original['id'] === replacement['id']) return record
+    let changed: SessionFormatJsonObject = chunk
+    if ((chunk['type'] === 'tool-call-chunks' || chunk['type'] === 'tool-call-delta') && chunk['id'] === original['id']) {
+      changed = { ...chunk, id: replacement['id'] }
+    } else if (chunk['type'] === 'block-end' && isSessionFormatJsonObject(chunk['block']) && chunk['block']['type'] === 'tool-call' && chunk['block']['id'] === original['id']) {
+      changed = { ...chunk, block: { ...chunk['block'], id: replacement['id'] } }
+    }
+    return record['type'] === 'chunk' ? { ...record, chunk: changed } : changed
+  })
+  if (positions.size !== content.length) throw new SessionFormatUnsupportedMigrationError('duplicate V3 tool stream does not match its advertised blocks')
+  return mapped
 }
 
 /** One migration's duplicate tool identities; source event coordinates remain unchanged. */
@@ -35,6 +67,7 @@ export class V3ToolIdentities {
         if (this.pending.has(id)) throw new SessionFormatUnsupportedMigrationError('overlapping duplicate V3 tool advertisements')
         this.pending.set(id, [])
       }
+      const preserved: SessionFormatJsonObject[] = []
       const rewritten = content.map((block, index) => {
         if (!isSessionFormatJsonObject(block) || block['type'] !== 'tool-call' || typeof block['id'] !== 'string') return block
         const occurrences = this.pending.get(block['id'])
@@ -45,11 +78,14 @@ export class V3ToolIdentities {
           while (reserved.has(id)) id = `v3-${id}`
           reserved.add(id)
         }
-        if (id !== block['id'] && Object.hasOwn(block, 'plugin:v3:toolCallId')) throw new SessionFormatUnsupportedMigrationError('duplicate V3 tool metadata collides with the preserved id')
         occurrences.push({ original: block['id'], id, name: block['name'], arguments: block['arguments'], started: false })
-        return id === block['id'] ? block : { ...block, id, 'plugin:v3:toolCallId': block['id'] }
+        if (id !== block['id']) preserved.push({ index, id: block['id'] })
+        return id === block['id'] ? block : { ...block, id }
       })
-      return { ...event, data: { ...data, message: { ...message, content: rewritten } } }
+      if (Object.hasOwn(data, 'plugin:v3:toolCallIds')) throw new SessionFormatUnsupportedMigrationError('duplicate V3 tool metadata collides with the preserved ids')
+      const stream = rewriteStream(data['stream'], content, rewritten)
+      return { ...event, data: { ...data, ...(stream === undefined ? {} : { stream }),
+        message: { ...message, content: rewritten }, 'plugin:v3:toolCallIds': preserved } }
     }
     if (event.type === 'tool/call' && typeof data['callId'] === 'string') {
       const occurrences = this.pending.get(data['callId'])

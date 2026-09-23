@@ -97,7 +97,7 @@ const artifact = restore.finish()
 
 格式错误的 canonical wrapper 引发格式错误。当前转换器不支持嵌套结果，遇到时拒绝且不发布 successor。转换不会修复矛盾的 `data.error`；原生目标校验要求它与 wrapper 的 `isError: true` 同时出现。后续可以扩展转换器支持范围，同时保持既定的原生 V4 表示。
 
-当一条 V3 assistant 消息多次声明同一工具 id 时，[工具身份转换](src/tool-identities.ts)为后续出现的调用分配不同 id。调用必须按声明顺序匹配名称和参数；每个结果必须通过 `sourceEventSeqs` 引用恰好一个已记录调用。转换保留全部调用、结果、参数，并将原始 id 保存在扩展字段中。结果有歧义、声明重叠或存在依赖这些 id 的 PTC 事件时拒绝迁移。原生 V4 仍拒绝重复声明。
+当一条 V3 assistant 消息多次声明同一工具 id 时，[工具身份转换](src/tool-identities.ts)为后续出现的调用分配不同 id。调用必须按声明顺序匹配名称和参数；每个结果必须通过 `sourceEventSeqs` 引用恰好一个已记录调用。转换保留全部调用、结果、参数，将原始 id 和内容位置保存在事件扩展字段中，并同步改写对应的压缩增量及流式结束块，不改变时间和索引。结果有歧义、声明重叠或存在依赖这些 id 的 PTC 事件时拒绝迁移。原生 V4 仍拒绝重复声明。
 
 <a id="extension-data"></a>
 ### 扩展数据

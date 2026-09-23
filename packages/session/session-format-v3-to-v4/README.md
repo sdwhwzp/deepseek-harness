@@ -97,7 +97,7 @@ The wrapper alone supplies the interpreted call id, content, and optional error 
 
 A malformed canonical wrapper raises a format error. Nested results are unsupported by this converter and refuse without publishing a successor. The transformation does not repair contradictory `data.error`; native target validation requires it to accompany the wrapper's `isError: true`. Converter support may expand later while preserving the established native V4 representation.
 
-When one V3 assistant message advertises the same tool id more than once, [tool identity conversion](src/tool-identities.ts) gives later occurrences distinct ids. Calls must match advertisement order, names, and arguments; each result must reference exactly one recorded call through `sourceEventSeqs`. The conversion preserves all calls, results, arguments, and original ids in extension fields. Ambiguous results, overlapping advertisements, and dependent PTC events refuse migration. Native V4 still rejects repeated advertisements.
+When one V3 assistant message advertises the same tool id more than once, [tool identity conversion](src/tool-identities.ts) gives later occurrences distinct ids. Calls must match advertisement order, names, and arguments; each result must reference exactly one recorded call through `sourceEventSeqs`. The conversion preserves all calls, results, and arguments, stores original ids and content positions in event extension fields, and rewrites the corresponding compact deltas and closing stream blocks without changing their timing or indices. Ambiguous results, overlapping advertisements, and dependent PTC events refuse migration. Native V4 still rejects repeated advertisements.
 
 <a id="extension-data"></a>
 ### Extension data
