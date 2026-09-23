@@ -161,8 +161,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-After initial discovery succeeds, every advertised MCP tool appears as a native tool named `mcp__<serverName>__<rawName>` (or its deterministic normalized form) with the server-provided description and input schema. The schema reaches the model verbatim except at its root: a root `oneOf`, `anyOf`, `allOf`, or `not` is dropped, because no tool-call API accepts a composition keyword where the arguments object goes. A successful re-sync — including the one after an automatic reconnect — replaces the generation; plugin disposal or an exhausted reconnect budget removes it.
-After discovery succeeds, SDK-admitted MCP tools appear as native tools named `mcp__<serverName>__<rawName>` (or their deterministic normalized form), with the server description and input schema. A re-sync replaces the generation; disposal or an exhausted reconnect budget removes it. A server without the tools capability connects with an empty tool set.
+After discovery succeeds, SDK-admitted MCP tools appear as native tools named `mcp__<serverName>__<rawName>` (or their deterministic normalized form), with the server description and input schema. A re-sync replaces the generation; disposal or an exhausted reconnect budget removes it. A server without the tools capability connects with an empty tool set. The schema reaches the model verbatim except at its root: root `oneOf`, `anyOf`, `allOf`, and `not` are dropped before registration.
 
 #### Token effect
 
@@ -212,7 +211,7 @@ These limits describe what you cannot do with this plugin and when it needs oper
 - **Reconnect handles failed negotiation and transport close** — a failed initial probe or crashed stdio child uses the configured reconnect budget. Once HTTP is connected, request failures use the SDK transport's recovery rather than respawning the connection.
 - **Image is the only durable rich-result bridge** — PNG, JPEG, WebP, and GIF enter Native context after exact capability proof. Audio and embedded-resource payloads remain execution-local with explicit diagnostics, while resource links preserve only their name and URI as text.
 - **Unsupported MCP output schemas are not enforced** — `structuredContent` falls back to `JsonValue` when the advertised schema uses vocabulary outside the harness subset.
-- **A root composition keyword in an input schema is dropped, not honored** — a server spelling "either this field or that pair" as a root `oneOf`/`anyOf`/`allOf`/`not` loses that constraint in the schema the model reads; the server still enforces it on `tools/call`, and the drop is logged with the server and tool name.
+- **A root composition keyword in an input schema is dropped, not honored** — a server spelling "either this field or that pair" as a root `oneOf`/`anyOf`/`allOf`/`not` loses that constraint in the schema the model reads; the server still enforces it on `tools/call`, and the drop is logged with the server and tool name. The same normalization runs inside `createMcpToolDefinition`, so a native plugin that derives its input schema from a discriminated union registers a root the model provider accepts; the branches' properties are hoisted to the root (first declaration wins) and a field every branch requires stays required, so the model still sees the union's fields.
 - **Invalid protocol results or output schemas fail through the SDK** — the bridge does not accept legacy `toolResult` substitutes or bypass advertised schema validation.
 - **Task-required MCP tools are rejected at call time** — a tool that requires the task-based execution extension throws instead of bridging; the extension is not implemented.
 

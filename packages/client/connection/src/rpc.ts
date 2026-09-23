@@ -92,7 +92,11 @@ export interface ConnectionPrincipalRequest extends ConnectionTrustRequest {
 
 /** Optional Host authentication provider invoked on transport-owned request facts. */
 export interface RequestPrincipalProvider {
-  /** Verify the carrier authentication data and return its caller identity. */
+  /**
+   * Verify the carrier authentication data and return its caller identity.
+   * @param request - transport-owned request facts (headers, peer, method, URL).
+   * @returns the verified principal, or `undefined` when the request carries no acceptable identity; may resolve asynchronously.
+   */
   authenticate(
     request: ConnectionPrincipalRequest,
   ): AuthenticatedPrincipal | undefined | Promise<AuthenticatedPrincipal | undefined>

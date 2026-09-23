@@ -24,7 +24,8 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
   ComposerAttachment, ComposerFileAttachment, ComposerImageAttachment, DraftFileUpload,
 } from './contract/slots.ts'
-import type { QueueAction, QueueItemId } from './contract/queue.ts'
+import type { QueueAction } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ComposerBlocks } from './contract/composer-blocks.ts'
 import type {
   DraftAttachmentId, DraftAttachmentSerializationResult, SessionInputResolver, SubmitAttachment, SubmitOutcome,
@@ -56,7 +57,7 @@ export interface IConversation {
    * @param action - requested queue operation.
    * @returns completion; converged QueueDock races resolve, while other failures reject.
    */
-  updateQueue(itemId: QueueItemId, action: QueueAction): Promise<void>
+  updateQueue(itemId: MessageId, action: QueueAction): Promise<void>
   /**
    * Cancel the scoped session's in-flight turn while preserving its pending Queue.
    * @returns completion; failures reject as in send.
@@ -207,15 +208,16 @@ export class ConversationController extends Service implements IConversation {
    */
   async send(text: string): Promise<void> {
     const session = this.scopedSession('send')
+    await this.ctx.serial('conversation/prepare-send', session.sessionId)
     const result = await session.prompt([{ type: 'text', text }], 'queue')
     if (!result.ok) throw new Error(`conversation.send failed: ${result.error.code}: ${result.error.message}`)
   }
 
   /**
-   * Submit ordered draft attachments with text through one host admission. A local
-   * submission echo enters the session snapshot synchronously; serialization
-   * and the prompt round-trip start after the browser can paint it. On the
-   * echo's observed retirement seeds admitted image previews into the durable
+   * Submit ordered draft attachments with text through one host admission. Client
+   * setup finishes before a local submission echo enters the session snapshot;
+   * serialization and the prompt round-trip start after the browser can paint it.
+   * The echo's observed retirement seeds admitted image previews into the durable
    * cache and removes every attachment from the draft registry. On failure,
    * every attachment remains registered so the composer can restore it.
    * @param session - target session.
@@ -262,6 +264,7 @@ export class ConversationController extends Service implements IConversation {
     )
     const snapshot = session.getSnapshot()
     if (snapshot.subagent !== null) {
+      await this.ctx.serial('conversation/prepare-send', session.sessionId)
       const uploaded = await serializeAttachments()
       const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
       const result = await session.prompt(content, mode, signal)
@@ -271,6 +274,7 @@ export class ConversationController extends Service implements IConversation {
     const retirement = attachments.length === 0
       ? undefined
       : new Promise<PendingSubmissionRetirement>((resolve) => { finishRetirement = resolve })
+    await this.ctx.serial('conversation/prepare-send', session.sessionId)
     const submission = session.beginSubmission({
       mode,
       text,
@@ -491,7 +495,7 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /** Apply one operation to a pending queue occurrence. */
-  async updateQueue(itemId: QueueItemId, action: QueueAction): Promise<void> {
+  async updateQueue(itemId: MessageId, action: QueueAction): Promise<void> {
     const session = this.scopedSession('updateQueue')
     const result = await session.updateQueue(itemId, action)
     if (!result.ok) {

@@ -544,6 +544,9 @@ export class AgentRegistry extends Service {
     entry.announcing = true
     entry.announced = true
     try {
+      // `serial` is typed void, yet a listener's bail value is exactly what
+      // this diagnostic reports; reading it is the point, not a confusion.
+      // eslint-disable-next-line typescript/no-confusing-void-expression
       const bailed: unknown = await this.ctx.serial(entry.carrier, 'agent/created', {
         agent: entry.agent,
         source,

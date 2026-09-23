@@ -132,7 +132,8 @@ export async function syncTools(
       name: publicName,
       rawName: tool.name,
       description: tool.description ?? '',
-      inputSchema: bridgedParameters(ctx, opts.serverName, tool.name, tool.inputSchema),
+      inputSchema: tool.inputSchema,
+      serverName: opts.serverName,
       outputSchema: tool.outputSchema,
       taskRequired: tool.execution?.taskSupport === 'required',
       call: (args, execution) => client.callTool(
@@ -200,8 +201,10 @@ export interface McpToolDefinitionOptions {
   rawName: string
   /** Upstream model-facing description. */
   description: string
-  /** Upstream JSON input schema. */
+  /** Upstream JSON input schema; a root composition keyword is dropped before registration. */
   inputSchema: Record<string, unknown>
+  /** Server namespace named in the root-normalization log line; defaults to `name`. */
+  serverName?: string
   /** Advertised structured output schema, when present. */
   outputSchema?: unknown
   /** Whether the upstream tool requires the unsupported task execution extension. */
@@ -215,17 +218,23 @@ export interface McpToolDefinitionOptions {
   call(args: Record<string, unknown>, execution: ToolExecution): Promise<unknown>
 }
 
+/** Whether an untyped schema fragment is a plain object (not an array or null). */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 /**
- * Strip the root composition keywords no model provider accepts, leaving every
- * property schema untouched.
- *
- * The transport already guarantees the `type: "object"` root MCP requires, but
- * `.catchall` admits anything beside it, and servers do ship a root `oneOf`
- * spelling "pass either the flight number or the city pair". Registered
- * verbatim that root fails the whole model request — every tool in it, not just
- * this one — so the bridge drops the keyword and the server keeps enforcing the
- * constraint on `tools/call`. Each drop is logged with the identity that has to
- * fix it, because the model then sees a schema looser than the server's own.
+ * Drop a composition keyword from the root of a tool input schema.
+ * MCP lets a server spell "either this field or that pair" as a root
+ * `oneOf`/`anyOf`/`allOf`/`not`; a generated schema for a discriminated union
+ * arrives the same way. No model provider accepts that root — passing it on
+ * verbatim fails the whole model request, every tool in it, not just this
+ * one — so the bridge drops the keyword and the server keeps enforcing the
+ * constraint on `tools/call`. Properties the dropped branches declare are
+ * hoisted to the root (first declaration wins) and a field every branch
+ * requires stays required, so the model still sees the union's fields. Each
+ * drop is logged with the identity that has to fix it, because the model then
+ * sees a schema looser than the server's own.
  * @param ctx - plugin context used to report what was dropped.
  * @param serverName - local namespace, for the log line.
  * @param rawName - the server's own tool name, for the log line.
@@ -242,12 +251,30 @@ function bridgedParameters(
   if (dropped.length === 0) return schema
   const removed = new Set<string>(dropped)
   const normalized = Object.fromEntries(Object.entries(schema).filter(([key]) => !removed.has(key)))
+  const branches = dropped.flatMap(keyword => keyword === 'not' ? [] : (Array.isArray(schema[keyword]) ? schema[keyword] as unknown[] : []))
+    .filter((branch): branch is Record<string, unknown> => isPlainObject(branch) && isPlainObject(branch['properties']))
+  if (branches.length > 0) {
+    const properties: Record<string, unknown> = { ...(isPlainObject(normalized['properties']) ? normalized['properties'] : {}) }
+    for (const branch of branches) {
+      for (const [key, value] of Object.entries(branch['properties'] as Record<string, unknown>)) properties[key] ??= value
+    }
+    normalized['properties'] = properties
+    const requiredEverywhere = branches
+      .map(branch => Array.isArray(branch['required']) ? (branch['required'] as unknown[]).filter((v): v is string => typeof v === 'string') : [])
+      .reduce((common, list) => common.filter(key => list.includes(key)))
+    const existing = Array.isArray(normalized['required']) ? (normalized['required'] as unknown[]).filter((v): v is string => typeof v === 'string') : []
+    const required = [...new Set([...existing, ...requiredEverywhere])]
+    if (required.length > 0) normalized['required'] = required
+  }
   ctx.logger.warn(`mcp-client(${serverName}): dropped root ${dropped.join('/')} from tool "${rawName}" input schema — no model provider accepts a composition keyword at the parameters root`)
   return normalized
 }
 
 /**
  * Adapt an upstream MCP tool to canonical values and durable image content.
+ * The input schema root is normalized here, so every caller — the MCP bridge
+ * and native plugins that build definitions from generated JSON Schema alike —
+ * registers parameters a model provider accepts.
  * Registration, provider lifetime, deadlines, and transport belong to the caller.
  * @param ctx - plugin context carrying optional attachment and model services.
  * @param options - upstream tool fields and its raw-result callback.
@@ -262,7 +289,7 @@ export function createMcpToolDefinition(
   return {
     name,
     description,
-    parameters: inputSchema,
+    parameters: bridgedParameters(ctx, options.serverName ?? name, rawName, inputSchema),
     output: createOutput(rawName, supportedOutputSchema(options.outputSchema)),
     execute: createExecutor(ctx, options, projections),
     finalizeContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {
@@ -290,8 +317,7 @@ function createOutput(rawName: string, structuredSchema: JsonSchemaNode | undefi
       additionalProperties: false,
     },
     render(_args: unknown, value: JsonValue) {
-      const result = value as unknown as McpResult
-      return [{ type: 'text', text: extractText(result.content, rawName) }]
+      return [{ type: 'text', text: modelText(value as unknown as McpResult, rawName) }]
     },
   }
 }
@@ -336,12 +362,47 @@ function createExecutor(
         : {},
     }
     if (containsImage(content)) {
-      const fallback: ContentBlock[] = [{ type: 'text', text: extractText(content, rawName) }]
+      const fallback: ContentBlock[] = [{ type: 'text', text: modelText(value, rawName) }]
       const projected = await prepareImageProjection(ctx, exec, content, rawName)
       projections.set(exec, { value, fallback, content: projected })
     }
     return value
   }
+}
+
+/**
+ * Model-visible text for one canonical result: the projected content text,
+ * then `structuredContent` as compact JSON unless a text block already carries
+ * that same JSON. The MCP specification asks a server with an `outputSchema`
+ * to echo the structured result in a text block for older clients; a server
+ * that sends only a summary line there would otherwise leave the model with
+ * the summary and no data.
+ * @param result - canonical bridge result.
+ * @param rawName - MCP wire tool name for diagnostics.
+ * @returns the text the model reads for this result.
+ */
+function modelText(result: McpResult, rawName: string): string {
+  if (result.structuredContent === undefined) return extractText(result.content, rawName)
+  const json = JSON.stringify(result.structuredContent)
+  // An empty content array is not "no model-visible content" when the
+  // structured half carries the payload; the JSON is the content.
+  if (result.content.length === 0) return json
+  const text = extractText(result.content, rawName)
+  return textEchoesStructured(result.content, result.structuredContent) ? text : `${text}\n${json}`
+}
+
+/** Whether any text block parses to a JSON value deep-equal to `structured`. */
+function textEchoesStructured(content: JsonValue[], structured: JsonValue): boolean {
+  return content.some((block) => {
+    if (!isRecord(block) || block.type !== 'text' || typeof block.text !== 'string') return false
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(block.text)
+    } catch {
+      return false // a prose text block is not JSON; nothing else throws here
+    }
+    return isDeepStrictEqual(parsed, structured)
+  })
 }
 
 /** Whether an untrusted MCP content array contains a declared image block. */

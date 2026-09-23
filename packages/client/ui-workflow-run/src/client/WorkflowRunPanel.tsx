@@ -7,7 +7,7 @@ import {
   type DisclosureRowProps, type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionListState, SessionTarget } from '@deepseek-ai/dsh-api-session-controller/client'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkflowRunKey } from './locales.ts'
@@ -18,7 +18,7 @@ import css from './WorkflowRunPanel.module.css'
 
 /** Navigation action injected from the plugin's own Session Controller access. */
 export interface WorkflowRunInjected {
-  readonly openSession: (id: SessionId) => void
+  readonly openSession: (target: SessionTarget) => void
 }
 
 /** Complete keyed Chat renderer props. */
@@ -270,11 +270,12 @@ function RunHeader({ children, count, name, onToggle, open, status, t }: {
   )
 }
 
-function MemberRow({ member, navigable, now, openSession, t }: {
+function MemberRow({ member, navigable, now, openSession, parentSessionId, t }: {
   readonly member: WorkflowRunMemberData
   readonly navigable: boolean
   readonly now: number
   readonly openSession: WorkflowRunInjected['openSession']
+  readonly parentSessionId: SessionId
   readonly t: WorkflowRunPanelProps['t']
 }) {
   const name = readableMember(member.label, t)
@@ -313,7 +314,15 @@ function MemberRow({ member, navigable, now, openSession, t }: {
       tabIndex={navigable ? undefined : -1}
       onFocus={() => { setFocused(true) }}
       onBlur={() => { setFocused(false) }}
-      onClick={navigable ? () => { openSession(member.childId) } : undefined}
+      onClick={navigable
+        ? () => {
+          openSession({
+            parentSessionId,
+            childSessionId: member.childId,
+            mode: 'one-shot',
+          })
+        }
+        : undefined}
     >
       {content}
     </button>
@@ -322,7 +331,7 @@ function MemberRow({ member, navigable, now, openSession, t }: {
 
 function PhaseSection({
   contentRef, onContentBlur, onToggle, open, pendingCleanCollapse,
-  phase, navigable, now, openSession, t,
+  phase, navigable, now, openSession, parentSessionId, t,
 }: {
   readonly contentRef: (element: HTMLDivElement | null) => void
   readonly onContentBlur: (event: FocusEvent<HTMLDivElement>) => void
@@ -333,6 +342,7 @@ function PhaseSection({
   readonly navigable: readonly SessionId[]
   readonly now: number
   readonly openSession: WorkflowRunInjected['openSession']
+  readonly parentSessionId: SessionId
   readonly t: WorkflowRunPanelProps['t']
 }) {
   return (
@@ -367,6 +377,7 @@ function PhaseSection({
               navigable={navigable.includes(member.childId)}
               now={now}
               openSession={openSession}
+              parentSessionId={parentSessionId}
               t={t}
             />
           ))}
@@ -509,6 +520,7 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
                   navigable={navigable}
                   now={now}
                   openSession={openSession}
+                  parentSessionId={sessionId}
                   t={t}
                 />
               )

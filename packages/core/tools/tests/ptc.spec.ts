@@ -2367,7 +2367,7 @@ describe('per-program execution controls', () => {
 
   it('rejects every assembly when a non-native mode has no code runtime', async () => {
     const { systemPrompt } = await setup({ mode: 'ptc', runtime: false })
-    await expect(systemPrompt.assemble()).rejects.toThrow(/requires a code runtime/)
+    await expect(systemPrompt.assemble()).rejects.toThrow(/requires a PTC runtime/)
   })
 
   it('propagates the durable root call seq through nested executions and dispatch events', async () => {

@@ -316,6 +316,7 @@ describe('subagent prompt Remote', () => {
       ['UNAUTHORIZED', 'subagent/unauthorized'],
       ['DRAINING', 'subagent/delivery-unavailable'],
       ['ACTIVATION_CLOSING', 'subagent/delivery-unavailable'],
+      ['ACTIVATION_LIMIT_REACHED', 'subagent/delivery-unavailable'],
       ['NO_PROVIDER', 'gateway/internal'],
     ]
     for (const [thrown, code] of cases) {

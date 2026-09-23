@@ -65,7 +65,7 @@ Content Security Policy permits only the production Web resources and exact loop
 
 The application checks signed release metadata after a successful startup without blocking current use. It downloads an applicable update only after reporting the version and size, verifies the signature and checksum, then asks the customer to restart and install. NSIS and AppImage products may complete replacement in application; the portable executable and deb package download the verified product and guide the customer through explicit replacement or package installation. No product silently replaces itself, and an unreachable update service never prevents the installed version from running.
 
-Windows release artifacts require Authenticode signing. Every platform publishes immutable installers, SHA-256 checksums, provenance, a software bill of materials, and third-party notices. Publication refuses a missing signature where required, a stale runtime manifest, a version mismatch between Electron and Harness, an unverified packaged entry, or a failed clean-machine smoke test.
+Windows release artifacts require Authenticode signing. Every platform publishes immutable installers, SHA-256 checksums, build attestations, a software bill of materials, and third-party notices. Publication refuses a missing signature where required, a stale runtime manifest, a version mismatch between Electron and Harness, an unverified packaged entry, or a failed clean-machine smoke test.
 
 ### Documentation ownership
 
@@ -110,7 +110,7 @@ Electron plus a dedicated Node runtime creates a substantially larger installati
 
 The desktop application turns the loopback Web server into part of an installed local security boundary. A leaked bearer token, permissive navigation, renderer Node access, weak Content Security Policy, forged readiness message, or incomplete process cleanup could expose Harness capabilities or credentials. Token transfer, request injection, BrowserWindow restrictions, structured readiness, and complete child disposal are release-blocking behavior.
 
-Shipping a complete runtime moves dependency and compiler failures out of customer setup but makes every release artifact platform-specific. Electron, Node, native addons, the packaged Web closure, installers, signatures, update metadata, provenance, and clean-machine tests must be rebuilt and qualified together for each supported platform.
+Shipping a complete runtime moves dependency and compiler failures out of customer setup but makes every release artifact platform-specific. Electron, Node, native addons, the packaged Web closure, installers, signatures, update metadata, build attestations, and clean-machine tests must be rebuilt and qualified together for each supported platform.
 
 Linux desktop integration and self-update behavior differ across AppImage and deb installations. The application must describe the applicable update path instead of claiming that every package can replace itself. Enterprise proxy, signing, or execution policies may block update download or runtime execution; the installed version must remain usable and report the exact blocked operation.
 

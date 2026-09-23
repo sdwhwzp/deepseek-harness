@@ -3,11 +3,13 @@
 // TestSessions mints tagged scopes through the production createScope, so the
 // service's scopeOf/binding path runs against production resolution (no local
 // tag probe).
+import type { UserMessage } from '@deepseek-ai/dsh-llm/types'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { makeTranslate, RemoteError, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
-  BeginSubmissionInput, PendingSubmissionRetirement, QueuedMessage,
+  BeginSubmissionInput, PendingSubmissionRetirement,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
@@ -34,6 +36,8 @@ async function bench(maxConcurrentFileUploads = 2) {
     id: 's1',
     session: { prompt, updateQueue, cancel, loadOlder },
   })
+  const reference = runtime.sessions.retain('s1' as SessionId)
+  await reference.ready
   // config.input is required (the apply shares its hub with the inject
   // factories); the bench passes its own instance explicitly.
   const hub = new InputHub(runtime.ctx, makeTranslate(zh, {}))
@@ -46,10 +50,48 @@ async function bench(maxConcurrentFileUploads = 2) {
   const root = runtime.ctx.get('conversation') as ConversationController
   const scoped = runtime.sessions.scope('s1')!.get('conversation') as ConversationController
   const shell = hub.shellFor(runtime.sessions.binding('s1')!)
-  return { runtime, fiber, root, scoped, hub, shell, prompt, updateQueue, cancel, loadOlder }
+  return { runtime, fiber, root, scoped, hub, shell, prompt, updateQueue, cancel, loadOlder, reference }
 }
 
 describe('ConversationController', () => {
+  it('waits for client preparation before sending and preserves a rejected draft', async () => {
+    const b = await bench()
+    try {
+      let finish!: () => void
+      const stop = b.runtime.ctx.on('conversation/prepare-send', () => new Promise<void>((resolve) => { finish = resolve }))
+      const sending = b.scoped.send('hello')
+      expect(b.prompt).not.toHaveBeenCalled()
+      finish()
+      await sending
+      expect(b.prompt).toHaveBeenCalledOnce()
+      stop()
+      b.runtime.ctx.on('conversation/prepare-send', async () => { throw new Error('preset refused') })
+      const session = b.runtime.sessions.binding('s1')!.session
+      await expect(b.root.sendSession(session, 'keep this draft', [], 'queue')).rejects.toThrow('preset refused')
+      expect(b.prompt).toHaveBeenCalledOnce()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
+  it('does not revive a withdrawn generation when an old input submits before scoped cleanup', async () => {
+    const b = await bench()
+    try {
+      b.shell.setDraft('old draft')
+      b.reference.release()
+      const retain = vi.spyOn(b.runtime.sessions, 'retain')
+      b.shell.submit()
+      b.shell.steerQueue()
+      expect(b.runtime.sessions.binding('s1')).toBeUndefined()
+      expect(retain).not.toHaveBeenCalled()
+      await b.runtime.flush()
+      expect(b.prompt).not.toHaveBeenCalled()
+      retain.mockRestore()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
   it('routes operations through the public Session binding', async () => {
     const b = await bench()
     await b.scoped.send('hello')
@@ -80,15 +122,15 @@ describe('ConversationController', () => {
   it('treats QueueDock Steer pre-admission races as converged Queue delivery', async () => {
     const b = await bench()
     b.updateQueue.mockResolvedValueOnce({
-      ok: false, error: new RemoteError('session/steer-unavailable', 'closed', { itemId: 'item-1' as QueuedMessage['id'] }),
+      ok: false, error: new RemoteError('session/steer-unavailable', 'closed', { itemId: 'item-1' as MessageId }),
     } as never)
     await expect(b.scoped.updateQueue('item-1' as never, { kind: 'steer' })).resolves.toBeUndefined()
     b.updateQueue.mockResolvedValueOnce({
-      ok: false, error: new RemoteError('session/queue-item-not-found', 'claimed', { itemId: 'item-1' as QueuedMessage['id'] }),
+      ok: false, error: new RemoteError('session/queue-item-not-found', 'claimed', { itemId: 'item-1' as MessageId }),
     } as never)
     await expect(b.scoped.updateQueue('item-2' as never, { kind: 'steer' })).resolves.toBeUndefined()
     b.updateQueue.mockResolvedValueOnce({
-      ok: false, error: new RemoteError('session/queue-item-not-found', 'claimed', { itemId: 'item-1' as QueuedMessage['id'] }),
+      ok: false, error: new RemoteError('session/queue-item-not-found', 'claimed', { itemId: 'item-1' as MessageId }),
     } as never)
     await expect(b.scoped.updateQueue('item-3' as never, { kind: 'remove' }))
       .rejects.toThrow('conversation.updateQueue failed: session/queue-item-not-found: claimed')
@@ -105,7 +147,8 @@ describe('ConversationController', () => {
       ])
       if (attachment === undefined) throw new Error('draft attachment missing')
       b.root.input.for(b.runtime.sessions.scope('s1')!).addAttachments([attachment.id])
-      await b.runtime.sessions.remove('s1')
+      b.reference.release()
+      await b.runtime.flush()
       expect(b.root.resolveDraftAttachments([attachment.id])).toEqual([])
       expect(revoked).toHaveBeenCalledWith('blob:draft-1')
     } finally {
@@ -115,7 +158,7 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
-  it('releases an image removed from the rail by an unsettled optimistic send', async () => {
+  it('releases an unsettled send preview during structural Session teardown', async () => {
     const b = await bench()
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:detached')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
@@ -127,7 +170,7 @@ describe('ConversationController', () => {
       b.shell.addAttachments([attachment.id])
       b.shell.submit()
       expect(b.shell.snapshot.attachmentIds).toEqual([])
-      await b.runtime.sessions.remove('s1')
+      await b.runtime.sessions.disposeScopes()
       expect(b.root.resolveDraftAttachments([attachment.id])).toEqual([])
       expect(revoked).toHaveBeenCalledWith('blob:detached')
     } finally {
@@ -223,7 +266,7 @@ describe('ConversationController', () => {
     const drafts = b.root.createDrafts(session.sessionId, ['one', 'two', 'three', 'four', 'removed'].map(name =>
       new File([Uint8Array.of(1)], `${name}.txt`, { type: 'text/plain' })))
 
-    expect(uploadFile.mock.calls.map(call => call[1])).toEqual(['one.txt', 'two.txt'])
+    await vi.waitFor(() => { expect(uploadFile.mock.calls.map(call => call[1])).toEqual(['one.txt', 'two.txt']) })
     await expect(b.root.serializeDraftAttachments([drafts[2]!.id]))
       .rejects.toThrow('one or more files have not finished uploading')
     b.root.releaseDraftAttachment(drafts[4]!.id)
@@ -282,14 +325,14 @@ describe('ConversationController', () => {
         prompt: b.prompt, updateQueue: b.updateQueue, cancel: b.cancel, loadOlder: b.loadOlder,
       },
     })
-    b.runtime.sessions.open('s2' as never)
+    using other = b.runtime.sessions.retain('s2' as SessionId)
+    await other.ready
     reportProgress?.({ loaded: 3, total: 8 })
     expect(b.root.fileUploads.getSnapshot()[attachment.id]).toEqual({
       status: 'uploading', loaded: 3, total: 8,
     })
     expect(b.shell.snapshot.attachmentIds).toEqual([attachment.id])
 
-    b.runtime.sessions.open('s1' as never)
     settled.resolve({
       ok: true,
       value: {
@@ -333,6 +376,8 @@ describe('ConversationController', () => {
       })),
     }
     await b.runtime.sessions.add({ id: 's2', session: target })
+    using _target = b.runtime.sessions.retain('s2' as SessionId)
+    await _target.ready
     b.root.rebindDraftFiles(b.runtime.sessions.binding('s2')!.session.sessionId, [attachment.id])
 
     expect(sourceSignal?.aborted).toBe(true)
@@ -445,7 +490,8 @@ describe('ConversationController', () => {
   it('fails loudly from the root scope, on an unbound session, or without Client Sessions', async () => {
     const b = await bench()
     await expect(b.root.send('x')).rejects.toThrow(/requires a session scope/)
-    await b.runtime.sessions.remove('s1')
+    b.reference.release()
+    await b.runtime.flush()
     await expect(b.scoped.send('x')).rejects.toThrow(/resolved no binding/)
     await b.runtime.dispose()
     // No Client Sessions service at all: a bare context lacks the assembled controller.
@@ -461,13 +507,38 @@ describe('ConversationController', () => {
 })
 
 describe('sendSession submission echo', () => {
+  it('keeps the blank-session view until preparation succeeds and creates no echo on refusal', async () => {
+    const b = await bench()
+    try {
+      const session = b.runtime.sessions.binding('s1')!.session
+      const begin = vi.spyOn(session, 'beginSubmission')
+      const preparation = Promise.withResolvers<undefined>()
+      const stop = b.runtime.ctx.on('conversation/prepare-send', () => preparation.promise)
+      const sending = b.root.sendSession(session, 'hello', [], 'queue')
+      expect(begin).not.toHaveBeenCalled()
+      expect(b.prompt).not.toHaveBeenCalled()
+      preparation.resolve(undefined)
+      await sending
+      expect(begin).toHaveBeenCalledOnce()
+      stop()
+      b.runtime.ctx.on('conversation/prepare-send', async () => { throw new Error('preset refused') })
+      await expect(b.root.sendSession(session, 'keep draft', [], 'queue')).rejects.toThrow('preset refused')
+      expect(begin).toHaveBeenCalledOnce()
+      expect(b.prompt).toHaveBeenCalledOnce()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
   /** Bench with an observable beginSubmission on the session face. */
   async function echoBench() {
     const b = await bench()
     const retire: { onRetire?: ((retirement: PendingSubmissionRetirement) => void) | undefined } = {}
     const abandon = vi.fn()
+    const begun = Promise.withResolvers<BeginSubmissionInput>()
     const beginSubmission = vi.fn((input: BeginSubmissionInput) => {
       retire.onRetire = input.onRetire
+      begun.resolve(input)
       return { requestId: 'req-echo' as never, abandon }
     })
     await b.runtime.sessions.updateSessionSnapshot('s1', () => {})
@@ -479,7 +550,7 @@ describe('sendSession submission echo', () => {
       created.mockRestore()
       revoked.mockRestore()
     }
-    return { ...b, beginSubmission, abandon, retire, revoked, restore }
+    return { ...b, beginSubmission, begun: begun.promise, abandon, retire, revoked, restore }
   }
 
   it('registers the echo before serialization and prompts with its identity', async () => {
@@ -490,8 +561,7 @@ describe('sendSession submission echo', () => {
       ])
       const session = b.runtime.sessions.binding('s1')!.session
       const sending = b.root.sendSession(session, '带图', [attachment!.id], 'queue')
-      // Synchronous: the echo is registered before any encoding starts.
-      const echo = b.beginSubmission.mock.calls[0]?.[0]
+      const echo = await b.begun
       expect(echo?.mode).toBe('queue')
       expect(echo?.text).toBe('带图')
       expect(echo?.attachments).toHaveLength(1)
@@ -540,7 +610,7 @@ describe('sendSession submission echo', () => {
         expect(b.root.fileUploads.getSnapshot()[drafts[1]!.id]?.status).toBe('ready')
       })
       const sending = b.root.sendSession(session, 'ordered', drafts.map(draft => draft.id), 'steer')
-      const echo = b.beginSubmission.mock.calls[0]?.[0]
+      const echo = await b.begun
       expect(echo?.mode).toBe('steer')
       expect(echo?.attachments.map(attachment => attachment.type === 'image'
         ? { type: attachment.type, name: attachment.value.name }
@@ -783,20 +853,16 @@ describe('draft image dimension probe', () => {
 })
 
 describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
-  const row = (id: string): QueuedMessage => ({
+  const row = (id: string): UserMessage => ({
     id: id as never,
-    messageId: `message-${id}` as never,
-    placement: 'queued',
+    role: 'user',
+    source: { kind: 'user' },
     content: [{ type: 'text', text: id }],
-    preview: id,
-    text: id,
   })
 
   it('steers every queued row in FIFO order and leaves steering rows alone', async () => {
     const b = await bench()
-    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
-      draft.queue = [row('q-1'), { ...row('q-2'), placement: 'steering' }, row('q-3')]
-    })
+    await b.runtime.sessions.setProjection('s1', 'inbox', { 'next-turn': [row('q-1'), row('q-3')], 'next-step': [row('q-2')] })
     b.shell.steerQueue()
     await vi.waitFor(() => {
       expect(b.updateQueue).toHaveBeenCalledTimes(2)
@@ -809,12 +875,10 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
 
   it('converges silently when the turn closes or a row is claimed mid-steer', async () => {
     const b = await bench()
-    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
-      draft.queue = [row('q-1'), row('q-2')]
-    })
+    await b.runtime.sessions.setProjection('s1', 'inbox', { 'next-turn': [row('q-1'), row('q-2')], 'next-step': [] })
     // The turn closes before the second row: the flush stops, silently.
     b.updateQueue.mockResolvedValueOnce({
-      ok: false, error: new RemoteError('session/steer-unavailable', 'closed', { itemId: 'item-1' as QueuedMessage['id'] }),
+      ok: false, error: new RemoteError('session/steer-unavailable', 'closed', { itemId: 'item-1' as MessageId }),
     } as never)
     b.shell.steerQueue()
     await vi.waitFor(() => { expect(b.updateQueue).toHaveBeenCalledTimes(1) })
@@ -822,11 +886,9 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
 
     // A row the host already claimed (e.g. a repeated empty-draft chord):
     // the duplicate Steer is a silent no-op.
-    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
-      draft.queue = [row('q-3')]
-    })
+    await b.runtime.sessions.setProjection('s1', 'inbox', { 'next-turn': [row('q-3')], 'next-step': [] })
     b.updateQueue.mockResolvedValueOnce({
-      ok: false, error: new RemoteError('session/queue-item-not-found', 'claimed', { itemId: 'item-1' as QueuedMessage['id'] }),
+      ok: false, error: new RemoteError('session/queue-item-not-found', 'claimed', { itemId: 'item-1' as MessageId }),
     } as never)
     b.shell.steerQueue()
     await vi.waitFor(() => { expect(b.updateQueue).toHaveBeenCalledTimes(2) })
@@ -836,9 +898,7 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
 
   it('surfaces one notice on a genuine steer failure and stops', async () => {
     const b = await bench()
-    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
-      draft.queue = [row('q-1'), row('q-2')]
-    })
+    await b.runtime.sessions.setProjection('s1', 'inbox', { 'next-turn': [row('q-1'), row('q-2')], 'next-step': [] })
     b.updateQueue.mockResolvedValueOnce({
       ok: false, error: new RemoteError('gateway/internal', 'broken', {}),
     } as never)

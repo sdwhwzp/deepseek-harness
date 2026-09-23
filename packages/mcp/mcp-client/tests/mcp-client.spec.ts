@@ -10,7 +10,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { PostToolDecision } from '@deepseek-ai/dsh-tools'
-import { publicToolName, syncTools, type ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
+import { createMcpToolDefinition, publicToolName, syncTools, type ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
 import { createTransport } from '@deepseek-ai/dsh-mcp-client/src/transport.ts'
 import type { Config } from '@deepseek-ai/dsh-mcp-client'
 
@@ -229,6 +229,32 @@ describe('syncTools', () => {
     expect(registered.get('mcp__srv__seat')).toEqual(nullable)
     expect(warns).toEqual([
       'mcp-client(srv): dropped root oneOf from tool "flight_happy" input schema — no model provider accepts a composition keyword at the parameters root',
+    ])
+  })
+
+  it('normalizes the root for a native definition built from a discriminated union and hoists its branch fields', () => {
+    const warns: string[] = []
+    ctx.logger.warn = ((message: unknown) => { warns.push(String(message)) }) as typeof ctx.logger.warn
+    const definition = createMcpToolDefinition(ctx, {
+      name: 'stagehand_tabs',
+      rawName: 'tabs',
+      description: 'List, create, select, or close a tab.',
+      inputSchema: {
+        type: 'object',
+        anyOf: [
+          { type: 'object', properties: { action: { const: 'list' } }, required: ['action'] },
+          { type: 'object', properties: { action: { const: 'new' }, url: { type: 'string' } }, required: ['action'] },
+        ],
+      },
+      call: () => Promise.resolve({ content: [] }),
+    })
+    expect(definition.parameters).toEqual({
+      type: 'object',
+      properties: { action: { const: 'list' }, url: { type: 'string' } },
+      required: ['action'],
+    })
+    expect(warns).toEqual([
+      'mcp-client(stagehand_tabs): dropped root anyOf from tool "tabs" input schema — no model provider accepts a composition keyword at the parameters root',
     ])
   })
 

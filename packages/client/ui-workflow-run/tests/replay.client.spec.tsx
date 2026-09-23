@@ -50,17 +50,17 @@ const childIds = (window as { type: string; data: { childId?: string } }[])
 /** The session list as the browser held it while the run was live: six running subagent children of the current Session. */
 function liveList(): SessionListState {
   const byId: SessionListState['byId'] = {
-    [PARENT_ID]: { id: PARENT_ID, displayTitle: 'parent', running: true, blank: false, updatedAt: 0 },
+    [PARENT_ID]: { id: PARENT_ID, displayTitle: 'parent', running: true, retainedBy: {}, blank: false, updatedAt: 0 },
   }
   for (const id of childIds) {
     byId[id] = {
       id, displayTitle: id, parentId: PARENT_ID, origin: 'subagent',
-      running: true, blank: false, updatedAt: 0,
+      running: true, retainedBy: {}, blank: false, updatedAt: 0,
     }
   }
   return {
-    ids: [PARENT_ID, ...childIds], byId, current: PARENT_ID, phase: 'ready',
-    subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+    ids: [PARENT_ID, ...childIds], byId, phase: 'ready',
+    subagentsByParent: {}, jobsBySession: {},
   }
 }
 
@@ -70,7 +70,8 @@ function props(node: ChatConversationViewNode, sessions: SessionListState): Work
     node: node as WorkflowRunPanelProps['node'], sessionId: PARENT_ID,
     usePanelInfo: selector => selector({ activePanelId: null }),
     useSessions: s => s(sessions), useResource,
-    useSessionPendingInteraction: s => s(attention),
+    useSessionStatus: s => s(attention),
+    useSessionRetainInfo: () => undefined,
     useSession: s => s(sessionSnapshot(PARENT_ID)),
     useProjection: () => undefined,
     useConversation: s => s(conversationSnapshot()),

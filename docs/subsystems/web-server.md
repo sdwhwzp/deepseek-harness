@@ -60,6 +60,83 @@ A request whose handling throws (a malformed %-escape hitting `decodeURIComponen
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxconnection--hostconnectionhandle"></a>
+
+### `ctx.connection` — `HostConnectionHandle`
+
+Host `ctx.connection` shape consumed by transport-independent adapters.
+
+```ts cordis-catalog
+/**
+ * Compose exact Fetch routes and the shared-channel RPC interceptor.
+ * @param channel - shared channel mounted by Connection.
+ * @returns Fetch handler for trusted, authenticated requests.
+ */
+createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
+
+/**
+ * Apply the Host/Origin fence and accept either a verified deployment
+ * principal or an authenticated browser session.
+ * @param request - carrier request facts owned by the HTTP or upgrade route.
+ * @returns the accepted caller identity or a rejection status.
+ */
+authorizeRequest(request: ConnectionPrincipalRequest): Promise<ConnectionRequestAuthorization>
+
+/**
+ * Authenticate, validate, detach, and freeze one deployment principal.
+ * @param request - carrier request facts owned by the transport.
+ * @returns the verified caller, or undefined when the provider declines the request.
+ * @throws when the configured provider fails or returns invalid identity data.
+ */
+authenticateRequest(request: ConnectionPrincipalRequest): Promise<AuthenticatedPrincipal | undefined>
+
+/**
+ * Apply Connection's Host/Origin checks and browser authentication to
+ * another Web route.
+ * @param request - request headers from the HTTP or upgrade request.
+ * @returns rejection status, or undefined when the route may accept the request.
+ */
+requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
+
+/**
+ * Authenticate one frontend index request, owning a token redirect or 401.
+ * @param request - root or configured-index HTTP request.
+ * @param response - response owned when the result is false.
+ * @returns true only when the frontend may serve index.html.
+ */
+authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
+
+/**
+ * Add the fresh process token to an ordinary Web application URL.
+ * @param baseUrl - clean canonical browser origin.
+ * @returns root URL accepted by {@link authorizeIndex} for initial login.
+ */
+authenticatedUrl(baseUrl: string): string
+```
+
+Types: [AuthenticatedPrincipal](core.md)
+
+Source: [`packages/client/connection/src/rpc.ts`](../../packages/client/connection/src/rpc.ts)
+
+<a id="ctxrequestprincipal--requestprincipalprovider"></a>
+
+### `ctx.requestPrincipal` — `RequestPrincipalProvider`
+
+Optional Host authentication provider invoked on transport-owned request facts.
+
+```ts cordis-catalog
+/**
+ * Verify the carrier authentication data and return its caller identity.
+ * @param request - transport-owned request facts (headers, peer, method, URL).
+ * @returns the verified principal, or `undefined` when the request carries no acceptable identity; may resolve asynchronously.
+ */
+authenticate( request: ConnectionPrincipalRequest, ): AuthenticatedPrincipal | undefined | Promise<AuthenticatedPrincipal | undefined>
+```
+
+Types: [AuthenticatedPrincipal](core.md)
+
+Source: [`packages/client/connection/src/rpc.ts`](../../packages/client/connection/src/rpc.ts)
+
 <a id="ctxwebserver--webserver"></a>
 
 ### `ctx.webServer` — `WebServer`
@@ -128,6 +205,30 @@ renderIndex(html: string): string
 ```
 
 Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
+
+<a id="connection-events"></a>
+
+### `connection/*` events
+
+<a id="connectionrequest--waterfall"></a>
+
+#### `connection/request` — waterfall
+
+Admit or wrap an authenticated shared API request, including body transfer. Existing requests continue when a listener refuses subsequent requests.
+
+```ts cordis-catalog
+/**
+ * Admit or wrap an authenticated shared API request, including body transfer.
+ * Existing requests continue when a listener refuses subsequent requests.
+ * @param request - Authenticated incoming HTTP request.
+ * @param response - Response owned until the delegated bridge settles.
+ * @param next - Delegate to the next listener or the shared API bridge.
+ * @mode waterfall
+ */
+'connection/request'(request: IncomingMessage, response: ServerResponse, next: () => Promise<void>): Promise<void>
+```
+
+Source: [`packages/client/connection/src/index.ts`](../../packages/client/connection/src/index.ts)
 
 <a id="webserver-events"></a>
 

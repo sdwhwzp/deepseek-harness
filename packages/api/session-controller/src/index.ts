@@ -501,7 +501,6 @@ function controlBaselineSessionIds(
   baseline: Extract<SessionControlFrame, { readonly type: 'baseline' }>['value'],
 ): SessionId[] {
   return [...new Set([
-    ...Object.keys(baseline.queues),
     ...Object.keys(baseline.jobs),
     ...Object.keys(baseline.projections),
   ] as SessionId[])]
@@ -523,7 +522,6 @@ function filterControlBaseline(
   readable: ReadonlySet<SessionId>,
 ): Extract<SessionControlFrame, { readonly type: 'baseline' }>['value'] {
   return {
-    queues: filterRecord(baseline.queues, readable),
     jobs: filterRecord(baseline.jobs, readable),
     projections: filterRecord(baseline.projections, readable),
   }

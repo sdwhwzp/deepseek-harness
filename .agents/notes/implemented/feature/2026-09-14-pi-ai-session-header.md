@@ -2,6 +2,8 @@
 
 Status: implemented
 
+English | [中文](2026-09-14-pi-ai-session-header.zh.md)
+
 ## Problem
 
 OpenCode Go began refusing requests that omit `x-opencode-session` on 2026-09-05, answering `400 {"type":"MissingSessionID"}` with the routing rationale: a stable per-conversation id is what its router and prompt cache key on. A deployment serving `opencode-go` through `@deepseek-ai/dsh-llm-pi-ai` cannot satisfy that from configuration. The route's `headers` dict is static, so every conversation would present the same id — accepted by the endpoint, but pinned to one routing bucket, which is the opposite of what the header exists for.

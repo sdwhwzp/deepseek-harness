@@ -517,3 +517,43 @@ function remoteRoster(modeSelectionEnabled: boolean) {
     },
   }
 }
+
+
+describe('preset preparation before submission', () => {
+  it('commits the staged choice without waiting for the roster or session summary', async () => {
+    const selected: string[] = []
+    const ctx = { remote: { agentPresets: {
+      select: (_id: SessionId, preset: string) => {
+        selected.push(preset)
+        return Promise.resolve({ ok: true, value: preset })
+      },
+    } } } as unknown as ClientContext
+    const seat = new AgentPresetSeatController(ctx, () => undefined)
+    await seat.select('standard')
+    await seat.prepareSend('s1' as SessionId)
+    expect(selected).toEqual(['standard'])
+  })
+
+  it('joins an in-flight switch and refuses submission when the Host rejects it', async () => {
+    let finish!: (result: { ok: false; error: { message: string; details: object } }) => void
+    let calls = 0
+    const ctx = { remote: { agentPresets: {
+      select: () => {
+        calls += 1
+        return new Promise((resolve) => { finish = resolve })
+      },
+    } } } as unknown as ClientContext
+    const seat = new AgentPresetSeatController(ctx, () => ({
+      id: 's1' as SessionId, blank: true, projectionValues: { agentPreset: 'code' },
+    }))
+    const picking = seat.select('standard')
+    const sending = seat.prepareSend('s1' as SessionId)
+    const refused = expect(sending).rejects.toThrow('switch refused')
+    await Promise.resolve()
+    expect(calls).toBe(1)
+    finish({ ok: false, error: { message: 'switch refused', details: {} } })
+    await picking
+    await refused
+    expect(seat.store.getSnapshot().busy).toBe(false)
+  })
+})

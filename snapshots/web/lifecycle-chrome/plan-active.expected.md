@@ -4,6 +4,8 @@
 - button "New session":
   - img
   - text: New Session
+- navigation "Global panels":
+  - button "Plugins"
 - text: Workspaces
 - button "Search sessions":
   - img
@@ -20,8 +22,9 @@
 - button "Settings":
   - img
   - text: Settings
-- text: Build version
-- code: {{buildVersion}}
+- banner:
+  - button "Open right sidebar":
+    - img
 - text: Into the Unknown Preview
 - button "Choose workspace":
   - img

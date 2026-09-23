@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-08-21-one-click-environment-launcher.md
-2026-08-21-one-click-environment-launcher.md: 175cc247f9472f869d6b5b6487e4336380c613ba
+2026-08-21-one-click-environment-launcher.md: fb93980d65ae37794650e9a9276088ac20c29fef
 2026-08-21-one-click-environment-launcher.zh.md: 932044100c6fbfb01882f8b37c298560bc84e62c

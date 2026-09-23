@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-09-20-fork-principal-and-ptc-correlation.md
+2026-09-20-fork-principal-and-ptc-correlation.md: 76c8bc012fe2dcb11c91e91920c7b59fec9d8f53
+2026-09-20-fork-principal-and-ptc-correlation.zh.md: 27e399ca1e7bd5e47c84788c0682b1668e477246
