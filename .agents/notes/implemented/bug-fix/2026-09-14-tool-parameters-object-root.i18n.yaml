@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-14-tool-parameters-object-root.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-14-tool-parameters-object-root.md
-2026-09-14-tool-parameters-object-root.md: 8841211bda5280a2d9b0d594c5397ed4b70d6c5d
-2026-09-14-tool-parameters-object-root.zh.md: 075d181740786966a6e5fc4af439202e0aa67264
+/agent-note-object-rooted-tool-parameters-at-registration:
+  en: 6c1b26d2cdbe00ae
+  zh: 3ed9c542eb645fd7
+/agent-note-object-rooted-tool-parameters-at-registration/problem:
+  en: 2a72145c7a7219ea
+  zh: f5e4d0e8f0fb12ad
+/agent-note-object-rooted-tool-parameters-at-registration/decision:
+  en: 2f2d392e6c305f6f
+  zh: b0856b9055bb54f6
+/agent-note-object-rooted-tool-parameters-at-registration/alternatives-considered:
+  en: 838dc4fecb5a8f75
+  zh: b7a0997f87aca90d
+/agent-note-object-rooted-tool-parameters-at-registration/consequences:
+  en: f66eae5230f2afa2
+  zh: e234e3a7a5336d62

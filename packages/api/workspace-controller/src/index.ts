@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-api-gateway/types'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
 import { resolvePrincipalAccess } from '@deepseek-ai/dsh-principal-access'
 import z from '@deepseek-ai/schemastery'
-import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceCommands } from './commands.ts'
 import { DirectoryPickerController } from './directory-picker.ts'
 import { WorkspaceFeed, workspaceView } from './feed.ts'
@@ -20,7 +20,6 @@ import type {
   WorkspaceDeleteValue,
   WorkspaceFollowFrame,
   WorkspaceInsertBeforeRequest,
-  WorkspaceInitializeDefaultRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
   WorkspacePinSessionRequest,
@@ -93,29 +92,25 @@ export class WorkspaceController extends TypertRemoteService {
   }
 
   /**
-   * Initialize or reuse the default Workspace during first-use startup.
-   * @param request - initial directory name and title; never rename an existing default.
+   * Initialize or reuse the default Workspace during first-use startup. The
+   * directory name is fixed, so the Host never renames or relocates an
+   * existing default; its initial title is that same name, which browser
+   * consumers label in the reader's language.
    * @param signal - caller lifetime; cancels native directory lookup.
    * @returns the durable Workspace, or undefined when first-use initialization is ineligible; creates no Session or message.
    */
   @Remote('initializeDefault')
-  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal: AbortSignal): Promise<WorkspaceValue | undefined> {
+  async initializeDefault(signal: AbortSignal): Promise<WorkspaceValue | undefined> {
     if (this.currentPrincipal() !== undefined || this.ctx.get('requestPrincipal') !== undefined || this.ctx.get('principalAccess') !== undefined) {
       await resolvePrincipalAccess(this.ctx, this.currentPrincipal(), {}, signal)
       // Deployment-owned account directories are registered through the authorized folder flow.
       return undefined
     }
-    const { directoryName, title } = request
-    if (directoryName.trim() === '' || directoryName !== directoryName.trim()
-      || directoryName.endsWith('.') || /[/\\:\0]/.test(directoryName) || title.trim() === '') {
-      throw new RemoteError('gateway/bad-request', 'default Workspace requires a directory name and non-blank title', {})
-    }
     const workspace = await this.ctx.workspaceRegistry.initializeDefault(async () => {
       const timeout = AbortSignal.timeout(this.config.documentsLookupTimeoutMs)
-      const path = await defaultWorkspaceDirectory(
-        directoryName, this.config.documentsDirectory, AbortSignal.any([signal, timeout]),
+      return await defaultWorkspaceDirectory(
+        this.config.documentsDirectory, AbortSignal.any([signal, timeout]),
       )
-      return { path, title }
     })
     return workspace === undefined ? undefined : { workspace: workspaceView(workspace) }
   }

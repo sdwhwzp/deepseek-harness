@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-05-principal-authorization-across-013-upstream.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-05-principal-authorization-across-013-upstream.md
-2026-09-05-principal-authorization-across-013-upstream.md: 5b3bcab93b819cf044590487f8ab4267824ffd62
-2026-09-05-principal-authorization-across-013-upstream.zh.md: 99f0e2d809e7c4e9f87ad31ce854598a1c5d62dd
+/agent-note-principal-authorization-across-the-0-1-3-upstream-merge:
+  en: 278a146c0b3cdb25
+  zh: 6c904cf8ffe04e16
+/agent-note-principal-authorization-across-the-0-1-3-upstream-merge/problem:
+  en: a71cf5c208a36734
+  zh: 23938db3865cf18d
+/agent-note-principal-authorization-across-the-0-1-3-upstream-merge/decision:
+  en: 1164879779c2b58b
+  zh: 41f810c32af382ef
+/agent-note-principal-authorization-across-the-0-1-3-upstream-merge/alternatives-considered:
+  en: 10f478fa3d277bbf
+  zh: 63d670a579e391de
+/agent-note-principal-authorization-across-the-0-1-3-upstream-merge/consequences:
+  en: 92d14f3c033044d1
+  zh: 2927ecff5b7cf806

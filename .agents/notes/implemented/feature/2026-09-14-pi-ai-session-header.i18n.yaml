@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-14-pi-ai-session-header.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-14-pi-ai-session-header.md
-2026-09-14-pi-ai-session-header.md: 55194cf6f9d719c89c43cc4e8278880945f23276
-2026-09-14-pi-ai-session-header.zh.md: 96eff212af5afda445069cbd9a8ac16d79815e3e
+/agent-note-a-pi-ai-route-can-carry-the-session-id-to-a-per-conversation-provider:
+  en: ac6b02683c3db858
+  zh: 8571b5dc5652f18a
+/agent-note-a-pi-ai-route-can-carry-the-session-id-to-a-per-conversation-provider/problem:
+  en: 1552cab2c2ed53ea
+  zh: 740bae5df4827667
+/agent-note-a-pi-ai-route-can-carry-the-session-id-to-a-per-conversation-provider/decision:
+  en: 55551174c7f8f0b5
+  zh: 0bbb288b99e9893f
+/agent-note-a-pi-ai-route-can-carry-the-session-id-to-a-per-conversation-provider/alternatives-considered:
+  en: 2e48f7dc85bb5437
+  zh: eeaaff3b09188093
+/agent-note-a-pi-ai-route-can-carry-the-session-id-to-a-per-conversation-provider/consequences:
+  en: 7c12aef9693155f8
+  zh: b16c65467a84479d

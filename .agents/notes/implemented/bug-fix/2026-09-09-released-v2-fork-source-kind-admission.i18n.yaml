@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-09-released-v2-fork-source-kind-admission.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-09-released-v2-fork-source-kind-admission.md
-2026-09-09-released-v2-fork-source-kind-admission.md: 6e82c9f455acb6cb0f93b01c74712a757f8fd4de
-2026-09-09-released-v2-fork-source-kind-admission.zh.md: 87632af4cc9d4461c3e7d1e6b2fab0e087743c54
+/agent-note-admitting-the-fork-s-released-v2-message-source-kind:
+  en: acf5bfa150e4c9ba
+  zh: 8a82d2ec6598f4a3
+/agent-note-admitting-the-fork-s-released-v2-message-source-kind/problem:
+  en: 64909063e07446c1
+  zh: eace2aeb412ed0ec
+/agent-note-admitting-the-fork-s-released-v2-message-source-kind/decision:
+  en: 45d72f45f3e4e639
+  zh: d601c042a60bffaf
+/agent-note-admitting-the-fork-s-released-v2-message-source-kind/alternatives-considered:
+  en: d1ec3632e8d66951
+  zh: a68ec171abd9f8b7
+/agent-note-admitting-the-fork-s-released-v2-message-source-kind/consequences:
+  en: fa423b3126273af9
+  zh: b5316015db5bea2f
+/agent-note-admitting-the-fork-s-released-v2-message-source-kind/testing:
+  en: 8d999cfbc209917a
+  zh: 1d4d65478a076d10

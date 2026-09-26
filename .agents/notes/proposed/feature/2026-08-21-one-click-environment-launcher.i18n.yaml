@@ -1,6 +1,40 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-21-one-click-environment-launcher.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-08-21-one-click-environment-launcher.md
-2026-08-21-one-click-environment-launcher.md: fb93980d65ae37794650e9a9276088ac20c29fef
-2026-08-21-one-click-environment-launcher.zh.md: 932044100c6fbfb01882f8b37c298560bc84e62c
+/agent-note-bundled-deepseek-harness-desktop-application:
+  en: 46ddf144ded1d72f
+  zh: 8a1dd1bcd1341047
+/agent-note-bundled-deepseek-harness-desktop-application/problem:
+  en: 793f2cded5589578
+  zh: 69bb01448eddbb2d
+/agent-note-bundled-deepseek-harness-desktop-application/proposal:
+  en: 986dd8097aac4d3d
+  zh: 2c89af85628555c5
+/agent-note-bundled-deepseek-harness-desktop-application/proposal/product-and-platform-scope:
+  en: 4a5c4fedf0c7795b
+  zh: ef29781e822abe7a
+/agent-note-bundled-deepseek-harness-desktop-application/proposal/desktop-process-model:
+  en: 53d17abd62725a16
+  zh: 3a46bc294b50b75a
+/agent-note-bundled-deepseek-harness-desktop-application/proposal/desktop-window-and-startup-experience:
+  en: ea651cad9bf2c247
+  zh: b68ca36d4612d690
+/agent-note-bundled-deepseek-harness-desktop-application/proposal/electron-and-loopback-security:
+  en: 364d314d62581b2d
+  zh: e325d15c69bae4b6
+/agent-note-bundled-deepseek-harness-desktop-application/proposal/packaging-updates-and-release-ownership:
+  en: 65ff38689bd71195
+  zh: b6f49c373e83bc99
+/agent-note-bundled-deepseek-harness-desktop-application/proposal/documentation-ownership:
+  en: ed7c1ff2a3b46c42
+  zh: e6c6abc202faac59
+/agent-note-bundled-deepseek-harness-desktop-application/alternatives-considered:
+  en: b3c0a73e69e153f4
+  zh: 16bf888ea03c300f
+/agent-note-bundled-deepseek-harness-desktop-application/acceptance-criteria:
+  en: 86aa1318f3ee8fbc
+  zh: 5e7545c026a416bf
+/agent-note-bundled-deepseek-harness-desktop-application/risks:
+  en: 91a95544e877c1b6
+  zh: 71a5f5b24df1f4ec

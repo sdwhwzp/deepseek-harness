@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-18-upstream-sync-keeps-fork-seams-registered.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-18-upstream-sync-keeps-fork-seams-registered.md
-2026-09-18-upstream-sync-keeps-fork-seams-registered.md: ddbc337f4b808e5467794bbf4151d8c3880e989f
-2026-09-18-upstream-sync-keeps-fork-seams-registered.zh.md: 14aa6f906e60d12cd4d82781e836c4f22ba43209
+/agent-note-an-upstream-sync-re-registers-every-fork-seam-the-merge-base-no-longer-names:
+  en: 82eca6b5ddab461a
+  zh: 4b431a1a468959c3
+/agent-note-an-upstream-sync-re-registers-every-fork-seam-the-merge-base-no-longer-names/problem:
+  en: ff88aefa3b1f83b1
+  zh: 403206229ea5e480
+/agent-note-an-upstream-sync-re-registers-every-fork-seam-the-merge-base-no-longer-names/decision:
+  en: 5a6c729afa71b602
+  zh: 9e39c812f104f911
+/agent-note-an-upstream-sync-re-registers-every-fork-seam-the-merge-base-no-longer-names/alternatives-considered:
+  en: 08c98ad28bd36158
+  zh: 156ba478fb7006a0
+/agent-note-an-upstream-sync-re-registers-every-fork-seam-the-merge-base-no-longer-names/consequences:
+  en: 594c077ed26af7a6
+  zh: 2e571682cdef04ae

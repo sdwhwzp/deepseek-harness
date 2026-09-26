@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-09-delegated-turn-ownership.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-09-delegated-turn-ownership.md
-2026-09-09-delegated-turn-ownership.md: 9a43fac3be49c3d1b51b01546df1d92b67be16a5
-2026-09-09-delegated-turn-ownership.zh.md: f5b70ae25ab0cb0edf85ee078509dc95287a7f4f
+/agent-note-carrying-the-delegating-step-s-owner-into-a-workflow-s-children:
+  en: 3826e79dc4c43965
+  zh: 43cec19179a46af6
+/agent-note-carrying-the-delegating-step-s-owner-into-a-workflow-s-children/problem:
+  en: a383e886b8500397
+  zh: c7c48862d8a10d28
+/agent-note-carrying-the-delegating-step-s-owner-into-a-workflow-s-children/decision:
+  en: 25ef2f53fc066de6
+  zh: f757a598172b0b61
+/agent-note-carrying-the-delegating-step-s-owner-into-a-workflow-s-children/alternatives-considered:
+  en: 37a8ddc2f5edbe35
+  zh: 127fc6d3b9c37693
+/agent-note-carrying-the-delegating-step-s-owner-into-a-workflow-s-children/consequences:
+  en: 871e9fe91f82fa0e
+  zh: 726866a66d0e7a5d
+/agent-note-carrying-the-delegating-step-s-owner-into-a-workflow-s-children/testing:
+  en: 1669c3c72a107764
+  zh: 6b60fb3b6ce8a69a

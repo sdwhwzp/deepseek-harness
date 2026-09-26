@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-02-web-profile-ships-plugin-market.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-02-web-profile-ships-plugin-market.md
-2026-09-02-web-profile-ships-plugin-market.md: b7e388c6e8ba776b6213084889520822c47714fc
-2026-09-02-web-profile-ships-plugin-market.zh.md: d74fbab1f59f0022e6b3ef40628971f1024f1c73
+/agent-note-web-profile-ships-the-plugin-market:
+  en: 1c57d4c4632f0d33
+  zh: 8c8295707193f435
+/agent-note-web-profile-ships-the-plugin-market/problem:
+  en: abd4d394032a49aa
+  zh: a18d4814c5f9532d
+/agent-note-web-profile-ships-the-plugin-market/decision:
+  en: 11fb8498f2c79de1
+  zh: edadd31bae88cddd
+/agent-note-web-profile-ships-the-plugin-market/alternatives-considered:
+  en: d691dd137cfd751e
+  zh: e24147bde4b2e2d7
+/agent-note-web-profile-ships-the-plugin-market/verification:
+  en: a9d7c119e3c53198
+  zh: 5bb4e34010f5aa46
+/agent-note-web-profile-ships-the-plugin-market/consequences:
+  en: 9d0122437098b759
+  zh: 2253e94b279d7e68

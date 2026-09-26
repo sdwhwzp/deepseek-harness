@@ -180,4 +180,24 @@ describe('Session Controller principal access', () => {
       items: [{ sessionId: session.id }],
     })
   })
+
+  it.each(['user', 'missing', 'provider-missing', 'revoked'] as const)(
+    'refuses shared default model initialization for %s before reading credentials', async (state) => {
+      const ctx = await baseContext()
+      const save = vi.fn()
+      const controller = createSessionTestController(ctx, { ...defaults, saveDefaultModelSelection: save })
+      if (state !== 'missing') installPrincipal(ctx, { ...principal, role: state === 'user' ? 'user' : 'admin' })
+      if (state !== 'provider-missing') {
+        const access = new AllowListPrincipalAccess(ctx, new Set())
+        if (state === 'revoked') access.resolveCall.mockRejectedValue(new Error('account revoked'))
+      }
+      try {
+        await expect(controller.initializeDefaultModel()).rejects.toMatchObject(state === 'user'
+          ? { code: 'session/admin-required' }
+          : state === 'revoked' ? { message: 'account revoked' }
+            : { code: 'PRINCIPAL_ACCESS_DENIED', reason: state === 'missing' ? 'principal-required' : 'provider-required' })
+        expect(save).not.toHaveBeenCalled()
+      } finally { await ctx.fiber.dispose() }
+    },
+  )
 })

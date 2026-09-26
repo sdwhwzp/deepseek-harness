@@ -1,6 +1,28 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-20-fork-principal-and-ptc-correlation.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-09-20-fork-principal-and-ptc-correlation.md
-2026-09-20-fork-principal-and-ptc-correlation.md: 98fd92697df8915bf57d4cd72a91f6efbcc956e1
-2026-09-20-fork-principal-and-ptc-correlation.zh.md: 523db6059c5c91b521f87d48f98c11e80d0ded1a
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-09-20-fork-principal-and-ptc-correlation:
+  en: 750e25424b464f87
+  zh: 9cfb746be90a1722
+/2026-09-20-fork-principal-and-ptc-correlation/summary:
+  en: 664d5dd1c3d4d1ac
+  zh: 32b0a3ce1081407f
+/2026-09-20-fork-principal-and-ptc-correlation/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-09-20-fork-principal-and-ptc-correlation/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-09-20-fork-principal-and-ptc-correlation/compatibility:
+  en: db02d2e388a5e4d6
+  zh: 1fd22b05151603b3
+/2026-09-20-fork-principal-and-ptc-correlation/verification:
+  en: 2070c2b8d74d2788
+  zh: 39c56379c17fe0a7
+/2026-09-20-fork-principal-and-ptc-correlation/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

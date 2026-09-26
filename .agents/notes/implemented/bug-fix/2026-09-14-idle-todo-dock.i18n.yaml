@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-14-idle-todo-dock.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-14-idle-todo-dock.md
-2026-09-14-idle-todo-dock.md: d46eeada9196e79bfc72e0ab633879d03e037e62
-2026-09-14-idle-todo-dock.zh.md: 06c9474ad549dd09e6069705cc0aace2d17b268a
+/agent-note-hide-retained-todo-plans-in-idle-conversations:
+  en: 39a6afd8a5db472e
+  zh: 94048851ffe9e2a6
+/agent-note-hide-retained-todo-plans-in-idle-conversations/problem:
+  en: c92f18c14697b00c
+  zh: 912efef11c4c4441
+/agent-note-hide-retained-todo-plans-in-idle-conversations/decision:
+  en: 503b124f47cb0726
+  zh: fc5a1445f2e54b90
+/agent-note-hide-retained-todo-plans-in-idle-conversations/alternatives-considered:
+  en: c7cbc7b0eae85ed0
+  zh: 63b49d5a3bc8969e
+/agent-note-hide-retained-todo-plans-in-idle-conversations/consequences:
+  en: 79d884a135ecd2b9
+  zh: 1ee39684932d36aa

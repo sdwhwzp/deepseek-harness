@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-12-mcp-structured-content-model-text.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-12-mcp-structured-content-model-text.md
-2026-09-12-mcp-structured-content-model-text.md: 6b9ada096570b2ff7109f919b68e248f93a8efa3
-2026-09-12-mcp-structured-content-model-text.zh.md: b42b30f74eb816ea58af431c61b83f87ef16881c
+/agent-note-mcp-structured-content-reaches-the-model-text:
+  en: 76780efc4c1de316
+  zh: 3a9687b95cc5981c
+/agent-note-mcp-structured-content-reaches-the-model-text/problem:
+  en: 8eef90475d635258
+  zh: f4c3e6269d720de6
+/agent-note-mcp-structured-content-reaches-the-model-text/decision:
+  en: b2d00517561ee521
+  zh: f49fd9705e514db5
+/agent-note-mcp-structured-content-reaches-the-model-text/alternatives-considered:
+  en: d35cf9ec0bdc8ccc
+  zh: 4acaba0311f27050
+/agent-note-mcp-structured-content-reaches-the-model-text/consequences:
+  en: 3c2c250a07a4d777
+  zh: af175ba267e7cdb7

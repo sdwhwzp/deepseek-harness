@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-12-goal-round-principal.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-12-goal-round-principal.md
-2026-09-12-goal-round-principal.md: 1ae6fe89458d3f6c01efbfe8025d93834c37daf6
-2026-09-12-goal-round-principal.zh.md: eb50cdbf0623f6d22f452b8bd8235df784596087
+/agent-note-preserve-the-authorizing-principal-on-automatic-goal-rounds:
+  en: df4930cacb95a824
+  zh: 5903f8e911113ad0
+/agent-note-preserve-the-authorizing-principal-on-automatic-goal-rounds/problem:
+  en: 684c661929db127f
+  zh: ecc134a4929b714d
+/agent-note-preserve-the-authorizing-principal-on-automatic-goal-rounds/decision:
+  en: a41e2974fa69d40a
+  zh: 6995b5fb8770d494
+/agent-note-preserve-the-authorizing-principal-on-automatic-goal-rounds/alternatives-considered:
+  en: ae2f8c9753d55914
+  zh: 8a1d560ef744463a
+/agent-note-preserve-the-authorizing-principal-on-automatic-goal-rounds/consequences:
+  en: cf2be3141ddb2587
+  zh: 5f65fe2db6729196
+/agent-note-preserve-the-authorizing-principal-on-automatic-goal-rounds/testing:
+  en: c50e903985965612
+  zh: dbf5c0a9bf4690eb

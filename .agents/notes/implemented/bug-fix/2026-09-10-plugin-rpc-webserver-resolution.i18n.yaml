@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-10-plugin-rpc-webserver-resolution.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-10-plugin-rpc-webserver-resolution.md
-2026-09-10-plugin-rpc-webserver-resolution.md: af988e368d0641821c90f6d1481f920dcea7fd5b
-2026-09-10-plugin-rpc-webserver-resolution.zh.md: 588c052040f7e5df8e2e742d6221daa936ef3d82
+/agent-note-plugin-rpc-web-server-resolution:
+  en: 204b42f12333f589
+  zh: 2f8e3b8213143656
+/agent-note-plugin-rpc-web-server-resolution/problem:
+  en: 696b8d3c16f0be30
+  zh: 0a46185b326c3207
+/agent-note-plugin-rpc-web-server-resolution/decision:
+  en: 2a046b005b578d1e
+  zh: 22f8ceedd1fd6eae
+/agent-note-plugin-rpc-web-server-resolution/alternatives-considered:
+  en: b48264ffa891e803
+  zh: 3fdd85fc8fcd5cc3
+/agent-note-plugin-rpc-web-server-resolution/consequences:
+  en: 83df405e9e652477
+  zh: 36c6f51c8e057428

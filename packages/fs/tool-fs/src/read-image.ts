@@ -186,10 +186,8 @@ function imageReadContent(value: ImageReadValue): ContentBlock[] {
 export function applyReadImageTool(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'read_image',
-    description: 'Read and attach a PNG/JPEG/WebP/GIF file to the conversation. '
-      + 'A path without a file extension is accepted; the format is detected from the file content, so normalized attachment paths can be passed directly without copying or renaming. '
-      + 'Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect or show an image. '
-      + 'An image-capable model can inspect the result; a text-only model receives a placeholder while the user can still preview the image. Independent files may be read concurrently in small batches.',
+    description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
+      + 'Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image.',
     parameters: {
       file_path: { type: 'string', required: true, description: 'Path to the image file, resolved by the filesystem backend.' },
     },

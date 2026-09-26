@@ -1,6 +1,25 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-13-bounded-assistant-follow-batches.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-13-bounded-assistant-follow-batches.md
-2026-09-13-bounded-assistant-follow-batches.md: 9c70a7279565f3249fcc7e275ba074f196380516
-2026-09-13-bounded-assistant-follow-batches.zh.md: dc3d434ce6d76a0928bf88520c0e68ddef182d7c
+/agent-note-bounded-assistant-follow-batches-preserve-fresh-authorization:
+  en: 6723519ec9b53d2e
+  zh: 8d32179a8c0d01bb
+/agent-note-bounded-assistant-follow-batches-preserve-fresh-authorization/problem:
+  en: 8a7eeecbe5c87c16
+  zh: 569c37488f3e5f5c
+/agent-note-bounded-assistant-follow-batches-preserve-fresh-authorization/decision:
+  en: a9d52bd19ac525be
+  zh: 0ea4b1beadc6a226
+/agent-note-bounded-assistant-follow-batches-preserve-fresh-authorization/measurement:
+  en: c412b34b8f45e491
+  zh: 0275905a681b5063
+/agent-note-bounded-assistant-follow-batches-preserve-fresh-authorization/verification:
+  en: ad6726749a75d704
+  zh: ab9525fbaacd40a7
+/agent-note-bounded-assistant-follow-batches-preserve-fresh-authorization/alternatives-considered:
+  en: eaf28916c98f6676
+  zh: 3876e451018338d8
+/agent-note-bounded-assistant-follow-batches-preserve-fresh-authorization/consequences:
+  en: 9175019f1f4ce8fd
+  zh: 26957f0ef8c66290

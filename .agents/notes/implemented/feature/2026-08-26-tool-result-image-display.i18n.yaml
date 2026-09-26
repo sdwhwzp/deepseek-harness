@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-26-tool-result-image-display.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-26-tool-result-image-display.md
-2026-08-26-tool-result-image-display.md: f20e8ad5b3c59430ac88e54d29f22ee29f89fe70
-2026-08-26-tool-result-image-display.zh.md: bdebf9dc9d0aa0b77da5b74c3b2eda5ca7497770
+/agent-note-tool-result-image-display-on-text-only-routes:
+  en: 3d98678a29fbfb6d
+  zh: 3d78cedb31b0987b
+/agent-note-tool-result-image-display-on-text-only-routes/problem:
+  en: fc227b01b99d3a2a
+  zh: 635f4548b5198c40
+/agent-note-tool-result-image-display-on-text-only-routes/decision:
+  en: 439feeca9aeb465d
+  zh: 5c15da7e5345b54f
+/agent-note-tool-result-image-display-on-text-only-routes/alternatives-considered:
+  en: b3e6c579699e38ca
+  zh: ca272ab35a14dbf1
+/agent-note-tool-result-image-display-on-text-only-routes/consequences:
+  en: 3df64c930781f7fe
+  zh: 01a855603b8181c1

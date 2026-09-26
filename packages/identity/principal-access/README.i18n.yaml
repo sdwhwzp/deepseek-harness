@@ -1,6 +1,43 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/identity/principal-access/README.md
-README.md: 1d5e98a83e8592079502efb6e2295df19c1922ed
-README.zh.md: deb204ae9e90036da693154cbc2da030573ae39d
+/:
+  en: 7bffb446df9e3cdf
+  zh: c2b09e4ce3ab779b
+/deepseek-ai-dsh-principal-access:
+  en: 2a348b0afd020043
+  zh: 0971d248b887ecbb
+/deepseek-ai-dsh-principal-access/summary:
+  en: 797f54e94e7714cd
+  zh: b09947ec26693c22
+/deepseek-ai-dsh-principal-access/table-of-contents:
+  en: f3eaa8e9b418b43a
+  zh: e4147ef42a97b9a8
+/deepseek-ai-dsh-principal-access/use-this-package:
+  en: dc4c3ee6a20fddf8
+  zh: 9586b52a75801ef3
+/deepseek-ai-dsh-principal-access/further-exploration:
+  en: d748a00e01179f65
+  zh: c0e762546c8d424c
+/deepseek-ai-dsh-principal-access/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-principal-access/model-experience/principal-access-resolution:
+  en: 63ef86d9fbdd5e79
+  zh: c685647e1cf8cef5
+/deepseek-ai-dsh-principal-access/model-experience/principal-access-resolution/what-the-model-sees:
+  en: 7b5f44850c56abcf
+  zh: 209f0e4b7d846d92
+/deepseek-ai-dsh-principal-access/model-experience/principal-access-resolution/token-effect:
+  en: 857d80a287c375e7
+  zh: d0e99c99cbef3c38
+/deepseek-ai-dsh-principal-access/model-experience/principal-access-resolution/kv-cache-effect:
+  en: 2c6b7117fd1fe7c8
+  zh: c4554231c0197182
+/deepseek-ai-dsh-principal-access/known-limitations-and-deferred-work:
+  en: c85f3af801f813cc
+  zh: 648e1cacdd9711c6
+/deepseek-ai-dsh-principal-access/known-limitations-and-deferred-work/dev-note:
+  en: efcbc34b385d5dc0
+  zh: 52df007ae81d37d1

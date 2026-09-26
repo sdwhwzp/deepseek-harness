@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-16-agent-scope-tool-replacement.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-16-agent-scope-tool-replacement.md
-2026-09-16-agent-scope-tool-replacement.md: 44a2be108c97997600336216f694cce44f84f06a
-2026-09-16-agent-scope-tool-replacement.zh.md: 8be8c7c451f9cf978f9036c601a1f8f33424c6e0
+/agent-note-an-agent-scope-can-replace-a-tool-name-its-own-composition-already-holds:
+  en: 76b1d3612b7d5a5f
+  zh: da09f051345fa2e6
+/agent-note-an-agent-scope-can-replace-a-tool-name-its-own-composition-already-holds/problem:
+  en: 5f4588832722ec3a
+  zh: a5eeca9cc9a51dcd
+/agent-note-an-agent-scope-can-replace-a-tool-name-its-own-composition-already-holds/decision:
+  en: a46193f3d5784cab
+  zh: 7354e5abc52a6e0a
+/agent-note-an-agent-scope-can-replace-a-tool-name-its-own-composition-already-holds/consequences:
+  en: 372aff37eafbc0ad
+  zh: 3ad1a7b2a5dd39de
+/agent-note-an-agent-scope-can-replace-a-tool-name-its-own-composition-already-holds/alternatives-considered:
+  en: 5936fbdbc6927d0e
+  zh: fd71adcd4a0174a3

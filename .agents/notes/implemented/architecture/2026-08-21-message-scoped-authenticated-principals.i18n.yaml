@@ -1,6 +1,25 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-21-message-scoped-authenticated-principals.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-21-message-scoped-authenticated-principals.md
-2026-08-21-message-scoped-authenticated-principals.md: 94d2c19983b51fe8e63a1c85337c785096997406
-2026-08-21-message-scoped-authenticated-principals.zh.md: 8aab9c93eb6292861b8495374957476052027150
+/agent-note-message-scoped-authenticated-principals:
+  en: 22c8c768ce7401da
+  zh: e9abef0fd6f28952
+/agent-note-message-scoped-authenticated-principals/problem:
+  en: b3151918d64fc7c1
+  zh: cb32817a06dd5ac0
+/agent-note-message-scoped-authenticated-principals/decision:
+  en: 31fc06f2dd1132e0
+  zh: 88b66a5114fa0e90
+/agent-note-message-scoped-authenticated-principals/decision/durable-message-ownership:
+  en: eb21e1766a2d5571
+  zh: 8819876b72b82d90
+/agent-note-message-scoped-authenticated-principals/decision/trust-boundary:
+  en: d6e6722a7c8d223b
+  zh: 845ce761392bbddc
+/agent-note-message-scoped-authenticated-principals/alternatives-considered:
+  en: c53c5fc993910b32
+  zh: 8efbb334c3a95301
+/agent-note-message-scoped-authenticated-principals/consequences:
+  en: 329b3007154e8635
+  zh: 86e0e6e380aab023
