@@ -15,6 +15,8 @@ packages:
   - python/sdk-runtime
 
 overrides:
+  # Markdown extensions share one augmented tokenizer type module.
+  micromark-util-types: '2.0.3'
   'extract-zip>yauzl': '3.4.0'
   '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:vendor/schemastery'
