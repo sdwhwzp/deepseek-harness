@@ -125,6 +125,7 @@ interface RemoteEventClient {
   readonly id: RemoteEventClientId
   readonly principal: AuthenticatedPrincipal | undefined
   readonly queue: RemoteEventQueue
+  readonly signal: AbortSignal
   readonly deliveries: Map<RemoteEventId, PendingRemoteEvent>
 }
 
@@ -294,6 +295,17 @@ export class TypertGatewayService extends Service implements TypertGateway {
   currentPrincipal(): AuthenticatedPrincipal | undefined {
     const principal = this.requestPrincipal.getStore()
     return principal === ANONYMOUS_REQUEST_PRINCIPAL ? undefined : principal
+  }
+
+  /**
+   * Check for an active Client event stream.
+   * @returns whether a stream is open and has not been cancelled.
+   */
+  hasLiveClient(): boolean {
+    for (const client of this.remoteEventClients.values()) {
+      if (!client.signal.aborted) return true
+    }
+    return false
   }
 
   /**
@@ -566,6 +578,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       id: clientId,
       principal,
       queue: new RemoteEventQueue(),
+      signal: lifetime,
       deliveries: new Map(),
     }
     this.remoteEventClients.set(clientId, client)
