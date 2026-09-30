@@ -651,7 +651,24 @@ describe('SessionHistoryController', () => {
       mode: 'continuable' as const,
     }
     const missing = await setup()
-    cold(missing.ctx, childHeader, [])
+    cold(missing.ctx, childHeader, [event('turn/start', SessionSeq(0), { turn: 1 })])
+    await expect(missing.transport.page({
+      address: { ...childAddress, mode: 'unknown' },
+      throughSeq: 0,
+    }, signal())).resolves.toMatchObject({
+      records: [{ type: 'event', event: { seq: 0 } }],
+    })
+    const legacyFollow = missing.transport.follow({
+      address: { ...childAddress, mode: 'unknown' },
+    }, signal())[Symbol.asyncIterator]()
+    await expect(legacyFollow.next()).resolves.toMatchObject({
+      value: { type: 'snapshot', header: { id: childSessionId, parentSession: parentSessionId } },
+    })
+    await legacyFollow.return?.()
+    await expect(missing.transport.page({
+      address: { ...childAddress, parentSessionId: SessionId('wrong-parent'), mode: 'unknown' },
+      throughSeq: 0,
+    }, signal())).rejects.toMatchObject({ code: 'subagent/unauthorized' })
     await expect(missing.transport.page({ address: childAddress, throughSeq: -1 }, signal()))
       .rejects.toMatchObject({ code: 'subagent/catalog-diagnostic', details: { reason: 'corrupt' } })
 

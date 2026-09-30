@@ -414,6 +414,7 @@ export type SessionAddress =
     readonly kind: 'subagent'
     readonly parentSessionId: SessionId
     readonly childSessionId: SessionId
+    /** `unknown` reads parent-verified history without asserting a resumable child mode. */
     readonly mode: 'one-shot' | 'continuable' | 'unknown'
   }
 

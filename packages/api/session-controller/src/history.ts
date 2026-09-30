@@ -393,6 +393,9 @@ function validateAddress(
       childSessionId: address.childSessionId,
     })
   }
+  // An unknown-mode address reads history using the persisted parent relation;
+  // a descriptor is required only when the caller asserts a specific mode.
+  if (address.mode === 'unknown') return
   const identity = projections?.values.subagent
   if (identity === null) {
     throw new RemoteError('subagent/catalog-diagnostic', 'subagent descriptor is corrupt', {
@@ -408,7 +411,7 @@ function validateAddress(
       reason: 'unsupported',
     })
   }
-  if (address.mode !== 'unknown' && identity.mode !== address.mode) {
+  if (identity.mode !== address.mode) {
     throw new RemoteError('subagent/unauthorized', 'subagent mode does not match the supplied address', {
       childSessionId: address.childSessionId,
     })
