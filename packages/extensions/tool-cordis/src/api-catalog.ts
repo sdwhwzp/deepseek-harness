@@ -1973,7 +1973,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: '@Remote(\'list\') async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue>',
         description: 'Read all visible Session rows without resuming an Agent.',
-        parameters: [{ name: '_request', description: 'reserved empty list request.' }, { name: 'signal', description: 'cancellation for persistence reads.' }],
+        parameters: [{ name: '_request', description: 'list options; title-only hints reduce transport for compact clients.' }, { name: 'signal', description: 'cancellation for persistence reads.' }],
         returns: 'visible Session summaries ordered by activity.',
       },
       {
@@ -6735,7 +6735,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionListRequest',
-    declaration: 'export interface SessionListRequest {\n    readonly cursor?: string;\n}',
+    declaration: 'export interface SessionListRequest {\n    readonly cursor?: string;\n    readonly projections?: \'title\';\n}',
   },
   {
     name: 'SessionListValue',

@@ -264,6 +264,8 @@ export interface SkillListValue {
 /** Session list request. */
 export interface SessionListRequest {
   readonly cursor?: string
+  /** Send only title hints when a list consumer reads no other projections. */
+  readonly projections?: 'title'
 }
 
 /** Session list response value. */

@@ -247,18 +247,34 @@ export class SessionController extends TypertRemoteService {
 
   /**
    * Read all visible Session rows without resuming an Agent.
-   * @param _request - reserved empty list request.
+   * @param _request - list options; title-only hints reduce transport for compact clients.
    * @param signal - cancellation for persistence reads.
    * @returns visible Session summaries ordered by activity.
    */
   @Remote('list')
   async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
     const principal = this.currentPrincipal()
+    const items = await this.listState.list(
+      signal,
+      sessionIds => this.resolveReadableSessionIds(principal, sessionIds, signal),
+    )
     return {
-      items: await this.listState.list(
-        signal,
-        sessionIds => this.resolveReadableSessionIds(principal, sessionIds, signal),
-      ),
+      items: _request.projections === 'title' ? items.map((item) => {
+        const projections = item.projections
+        const title = projections?.values.title
+        if (projections === undefined || title === undefined) {
+          const { projections: _projections, ...summary } = item
+          return summary
+        }
+        return {
+          ...item,
+          projections: {
+            kind: projections.kind,
+            asOfSeq: projections.asOfSeq,
+            values: { title },
+          },
+        }
+      }) : items,
     }
   }
 

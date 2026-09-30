@@ -39,7 +39,7 @@ Client journal 在发布 follow 快照、live entry 或历史页之前验证当�
 
 Client 列表行和驻留 Session 使用当前 `sessionListMetadata` 投影纠正过期的空白会话提示；最近活动时间取摘要时间戳与投影中最后一次用户提示词时间的较晚值。当 SessionManager 在列表行到达前创建实例时，会使用已保留的该 Session 元数据对账空白状态。因此，即使旧列表响应仍将已有对话标为空白，新会话操作也不会复用已经打开过的对话。
 
-显式 ID 的 `session.create` 会收养活动 Session，或恢复持久化 Session 并持续持有其写锁。写锁争用返回 `session/writer-held`；调用方可以尝试其他空白会话，同时保留其他失败。`session.list` 根据缓存元数据列出持久化空白会话，不打开冷日志正文。
+显式 ID 的 `session.create` 会收养活动 Session，或恢复持久化 Session 并持续持有其写锁。写锁争用返回 `session/writer-held`；调用方可以尝试其他空白会话，同时保留其他失败。`session.list` 根据缓存元数据列出持久化空白会话，不打开冷日志正文。只展示列表标题的调用方可以请求 `{ projections: 'title' }`；默认响应仍包含所有可用投影提示，精简响应保留相同的已授权会话行、顺序、摘要字段和标题水位。
 
 `assistantStreamBatch: true` 请求将队列中相邻的 Assistant 帧合并为有界批次，并要求同时设置 `assistantStream: true`。Web 适配器启用这两个选项。每批最多包含 128 帧，完整 JSON 序列化结果不超过 64 KiB；单帧或超大帧仍单独传输。Host 直接取出已有帧，不设置收集计时器，并让每条持久事件保持在相同的瞬态帧之间。每次发布批次都重新检查 principal-access；Client 按顺序展开其中的帧，沿用 revision、密集 index 和 settlement 检查。未请求批次的调用方收到单独的 Assistant 帧。批处理只改变传输粒度，不改变持久记录或模型输出；[批处理决策](../../../.agents/notes/implemented/bug-fix/2026-09-13-bounded-assistant-follow-batches.zh.md)记录了鉴权和顺序方面的取舍。
 

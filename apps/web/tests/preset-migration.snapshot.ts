@@ -84,6 +84,19 @@ describe.skipIf(webSnapshotMode() === 'record')('historical preset restoration t
       expect(resolved.agent.session.snapshotEvents()
         .filter(event => event.type === 'agent-preset/selected')
         .map(event => event.data.agentPreset)).toEqual(withSelections ? ['ptc', 'standard', 'ptc'] : [])
+      const fullList = await scaffold.ctx.sessionController.list({}, new AbortController().signal)
+      const compactList = await scaffold.ctx.sessionController.list({ projections: 'title' }, new AbortController().signal)
+      const fullRow = fullList.items.find(item => item.sessionId === id)
+      const compactRow = compactList.items.find(item => item.sessionId === id)
+      expect(fullRow?.projections?.values).toHaveProperty('sessionListMetadata')
+      expect(compactRow).toEqual({
+        ...fullRow,
+        projections: {
+          kind: fullRow?.projections?.kind,
+          asOfSeq: fullRow?.projections?.asOfSeq,
+          values: { title: fullRow?.projections?.values.title },
+        },
+      })
       expect(await scaffold.ctx.subagents.listChildren(id)).toEqual([
         { id: brokenId, createdAt: childFixture[0]?.['createdAt'], mode: 'unknown' },
         { id: childId, createdAt: childFixture[0]?.['createdAt'], mode: 'one-shot', label: 'historical child' },

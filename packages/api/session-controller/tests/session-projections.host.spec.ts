@@ -478,6 +478,33 @@ describe('session.history projections block', () => {
 })
 
 describe('session.list projections column', () => {
+  it('sends only the title hint for compact list requests', async () => {
+    const { ctx, session } = await harness(true)
+    ctx.sessionProjections.register(titleProjectionDefinition)
+    ctx.sessionProjections.register(lastUserUnit())
+    const gateway = remote(ctx)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    session.append('session/title', {
+      title: 'Visible title', messageSeqs: [], source: { kind: 'fallback' },
+    })
+    seedMessages(session, 1)
+
+    const complete = await gateway.list(request({}))
+    const compact = await gateway.list(request({ projections: 'title' }))
+    if (!complete.ok || !compact.ok) throw new Error('list failed')
+    const fullRow = complete.value.items.find(item => item.sessionId === session.id)
+    const titleRow = compact.value.items.find(item => item.sessionId === session.id)
+    expect(fullRow?.projections?.values['test/last-user']).toEqual({ text: 'm0' })
+    expect(titleRow).toEqual({
+      ...fullRow,
+      projections: {
+        kind: fullRow?.projections?.kind,
+        asOfSeq: fullRow?.projections?.asOfSeq,
+        values: { title: 'Visible title' },
+      },
+    })
+  })
+
   it('serves every already-materialized wire value from the live registry without folding', async () => {
     const { ctx, session } = await harness(true)
     ctx.sessionProjections.register(lastUserUnit())
@@ -535,6 +562,9 @@ describe('session.list projections column', () => {
     const row = response.value.items.find(item => item.sessionId === session.id)
     expect(row).toBeDefined()
     expect(row !== undefined && 'projections' in row).toBe(false)
+    const compact = await remote(ctx).list(request({ projections: 'title' }))
+    if (!compact.ok) throw new Error('unreachable')
+    expect(compact.value.items.find(item => item.sessionId === session.id)).not.toHaveProperty('projections')
   })
 
   it('serves every available cold projection hint from the cache with zero log loads', async () => {

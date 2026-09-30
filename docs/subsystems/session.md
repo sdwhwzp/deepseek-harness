@@ -803,7 +803,7 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
 
 /**
  * Read all visible Session rows without resuming an Agent.
- * @param _request - reserved empty list request.
+ * @param _request - list options; title-only hints reduce transport for compact clients.
  * @param signal - cancellation for persistence reads.
  * @returns visible Session summaries ordered by activity.
  */
