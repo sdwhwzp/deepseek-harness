@@ -15,11 +15,11 @@
   en: 9c1c4905952fea5e
   zh: d1506dd6fc1018d1
 /deepseek-ai-dsh-client-ui-conversation/conversation-assembly:
-  en: b32218705c056597
-  zh: 9c80fa0c79813f56
+  en: cba212cf405be294
+  zh: 2a44151d9468ac0e
 /deepseek-ai-dsh-client-ui-conversation/shell-and-standard-props:
-  en: 12660877a7afb8a0
-  zh: cbffef32d706e521
+  en: 27024b5cd3323e1c
+  zh: 2d47c563e2720c7a
 /deepseek-ai-dsh-client-ui-conversation/temporary-composer-entries:
   en: bb1244310f5c0382
   zh: 824b84077432b559
@@ -33,5 +33,5 @@
   en: 38d243630d0e4c38
   zh: a58cdc35b664020b
 /deepseek-ai-dsh-client-ui-conversation/known-limitations-and-deferred-work/dev-note:
-  en: 48c7f1797012293f
-  zh: ec56b609a1b5fb9e
+  en: e67f633dc6fe7773
+  zh: e88aeb617ffb74ea

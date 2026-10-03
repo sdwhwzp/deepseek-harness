@@ -31,7 +31,7 @@ Migration publication verifier 与冻结的 v2 fixture validator 要求嵌入式
 
 Web follow adapter 显式选择接收这些进程本地 frame，并为每个 start 补充当时观察到的最后一个持久序号。它把 chunk 呈现为持久 cursor 之间的 Client-only `assistant/live-chunk` update，只暂存 start 之后匹配的 settlement，并在 revision 缺口时重新打开 follow。committed end 会发布具名 settlement delta，删除该 attempt 的 transient match、加入持久 entry，并只重放受影响的 Conversation Context；abandoned end 会发布不含 entry 的同类 delta。重连 baseline 携带活跃 attempt 的持久起始 cursor 与紧凑前缀。
 
-Client event source 原样传递持久 settlement。Chat 与 Trajectory 在 attempt 活跃时折叠 `assistant/live-chunk`，直接从 `assistant/message` 构造 settled output。结算移除临时 chunk 后，Chat 不会重建首 token 计时。Trajectory 从 `assistant/message` 与 `assistant/attempt` 中的[紧凑流记录](2026-09-06-embedded-stream-record-readers.zh.md)读取计时，包括打开历史时。两个目标都不会为展示将已结算流展开为逐 delta 对象；其他消费方需要精确证据时仍可展开持久 stream。
+Client event source 原样传递持久 settlement。Chat 与 Trajectory 在 attempt 活跃时折叠 `assistant/live-chunk`，直接从 `assistant/message` 构造 settled output。结算移除临时 chunk 后，Chat 不会重建首 token 计时。Trajectory 从 `assistant/message` 与 `assistant/attempt` 中的[紧凑流记录](../../../../packages/llm/llm/README.zh.md)读取计时，包括打开历史时。两个目标都不会为展示将已结算流展开为逐 delta 对象；其他消费方需要精确证据时仍可展开持久 stream。
 
 当清理请求临时内容使可见证据消失时，Chat 会保留已经生成的 Assistant 节点及过程控件，并将其设为隐藏。在重试通知到达之前返回 `null` 会违反 Conversation 节点标识规则。[请求恢复约定](../../../../packages/client/ui-chat/README.zh.md#attempt-recovery)使这一短暂的空状态仍可正常渲染，而不添加持久消息，也不依赖后续帧修复。
 

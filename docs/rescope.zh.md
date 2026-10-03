@@ -30,6 +30,8 @@ Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/R
 - **上游运行时标识符**，例如 Schemastery 的 `Symbol.for('schemastery')` 及其 `vendor:` 元数据字段。
 - **`docs/` 之外的散文。** `vendor/*/README.md`、各包 README 与 Agent Note 保留写作当时的名字；那里的裸 `cordis` 也可能是 Python SDK 的选项名或某个 agent-preset 的 id。`docs/` 之内，散文与所有 Markdown 围栏都跟着改。
 
+- **Agent preset 标识。** 创建操作、调度组合及其 fixture 中的 `cordis` preset id 保持不变；这些值不表示框架包名。
+
 ## 你的代码要改什么
 
 | 位置 | 改前 | 改后 |

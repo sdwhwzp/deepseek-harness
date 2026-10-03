@@ -92,7 +92,7 @@ it('loads predecessor cache documents through Cordis and serves titles without o
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
   ctx.sessionProjections.register(titleProjectionDefinition)
-  const list = new ApiSessionList(ctx)
+  const list = new ApiSessionList(ctx, 8)
   ctx.provide('sessionQuery', {
     listSessions: async () => headers.map(header => ({ header, live: false, persisted: true })),
   } as never)

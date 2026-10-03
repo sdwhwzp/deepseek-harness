@@ -66,6 +66,8 @@ kind: "package-reference"
 
 升级绝不拖垮启动，也不会暴露未经证明的折叠结果。版本戳落在 spec `compatibleVersions` 集合内的记录仍可被结构化读取并等待当前检查点重写，但缺失或更旧的 `formatVersion` 绝不匹配当前 Session，因此不能作为 hydrate seed。上述列表提示只接纳对应格式迁移保留、且通过当前 projection `stateVersion` 与 schema 校验的事实。格式匹配后，缺失的 lineage 字段解码为 unseeded lineage——对非 fork 会话精确无误，seeded 调用方则通不过身份比对、回落冷折叠。仍然通不过 schema 校验的存量记录会按域的 `invalidRecords: 'backup-and-skip'` 策略移出为 `<id>.json.bak.<时间戳>`、连同原因写入日志，并由下一次检查点重建。
 
+空白状态和最近活动时间须按当前 Session 格式推导。前代缓存只提供标题；显式冷观察会在不激活 Agent 的情况下重建列表元数据。部署验证须在重建后检查已有空白 Session，再切换服务 profile。列表本身不读取每个冷日志，也不删除空 Session。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -90,7 +92,6 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：`SessionProjectionCache` 服务、后台写入监听器、缓存读取 |
 | [`src/spec.ts`](src/spec.ts) | `session_projcache` 域 spec 与记录身份类型 |
-| — | 不发布运行时不变式伴生入口；完整正确性关系只能通过对持久化日志重新执行折叠来检查；持久化边界通过 schema 校验，读路径的版本与水位防护由包规范证明，相关局部约束在写入与读取路径强制执行。 |
 
 </details>
 

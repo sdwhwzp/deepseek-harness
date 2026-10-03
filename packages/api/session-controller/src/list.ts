@@ -1,5 +1,7 @@
 /** Cold-safe Session list and search projection. */
 
+import { performance } from 'node:perf_hooks'
+import { scheduler } from 'node:timers/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
@@ -78,8 +80,11 @@ export function truncateUnicodeCodePoints(value: string, maximum: number): strin
 
 /** Owns list projection registration, bounded cold summaries, and authorized search. */
 export class ApiSessionList {
-  /** @param ctx - Host context carrying Session, query, persistence, and projection services. */
-  constructor(private readonly ctx: Context) {
+  /**
+   * @param ctx - Host context carrying Session, query, persistence, and projection services.
+   * @param workSliceMs - Resolved positive integral list-work budget in milliseconds.
+   */
+  constructor(private readonly ctx: Context, private readonly workSliceMs: number) {
     ctx.sessionProjections.register<'sessionListMetadata', SessionListMetadata>({
       key: 'sessionListMetadata',
       stateSchema: sessionListMetadataSchema,
@@ -124,7 +129,7 @@ export class ApiSessionList {
 
   /**
    * Read every visible attached and persisted Session without activating an Agent.
-   * @param signal - optional cancellation for persistence reads.
+   * @param signal - optional cancellation for persistence reads and summary generation.
    * @param resolveReadable - optional authorization applied before summaries or cold probes.
    * @returns visible Session summaries ordered by activity.
    */
@@ -135,24 +140,39 @@ export class ApiSessionList {
     signal?.throwIfAborted()
     const records = await this.ctx.sessionQuery.listSessions(signal)
     signal?.throwIfAborted()
-    const candidates = records.filter(record =>
-      this.ctx.sessions.get(record.header.id) !== undefined || record.header.cwd !== undefined)
     const readable = resolveReadable === undefined
-      ? new Set(candidates.map(record => record.header.id))
-      : await resolveReadable(candidates.map(record => record.header.id))
+      ? undefined
+      : await resolveReadable(records.map(record => record.header.id))
     signal?.throwIfAborted()
     const items: SessionSummary[] = []
     const cold: SessionHeader[] = []
-    for (const record of candidates) {
-      if (!readable.has(record.header.id)) continue
-      const live = this.ctx.sessions.get(record.header.id)
-      if (live !== undefined) {
-        items.push(this.summaryFor(live))
-        continue
+    let yieldDeadline = performance.now() + this.workSliceMs
+    for (const record of records) {
+      signal?.throwIfAborted()
+      if (readable === undefined || readable.has(record.header.id)) {
+        const live = this.ctx.sessions.get(record.header.id)
+        if (live !== undefined) {
+          items.push(this.summaryFor(live))
+        } else if (record.header.cwd !== undefined) {
+          cold.push(record.header)
+        }
       }
-      cold.push(record.header)
+      if (performance.now() >= yieldDeadline) {
+        await scheduler.yield()
+        signal?.throwIfAborted()
+        yieldDeadline = performance.now() + this.workSliceMs
+      }
     }
-    for (const header of cold) items.push(this.summarizeCold(header))
+    for (const header of cold) {
+      signal?.throwIfAborted()
+      items.push(this.summarizeCold(header))
+      if (performance.now() >= yieldDeadline) {
+        await scheduler.yield()
+        signal?.throwIfAborted()
+        yieldDeadline = performance.now() + this.workSliceMs
+      }
+    }
+    signal?.throwIfAborted()
     items.sort((left, right) => right.updatedAt - left.updatedAt)
     return items
   }

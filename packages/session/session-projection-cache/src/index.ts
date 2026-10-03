@@ -169,7 +169,7 @@ export class SessionProjectionCache extends Service {
   }
 
   /**
-   * Read format-compatible predecessor values as zero-I/O listing hints.
+   * Read only a predecessor checkpoint's title as a zero-I/O listing hint.
    *
    * The authoritative Session header supplies the lifecycle identity. A cache
    * checkpoint can lag that log but cannot lead it because writes flush the

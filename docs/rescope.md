@@ -30,6 +30,8 @@ Subpath exports keep their path: `@cordisjs/plugin-loader/repository` becomes `@
 - **Upstream runtime identifiers**, such as Schemastery's `Symbol.for('schemastery')` and its `vendor:` metadata field.
 - **Prose outside `docs/`.** `vendor/*/README.md`, package READMEs, and Agent Notes keep the names they were written with; a bare `cordis` there can also be the Python SDK's option name or an agent-preset id. Inside `docs/`, prose and every Markdown fence follow the rename.
 
+- **Agent-preset identifiers.** The `cordis` preset id stays unchanged in creator actions, schedule composition, and their fixtures; those values do not name the framework package.
+
 ## What your code has to change
 
 | Site | Before | After |
