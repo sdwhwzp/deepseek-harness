@@ -1,0 +1,10 @@
+# Bilingual-pair consistency record for synchronizing-personal-forks.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/cookbook/synchronizing-personal-forks.md
+/:
+  en: d0933eb25d429d79
+  zh: 6aea01db7aea9956
+/synchronizing-personal-forks:
+  en: ecb12c355ec54fab
+  zh: 516d27c821be4047

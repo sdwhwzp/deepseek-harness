@@ -5,7 +5,7 @@ import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
 import { resolvePrincipalAccess } from '@deepseek-ai/dsh-principal-access'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import type { WorkspaceFollowFrame, WorkspaceView } from './types.ts'
+import type { WorkspaceBaseline, WorkspaceFollowFrame, WorkspaceView } from './types.ts'
 
 /**
  * Filter one Workspace row's Session membership against one access result.
@@ -38,37 +38,41 @@ export async function* principalWorkspaceFollow(
   signal: AbortSignal,
 ): AsyncIterable<WorkspaceFollowFrame> {
   const visibleWorkspaceIds = new Set<WorkspaceId>()
+  const workspaces = new Map<WorkspaceId, WorkspaceView>()
+  let archivedSessionIds: readonly SessionId[] = []
+  let pinnedSessionIds: readonly SessionId[] = []
+  const filteredBaseline = async (): Promise<WorkspaceBaseline> => {
+    const all = [...workspaces.values()]
+    const access = await resolvePrincipalAccess(ctx, principal, {
+      workspaceIds: all.map(workspace => workspace.workspaceId),
+      sessionIds: [...all.flatMap(workspace => workspace.sessionIds), ...archivedSessionIds, ...pinnedSessionIds],
+    }, signal)
+    visibleWorkspaceIds.clear()
+    const items = all.filter(workspace => access.readableWorkspaceIds.has(workspace.workspaceId))
+      .map((workspace) => {
+        visibleWorkspaceIds.add(workspace.workspaceId)
+        return principalWorkspaceView(workspace, access.readableSessionIds)
+      })
+    return {
+      items,
+      archivedSessionIds: archivedSessionIds.filter(id => access.readableSessionIds.has(id)),
+      pinnedSessionIds: pinnedSessionIds.filter(id => access.readableSessionIds.has(id)),
+    }
+  }
   for await (const frame of frames) {
     signal.throwIfAborted()
     switch (frame.type) {
-      case 'baseline': {
-        const workspaceIds = frame.value.items.map(workspace => workspace.workspaceId)
-        const sessionIds = [
-          ...frame.value.items.flatMap(workspace => workspace.sessionIds),
-          ...frame.value.archivedSessionIds,
-          ...frame.value.pinnedSessionIds,
-        ]
-        const access = await resolvePrincipalAccess(ctx, principal, { workspaceIds, sessionIds }, signal)
-        visibleWorkspaceIds.clear()
-        const items = frame.value.items
-          .filter(workspace => access.readableWorkspaceIds.has(workspace.workspaceId))
-          .map((workspace) => {
-            visibleWorkspaceIds.add(workspace.workspaceId)
-            return principalWorkspaceView(workspace, access.readableSessionIds)
-          })
-        yield {
-          type: 'baseline',
-          value: {
-            items,
-            archivedSessionIds: frame.value.archivedSessionIds
-              .filter(sessionId => access.readableSessionIds.has(sessionId)),
-            pinnedSessionIds: frame.value.pinnedSessionIds
-              .filter(sessionId => access.readableSessionIds.has(sessionId)),
-          },
-        }
+      case 'baseline':
+      case 'replace': {
+        workspaces.clear()
+        for (const workspace of frame.value.items) workspaces.set(workspace.workspaceId, workspace)
+        archivedSessionIds = frame.value.archivedSessionIds
+        pinnedSessionIds = frame.value.pinnedSessionIds
+        yield { type: frame.type, value: await filteredBaseline() }
         break
       }
       case 'upsert': {
+        workspaces.set(frame.workspace.workspaceId, frame.workspace)
         const access = await resolvePrincipalAccess(ctx, principal, {
           workspaceIds: [frame.workspace.workspaceId],
           sessionIds: frame.workspace.sessionIds,
@@ -79,21 +83,32 @@ export async function* principalWorkspaceFollow(
             type: 'upsert',
             workspace: principalWorkspaceView(frame.workspace, access.readableSessionIds),
           }
-        } else if (visibleWorkspaceIds.delete(frame.workspace.workspaceId)) {
-          yield { type: 'remove', workspaceId: frame.workspace.workspaceId }
+        } else if (visibleWorkspaceIds.has(frame.workspace.workspaceId)) {
+          yield { type: 'replace', value: await filteredBaseline() }
         }
         break
       }
       case 'remove':
+        workspaces.delete(frame.workspaceId)
         if (visibleWorkspaceIds.delete(frame.workspaceId)) yield frame
         break
-      case 'order':
-        yield {
-          type: 'order',
-          workspaceIds: frame.workspaceIds.filter(workspaceId => visibleWorkspaceIds.has(workspaceId)),
+      case 'order': {
+        const ordered = frame.workspaceIds.flatMap((id) => {
+          const workspace = workspaces.get(id)
+          return workspace === undefined ? [] : [workspace]
+        })
+        workspaces.clear()
+        for (const workspace of ordered) workspaces.set(workspace.workspaceId, workspace)
+        const access = await resolvePrincipalAccess(ctx, principal, { workspaceIds: frame.workspaceIds }, signal)
+        if (frame.workspaceIds.some(id => visibleWorkspaceIds.has(id) && !access.readableWorkspaceIds.has(id))) {
+          yield { type: 'replace', value: await filteredBaseline() }
+        } else {
+          yield { type: 'order', workspaceIds: frame.workspaceIds.filter(id => visibleWorkspaceIds.has(id)) }
         }
         break
+      }
       case 'archived': {
+        archivedSessionIds = frame.archivedSessionIds
         const access = await resolvePrincipalAccess(ctx, principal, {
           sessionIds: frame.archivedSessionIds,
         }, signal)
@@ -105,6 +120,7 @@ export async function* principalWorkspaceFollow(
         break
       }
       case 'pinned': {
+        pinnedSessionIds = frame.pinnedSessionIds
         const access = await resolvePrincipalAccess(ctx, principal, { sessionIds: frame.pinnedSessionIds }, signal)
         yield { type: 'pinned', pinnedSessionIds: frame.pinnedSessionIds.filter(id => access.readableSessionIds.has(id)) }
         break

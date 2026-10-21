@@ -11,6 +11,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import { describe, expect, it } from 'vitest'
 import { apply, inject } from '../src/index.ts'
+import { API_REMOTE_FORWARDED_EVENTS } from '../src/remote-events.ts'
 
 interface GatewayProbe {
   source: TypertRemoteEventSource | undefined
@@ -121,6 +122,7 @@ describe('Remote event Host source', () => {
         args: [sessionId, true],
         principal: alice,
         readSubjects: { sessionIds: [sessionId] },
+        resources: API_REMOTE_FORWARDED_EVENTS.find(entry => entry.event === 'api-session/status')?.resources,
       },
     })
 
@@ -242,6 +244,33 @@ describe('Remote event Host source', () => {
     await fiber.dispose()
     expect(gateway.source).toBeUndefined()
     expect(gateway.removals).toBe(1)
+    await ctx.fiber.dispose()
+  })
+
+  it('attaches each declared resource reader to its forwarded notification', async () => {
+    const { ctx, gateway, fiber } = await setup()
+    const abort = new AbortController()
+    const stream = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
+    const cases: readonly (readonly [string, readonly unknown[], string])[] = [
+      ['api-session/activity', ['s-activity', 1], 's-activity'],
+      ['api-session/added', [{ sessionId: 's-added' }], 's-added'],
+      ['api-session/error', ['s-error', 'boom'], 's-error'],
+      ['api-session/removed', ['s-removed'], 's-removed'],
+      ['api-session/status', ['s-status', true], 's-status'],
+    ]
+    for (const [event, args, sessionId] of cases) {
+      emitRaw(ctx, event, args)
+      const next = await stream.next()
+      if (next.done === true || 'context' in next.value) throw new Error(`${event} was not forwarded as a notification`)
+      const frame = next.value
+      expect(frame).toMatchObject({ event, args })
+      expect(frame.resources?.['session']?.(...frame.args)).toBe(sessionId)
+    }
+    // An event that declares no resources carries no readers, so access control sees the global resource.
+    emitRaw(ctx, 'commands/change', [])
+    await expect(stream.next()).resolves.toEqual({ done: false, value: { event: 'commands/change', args: [] } })
+    abort.abort(new Error('Client disconnected'))
+    await fiber.dispose()
     await ctx.fiber.dispose()
   })
 

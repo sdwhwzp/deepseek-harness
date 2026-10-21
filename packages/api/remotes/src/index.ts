@@ -50,8 +50,10 @@ export function apply(ctx: Context): void {
 function remoteEventSource(ctx: Context): TypertRemoteEventSource {
   return (signal) => {
     const queue = new RemoteEventQueue()
-    const disposers = API_REMOTE_FORWARDED_EVENTS.map(({ event, mode }) => {
+    const disposers = API_REMOTE_FORWARDED_EVENTS.map((entry) => {
+      const { event, mode } = entry
       if (mode === 'emit') {
+        const resources = 'resources' in entry ? entry.resources : undefined
         return ctx.on(event as never, ((...args: unknown[]) => {
           const principal = ctx.typertGateway.currentPrincipal()
           const wireArgs = assertJsonArgs(event, args)
@@ -59,6 +61,7 @@ function remoteEventSource(ctx: Context): TypertRemoteEventSource {
           queue.push({
             event,
             args: wireArgs,
+            ...resources === undefined ? {} : { resources },
             ...principal === undefined ? {} : { principal },
             ...readSubjects === undefined ? {} : { readSubjects },
           })

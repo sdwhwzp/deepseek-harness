@@ -133,6 +133,7 @@ export function ConversationContent(props: ConversationContentProps) {
       {/* Root-scoped bootstrap actions live in the Hero row only; an active
           Session's composer carries Session data through `conversation.input.dock`. */}
       {renderSlot('conversation.input.bootstrap', {})}
+      {sessionId === undefined ? null : <div className={css.heroOptions}>{renderSlot('conversation.hero.options', {})}</div>}
     </div>
   )
 

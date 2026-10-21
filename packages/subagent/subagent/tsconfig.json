@@ -66,9 +66,6 @@
       "path": "../../workspace/workspace"
     },
     {
-      "path": "../../jobs/jobs"
-    },
-    {
       "path": "../../typert/protocol"
     },
     {
@@ -79,6 +76,9 @@
     },
     {
       "path": "../../util/chunked-list"
+    },
+    {
+      "path": "../../session/working-directory"
     }
   ]
 }

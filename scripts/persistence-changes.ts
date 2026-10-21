@@ -27,6 +27,8 @@ export type PersistenceDecision = 'same-version' | 'version-bump'
 export interface PersistenceChange {
   readonly root: string
   readonly previous: string | null
+  /** Additional branch tips joined without rewriting their acknowledged schemas. */
+  readonly integrates?: readonly string[]
   readonly after: string | null
   readonly decision: PersistenceDecision
 }
@@ -50,7 +52,7 @@ export interface PersistenceTypeChange {
   readonly kind: PersistenceTypeChangeKind
   readonly path: string
   readonly description: string
-  readonly requiresVersionBump: boolean
+  readonly requiresCompatibilityReview: boolean
 }
 
 const CHANGE_DESCRIPTIONS = {
@@ -380,19 +382,19 @@ function matchUnionVariants(candidates: readonly (readonly number[])[]): number[
 /** Classify structural differences using the reader promises saved with each schema.
  * @param before - predecessor root, or absence for an addition.
  * @param after - successor root, or absence for deletion.
- * @returns concrete changes and their format-bump requirement.
+ * @returns concrete changes and their compatibility-review requirement.
  */
 export function classifyPersistenceChange(before: PersistenceRoot | null, after: PersistenceRoot | null): PersistenceTypeChange[] {
   if (before === null) {
     return after === null ? [] : [{ path: after.key, kind: 'root-added', description: 'root added',
-      requiresVersionBump: after.kind !== 'event' || after.surface !== false }]
+      requiresCompatibilityReview: after.kind !== 'event' || after.surface !== false }]
   }
-  if (after === null) return [{ path: before.key, kind: 'root-removed', description: 'root removed', requiresVersionBump: true }]
+  if (after === null) return [{ path: before.key, kind: 'root-removed', description: 'root removed', requiresCompatibilityReview: true }]
   const key = after.key
   const oldRoot = before
   const newRoot = after
-  const describe = (path: string, kind: PersistenceTypeChangeKind, requiresVersionBump = true): PersistenceTypeChange =>
-    ({ path, kind, description: CHANGE_DESCRIPTIONS[kind], requiresVersionBump })
+  const describe = (path: string, kind: PersistenceTypeChangeKind, requiresCompatibilityReview = true): PersistenceTypeChange =>
+    ({ path, kind, description: CHANGE_DESCRIPTIONS[kind], requiresCompatibilityReview })
   const changes: PersistenceTypeChange[] = []
   if (before.kind !== after.kind || before.surface !== after.surface) changes.push(describe(key, 'root-classification-changed'))
   if (before.digest === after.digest) return changes
@@ -413,8 +415,8 @@ export function classifyPersistenceChange(before: PersistenceRoot | null, after:
     // or unmatched union arm cannot leave a cached success for another candidate.
     const active = new Set(ancestors).add(pair)
     const differences: PersistenceTypeChange[] = []
-    const add = (path: string, kind: PersistenceTypeChangeKind, requiresVersionBump = true): void => {
-      differences.push(describe(path, kind, requiresVersionBump))
+    const add = (path: string, kind: PersistenceTypeChangeKind, requiresCompatibilityReview = true): void => {
+      differences.push(describe(path, kind, requiresCompatibilityReview))
     }
     const descend = (oldType: number, newType: number, child: string, childScope: Scope): void => {
       differences.push(...compare(oldType, newType, child, childScope, active))
@@ -511,7 +513,7 @@ export function classifyPersistenceChange(before: PersistenceRoot | null, after:
     if (oldTypes.length !== newTypes.length) return [describe(path, 'union-variants-changed')]
     const candidates = oldTypes.map(oldType => newTypes.map(newType => compare(oldType, newType, path, scope, active)))
     const matching = matchUnionVariants(candidates.map(row => row.flatMap((candidate, index) =>
-      candidate.every(change => !change.requiresVersionBump) ? [index] : [])))
+      candidate.every(change => !change.requiresCompatibilityReview) ? [index] : [])))
     if (matching !== undefined) return matching.flatMap((next, previous) => candidates[previous]?.[next] ?? [])
     const oldByHash = new Map(oldTypes.map(index => [fingerprint(oldRoot.schema, index, 0), index]))
     const newByHash = new Map(newTypes.map(index => [fingerprint(newRoot.schema, index, 1), index]))
@@ -522,7 +524,8 @@ export function classifyPersistenceChange(before: PersistenceRoot | null, after:
   }
   changes.push(...compare(0, 0, key, before.kind === 'event' ? 'event' : 'strict', new Set()))
   if (changes.length === 0) changes.push(describe(key, 'type-changed'))
-  return [...new Map(changes.map(change => [JSON.stringify([change.path, change.kind, change.requiresVersionBump]), change])).values()]
+  return [...new Map(changes.map(change =>
+    [JSON.stringify([change.path, change.kind, change.requiresCompatibilityReview]), change])).values()]
 }
 
 function parseDocument(source: string, filename: string, allowIncomplete = false): PersistenceChangeRecord {
@@ -540,11 +543,14 @@ function parseDocument(source: string, filename: string, allowIncomplete = false
   const roots = new Set<string>()
   for (const value of array(input.changes, `${filename} changes`)) {
     const change = record(value, filename)
-    keys(change, ['root', 'previous', 'after', 'decision'], filename)
+    keys(change, ['root', 'previous', 'after', 'decision'], filename, ['integrates'])
     const root = textValue(change.root, 'changed root')
     if (roots.has(root)) throw new Error(`${filename}: duplicate change for ${root}`)
     roots.add(root)
     if (change.previous !== null) identifier(change.previous, 'previous record')
+    if (change.integrates !== undefined) {
+      for (const predecessor of array(change.integrates, 'integrated records')) identifier(predecessor, 'integrated record')
+    }
     if (change.after !== null) digest(change.after, 'after digest')
     if (change.decision !== 'same-version' && change.decision !== 'version-bump') throw new Error(`${filename}: invalid compatibility decision`)
   }
@@ -578,19 +584,32 @@ export function validatePersistenceHistory(entries: readonly PersistenceHistoryE
     for (const change of entry.record.changes) {
       const root = entry.snapshot.roots.find(root => root.key === change.root)
       if ((root?.digest ?? null) !== change.after) throw new Error(`${entry.record.id}: after digest mismatch for ${change.root}`)
-      if (entry.record.baseline && (change.previous !== null || change.after === null || change.decision !== 'same-version')) throw new Error(`${entry.record.id}: invalid baseline transition`)
+      if (entry.record.baseline && (change.previous !== null || change.integrates !== undefined || change.after === null || change.decision !== 'same-version')) throw new Error(`${entry.record.id}: invalid baseline transition`)
+      if (change.integrates !== undefined && (change.previous === null || change.integrates.length === 0
+        || new Set([change.previous, ...change.integrates]).size !== change.integrates.length + 1)) {
+        throw new Error(`${entry.record.id}: integration requires distinct non-null predecessors for ${change.root}`)
+      }
     }
   }
   const states = new Map<string, 'visiting' | 'visited'>()
-  const successors = new Map<string, string>()
+  const successors = new Map<string, Set<string>>()
   const nodes = new Map<string, { entry: PersistenceHistoryEntry; change: PersistenceChange }>()
   const tips = new Map<string, Tip>()
   const nodeKey = (id: string | null, root: string): string => JSON.stringify([id, root])
+  const predecessors = (change: PersistenceChange): readonly (string | null)[] => [change.previous, ...change.integrates ?? []]
   for (const entry of entries) for (const change of entry.record.changes) {
-    const parentKey = nodeKey(change.previous, change.root)
-    if (successors.has(parentKey)) throw new Error(`forked persistence history for ${change.root}: ${successors.get(parentKey)} and ${entry.record.id}`)
-    successors.set(parentKey, entry.record.id)
+    for (const predecessor of predecessors(change)) {
+      const parentKey = nodeKey(predecessor, change.root)
+      const children = successors.get(parentKey) ?? new Set<string>()
+      children.add(entry.record.id)
+      successors.set(parentKey, children)
+    }
     nodes.set(nodeKey(entry.record.id, change.root), { entry, change })
+  }
+  function isAncestor(older: string, newer: string, root: string): boolean {
+    const node = nodes.get(nodeKey(newer, root))
+    if (node === undefined) throw new Error(`missing predecessor ${newer} for ${root}`)
+    return predecessors(node.change).some(parent => parent !== null && (parent === older || isAncestor(older, parent, root)))
   }
   function visit(id: string, root: string): PersistenceRoot | null {
     const key = nodeKey(id, root)
@@ -600,15 +619,14 @@ export function validatePersistenceHistory(entries: readonly PersistenceHistoryE
     const after = found.entry.snapshot.roots.find(item => item.key === root) ?? null
     if (states.get(key) === 'visited') return after
     states.set(key, 'visiting')
-    const before = found.change.previous === null ? null : visit(found.change.previous, root)
-    if (!found.entry.record.baseline) {
+    for (const predecessor of predecessors(found.change)) {
+      const before = predecessor === null ? null : visit(predecessor, root)
+      if (found.entry.record.baseline) continue
       const differences = classifyPersistenceChange(before, after)
-      if (differences.length === 0) throw new Error(`${id}: unchanged acknowledgement for ${root}`)
-      if (differences.some(change => change.requiresVersionBump) && found.change.decision !== 'version-bump') {
-        throw new PersistenceChangeFailure(
-          `${id}: ${root} requires a format version bump (${differences.filter(change => change.requiresVersionBump).map(change => change.path + ': ' + change.description).join('; ')})`,
-          'version-bump-required', differences.map(change => ({ root, ...change })), [rootTransition(before, after)],
-        )
+      if (differences.length === 0 && found.change.integrates === undefined) throw new Error(`${id}: unchanged acknowledgement for ${root}`)
+      if (root === 'SessionHeader' && headerVersion(before) !== headerVersion(after) && found.change.decision !== 'version-bump') {
+        throw new PersistenceChangeFailure(`${id}: SessionHeader.version changes require an increasing version-bump transition`,
+          'version-transition-required', differences.map(change => ({ root, ...change })), [rootTransition(before, after)])
       }
       if (found.change.decision === 'version-bump') {
         const header = found.entry.record.changes.find(change => change.root === 'SessionHeader')
@@ -621,8 +639,18 @@ export function validatePersistenceHistory(entries: readonly PersistenceHistoryE
         }
       }
     }
+    if (found.change.integrates !== undefined) {
+      const parents = predecessors(found.change).filter(parent => parent !== null)
+      if (parents.some(parent => parents.some(other => parent !== other && isAncestor(parent, other, root)))) {
+        throw new Error(`${id}: integration requires independent branch tips for ${root}`)
+      }
+    }
     states.set(key, 'visited')
-    if (!successors.has(key)) tips.set(root, { id, root: after })
+    if (!successors.has(key)) {
+      const tip = tips.get(root)
+      if (tip !== undefined && tip.id !== id) throw new Error(`forked persistence history for ${root}: ${tip.id} and ${id}`)
+      tips.set(root, { id, root: after })
+    }
     return after
   }
   for (const entry of entries) for (const change of entry.record.changes) visit(entry.record.id, change.root)
@@ -690,24 +718,6 @@ function verifyFinalization(
   if (writer === undefined || writer < finalized.version) {
     throw new PersistenceChangeFailure(`Session writer must not precede finalized format ${finalized.version}`, 'finalized-version-order')
   }
-  if (writer > finalized.version) return
-  const afterRoots = new Map(current.roots.map(root => [root.key, root]))
-  const changes: ReportedChange[] = []
-  const transitions: RootTransition[] = []
-  for (const key of [...new Set([...finalized.roots.keys(), ...afterRoots.keys()])].sort()) {
-    const before = finalized.roots.get(key) ?? null
-    const after = afterRoots.get(key) ?? null
-    const differences = classifyPersistenceChange(before, after)
-    if (differences.length === 0) continue
-    changes.push(...differences.map(change => ({ root: key, ...change })))
-    transitions.push(rootTransition(before, after))
-  }
-  if (changes.some(change => change.requiresVersionBump)) {
-    throw new PersistenceChangeFailure(
-      `Breaking changes relative to the accepted Session format ${writer} baseline require format ${writer + 1} or later`,
-      'finalized-format-changed', changes, transitions,
-    )
-  }
 }
 
 /** Verify current generated output and acknowledgement tips together.
@@ -729,7 +739,7 @@ export function verifyPersistenceChanges(root: string, current: PersistenceSchem
     throw new PersistenceChangeFailure(`${CURRENT_SCHEMA} is stale; regenerate the persistence catalog`, 'stale-artifacts', differences, transitions)
   }
   if (differences.length !== 0) {
-    const details = differences.map(change => `  ${change.path}: ${change.description} (${change.requiresVersionBump ? 'version-bump required' : 'same-version allowed'})`)
+    const details = differences.map(change => `  ${change.path}: ${change.description} (${change.requiresCompatibilityReview ? 'compatibility review required' : 'same-version allowed'})`)
     throw new PersistenceChangeFailure(`unacknowledged persistence type changes:\n${details.join('\n')}`, 'unacknowledged-changes', differences, transitions)
   }
   return history
@@ -753,7 +763,7 @@ function reportedDifferences(history: PersistenceHistory, current: PersistenceSc
 
 function machineBlock(change: PersistenceChangeRecord): string {
   return ['```yaml persistence-change', 'schemaVersion: 1', `id: ${change.id}`, `baseline: ${String(change.baseline)}`, 'changes:',
-    ...change.changes.flatMap(item => [`  - root: ${JSON.stringify(item.root)}`, `    previous: ${item.previous === null ? 'null' : JSON.stringify(item.previous)}`, `    after: ${item.after === null ? 'null' : JSON.stringify(item.after)}`, `    decision: ${item.decision}`]), '```'].join('\n')
+    ...change.changes.flatMap(item => [`  - root: ${JSON.stringify(item.root)}`, `    previous: ${item.previous === null ? 'null' : JSON.stringify(item.previous)}`, ...(item.integrates === undefined ? [] : [`    integrates: ${JSON.stringify(item.integrates)}`]), `    after: ${item.after === null ? 'null' : JSON.stringify(item.after)}`, `    decision: ${item.decision}`]), '```'].join('\n')
 }
 
 function scaffold(change: PersistenceChangeRecord, chinese: boolean, prose?: PersistenceChangeProse): string {
@@ -816,19 +826,37 @@ function commandOperation(args: readonly string[]): CommandResult['operation'] {
   return 'check'
 }
 
+function integrationTips(entries: readonly PersistenceHistoryEntry[]): Map<string, Tip[]> {
+  const referenced = new Set(entries.flatMap(entry => entry.record.changes.flatMap(change =>
+    [change.previous, ...change.integrates ?? []].map(id => JSON.stringify([id, change.root])))))
+  const tips = new Map<string, Tip[]>()
+  for (const entry of entries) for (const change of entry.record.changes) {
+    if (referenced.has(JSON.stringify([entry.record.id, change.root]))) continue
+    const list = tips.get(change.root) ?? []
+    list.push({ id: entry.record.id, root: entry.snapshot.roots.find(root => root.key === change.root) ?? null })
+    tips.set(change.root, list)
+  }
+  for (const list of tips.values()) list.sort((left, right) => left.id.localeCompare(right.id))
+  return tips
+}
+
 function executeCommand(
   args: readonly string[], root: string, extract: (root: string) => PersistenceSchemaInventory,
   artifacts: (root: string, current: PersistenceSchemaInventory) => readonly PersistenceArtifact[],
 ): CommandResult {
   const { values } = parseArgs({ args: [...args], strict: true, allowPositionals: false, options: {
     check: { type: 'boolean' }, baseline: { type: 'string' }, record: { type: 'string' }, update: { type: 'string' },
-    decision: { type: 'string' }, root: { type: 'string' }, prose: { type: 'string' }, json: { type: 'boolean' },
+    decision: { type: 'string' }, root: { type: 'string' }, prose: { type: 'string' }, json: { type: 'boolean' }, integrate: { type: 'boolean' },
   } })
   if (values.root !== undefined) root = resolve(values.root)
   const selected = [values.check === true, values.baseline !== undefined, values.record !== undefined, values.update !== undefined]
   if (selected.filter(Boolean).length > 1) throw new Error('choose exactly one of --check, --baseline ID, --record ID, or --update ID')
   if (values.record === undefined && values.update === undefined && values.decision !== undefined) throw new Error('--decision requires --record or --update')
   const operation = commandOperation(args)
+  if (values.integrate === true && (operation !== 'record' && operation !== 'update'
+    || values.decision === undefined || values.prose === undefined)) {
+    throw new Error('--integrate requires --record or --update, --decision, and --prose reviewing every predecessor')
+  }
   if (operation === 'check' && values.prose !== undefined) throw new Error('--prose requires --baseline, --record, or --update')
   const prose = values.prose === undefined ? undefined : parsePersistenceProse(JSON.parse(readFileSync(resolve(root, values.prose), 'utf8')))
   const current = parsePersistenceSnapshot(extract(root))
@@ -850,20 +878,44 @@ function executeCommand(
   const existing = update ? entries.find(entry => entry.record.id === id) : undefined
   if (update && existing === undefined) throw new Error(`${id}: cannot update a missing acknowledgement`)
   if (existing?.record.baseline === true) throw new Error('cannot update the persistence baseline')
-  if (existing !== undefined && entries.some(entry => entry.record.changes.some(change => change.previous === id))) {
+  if (existing !== undefined && entries.some(entry => entry.record.changes.some(change =>
+    change.previous === id || change.integrates?.includes(id)))) {
     throw new Error(`${id}: cannot update an acknowledgement with successors`)
   }
   const prior = entries.filter(entry => entry !== existing)
-  const history = baseline ? undefined : validatePersistenceHistory(prior)
-  const changed = baseline ? current.roots.map(root => root.key) : currentDifferences(history as PersistenceHistory, current)
+  const branches = values.integrate === true ? integrationTips(prior) : undefined
+  if (branches !== undefined && ![...branches.values()].some(tips => tips.length > 1)) throw new Error('no independent persistence branches to integrate')
+  // Integration collects candidates only; the full graph and every incoming transition are checked before any write.
+  const history = baseline ? undefined : branches === undefined ? validatePersistenceHistory(prior)
+    : { entries: prior, tips: new Map([...branches].map(([root, tips]) => [root, tips[0] as Tip])) }
+  const changed = [...new Set([
+    ...baseline ? current.roots.map(root => root.key) : currentDifferences(history as PersistenceHistory, current),
+    ...[...branches ?? []].filter(([, tips]) => tips.length > 1).map(([root]) => root),
+  ])]
   if (changed.length === 0) throw new Error('no persistence type changes to acknowledge')
-  const differences = history === undefined ? [] : reportedDifferences(history, current)
-  const decision = values.decision ?? (differences.some(change => change.requiresVersionBump) ? 'version-bump' : 'same-version')
+  const differences = history === undefined ? [] : branches === undefined ? reportedDifferences(history, current)
+    : [...branches].flatMap(([root, tips]) => tips.flatMap(tip =>
+      classifyPersistenceChange(tip.root, current.roots.find(item => item.key === root) ?? null)
+        .map(change => ({ root, ...change }))))
+  const previousHeader = history?.tips.get('SessionHeader')?.root ?? null
+  const currentHeader = current.roots.find(root => root.key === 'SessionHeader') ?? null
+  const versionChanged = !baseline && headerVersion(previousHeader) !== headerVersion(currentHeader)
+  if (values.decision === undefined && !versionChanged && differences.some(change => change.requiresCompatibilityReview)) {
+    throw new PersistenceChangeFailure(
+      `${id}: review reader compatibility and choose --decision same-version or --decision version-bump`,
+      'decision-required', differences, rootTransitions(history, current),
+    )
+  }
+  const decision = values.decision ?? (versionChanged ? 'version-bump' : 'same-version')
   const roots = current.roots.filter(root => changed.includes(root.key))
-  const change: PersistenceChangeRecord = { schemaVersion: 1, id, baseline, changes: changed.sort().map(key => ({
-    root: key, previous: history?.tips.get(key)?.id ?? null,
-    after: roots.find(root => root.key === key)?.digest ?? null, decision,
-  })) }
+  const change: PersistenceChangeRecord = { schemaVersion: 1, id, baseline, changes: changed.sort().map((key) => {
+    const parents = branches?.get(key)
+    return {
+      root: key, previous: history?.tips.get(key)?.id ?? null,
+      ...(parents !== undefined && parents.length > 1 ? { integrates: parents.slice(1).map(tip => tip.id) } : {}),
+      after: roots.find(root => root.key === key)?.digest ?? null, decision,
+    }
+  }) }
   const snapshot: PersistenceSchemaInventory = { formatVersion: current.formatVersion, roots, types: [] }
   validatePersistenceHistory([...prior, { record: change, snapshot }])
   const document = (chinese: boolean): string => {
@@ -885,7 +937,7 @@ function executeCommand(
   for (const file of outputs) writeFileSync(resolve(root, file.path), file.content, { flag: recordFiles.includes(file) && !update ? 'wx' : 'w' })
   const completion = baseline
     ? 'Complete both record documents and refresh their translation pairing.'
-    : `Complete the compatibility and verification prose with --update ${id} --prose FILE.`
+    : `Complete the compatibility and verification prose with --update ${id} --decision ${decision} --prose FILE.`
   const message = existing === undefined && prose === undefined
     ? `Created ${HISTORY_DIRECTORY}/${id}.md and paired schema files. ${completion}`
     : `${update ? 'Updated' : 'Created'} ${HISTORY_DIRECTORY}/${id}.md; schema artifacts and bilingual pairing are current.`

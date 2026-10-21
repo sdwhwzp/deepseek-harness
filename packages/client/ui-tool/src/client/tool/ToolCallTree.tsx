@@ -40,9 +40,9 @@ const ToolCall = memo(function ToolCall({
   }), [callId, toolName, call, openFile, cwd, home, loadImage, inspectCall, useDisclosure])
   // Complete read_image cards own their collapsed gallery. Other results keep
   // their image references even when tool-specific metadata is unavailable.
-  const images = useMemo(() => call.phase === 'result' && imageCardModel(call.block, cwd, home) === null
+  const images = useMemo(() => call.phase === 'result' && imageCardModel(call.block) === null
     ? imageReferences(call.block.content)?.map(attachment => ({ attachment })) ?? []
-    : [], [call, cwd, home])
+    : [], [call])
   const autoReviewDenied = useMemo(
     () => call.phase === 'result' && toolRowModel(toolName, call.block).autoReviewDenial !== null,
     [toolName, call],

@@ -3,7 +3,8 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
-import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
+import type { PeerId, PeerScope, Principal } from '@deepseek-ai/dsh-typert-protocol'
+import type { ConnectionInteractions } from './connect-protocol.ts'
 import {
   RpcId,
   type ClientRequest,
@@ -11,12 +12,13 @@ import {
 } from './rpc.ts'
 import { clientRequestSchema } from './rpc-schema.ts'
 import { bridge } from './http-bridge.ts'
-import { isTrustedApiRequest } from './api-request-trust.ts'
+import { isRemoteAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
-import { OperatorPeer } from './operator-peer.ts'
+import { Peer } from './peer.ts'
 import type {
   PeerAdmission,
+  ConnectionAdmission,
   ConnectionIndexRequest,
   ConnectionIndexResponse,
   ConnectionPrincipalRequest,
@@ -38,9 +40,14 @@ const INVALID_REQUEST_RPC_ID = RpcId('invalid-request')
 const CHANNEL_PATTERN = /^\/[A-Za-z0-9._~-]+$/
 const ENDPOINT_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/
 
+interface PeerRecord {
+  readonly peer: Peer
+  ownsSocket: boolean
+}
+
 interface ConnectionRpcInterceptor {
   readonly matches: ConnectionRpcEndpointMatcher
-  readonly handler: ConnectionRpcHandler
+  readonly fetchHandler: ConnectionFetchHandler
 }
 
 interface RegisteredFetchRoute {
@@ -64,12 +71,18 @@ declare module '@deepseek-ai/cordis' {
 
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
-  /** Default local operator; authenticated accounts receive separate scopes. */
-  readonly operator: PeerScope
+  /** The Peer every authenticated browser connection shares. */
+  readonly browserPeer: PeerScope
+  private readonly peers = new Map<PeerId, PeerRecord>()
+  private readonly owner: Context
+  private disposed = false
   private readonly accountPeers = new Map<string, { peer: PeerScope; principal: AuthenticatedPrincipal }>()
   private readonly peerPrincipals = new WeakMap<PeerScope, AuthenticatedPrincipal>()
   private readonly interceptors = new Map<string, Set<ConnectionRpcInterceptor>>()
+
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
+
+  readonly allowsRemoteAuthorities: boolean
 
   /**
    * Provide the Host half over the active HTTP server.
@@ -83,12 +96,20 @@ export class HostConnectionService extends Service implements HostConnectionHand
     private readonly browserAuth: BrowserAuth,
   ) {
     super(ctx, 'connection')
-    this.operator = new OperatorPeer(ctx)
+    this.owner = ctx
+    this.browserPeer = new Peer(ctx, { principal: { kind: 'owner' } })
     ctx.effect(() => async () => {
-      const peers = [this.operator, ...[...this.accountPeers.values()].map(entry => entry.peer)]
+      this.disposed = true
+      const peers = [
+        this.browserPeer,
+        ...Array.from(this.peers.values(), record => record.peer),
+        ...Array.from(this.accountPeers.values(), record => record.peer),
+      ]
       this.accountPeers.clear()
+      this.peers.clear()
       await Promise.all(peers.map(peer => peer.dispose()))
-    }, 'client-connection: request Peers')
+    }, 'client-connection: Peer scopes')
+    this.allowsRemoteAuthorities = trustedHosts.some(isRemoteAuthority)
   }
 
   /** Generic channel registry scoped to the Context reading this service. */
@@ -109,24 +130,23 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
   }
 
-  /** Apply the configured Host/Origin fence, then browser authentication. */
+  /** Apply the Host/Origin fence and require an authenticated live Peer. */
   requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection {
-    if (!isTrustedApiRequest(request, this.trustedHosts)) return 403
-    return this.browserAuth.isAuthenticated(request) ? undefined : 401
+    const admission = this.admit(request)
+    return 'rejection' in admission ? admission.rejection : undefined
   }
 
   /** Apply request trust and accept deployment or browser authentication. */
   async authorizeRequest(request: ConnectionPrincipalRequest): Promise<ConnectionRequestAuthorization> {
-    if (!isTrustedApiRequest(request, this.trustedHosts)) return { accepted: false, status: 403 }
+    if (!this.isTrusted(request) || this.disposed) return { accepted: false, status: this.disposed ? 401 : 403 }
     try {
       const principal = await this.authenticateRequest(request)
       if (principal !== undefined) return { accepted: true, principal }
     } catch (_authenticationFailure) {
       return { accepted: false, status: 401 }
     }
-    return this.browserAuth.isAuthenticated(request)
-      ? { accepted: true }
-      : { accepted: false, status: 401 }
+    const admission = this.admit(request)
+    return 'rejection' in admission ? { accepted: false, status: admission.rejection } : { accepted: true }
   }
 
   /** Validate and detach the optional deployment-owned identity for one carrier request. */
@@ -145,13 +165,33 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * @returns the admitted Peer and principal, or a rejection status.
    */
   async admitRequest(request: ConnectionPrincipalRequest): Promise<PeerAdmission> {
+    if (this.ctx.get('requestPrincipal') === undefined) return this.admit(request)
+    if (this.disposed) return { rejection: 401 }
     const authorization = await this.authorizeRequest(request)
+    // Admission can outlive an asynchronous authenticator.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- disposal may occur while authentication is pending.
+    if (this.disposed) return { rejection: 401 }
     if (!authorization.accepted) return { rejection: authorization.status }
     const { principal } = authorization
+    if (principal === undefined) return this.admit(request)
     return {
       peer: this.peerForPrincipal(principal),
-      ...(principal === undefined ? {} : { principal }),
+      principal,
     }
+  }
+
+  /**
+   * Admit an account socket or apply the native API Peer socket claim.
+   * @param request - carrier-owned upgrade request.
+   * @returns the isolated Peer and release, or a rejection status.
+   */
+  async admitConnectionRequest(request: ConnectionPrincipalRequest): Promise<ConnectionAdmission> {
+    if (this.ctx.get('requestPrincipal') === undefined) return this.admitConnection(request)
+    const admission = await this.admitRequest(request)
+    if ('rejection' in admission) return admission
+    return this.principalOfPeer(admission.peer) === undefined
+      ? this.admitConnection(request)
+      : { peer: admission.peer, release: async () => {} }
   }
 
   /**
@@ -164,11 +204,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
   }
 
   private peerForPrincipal(principal: AuthenticatedPrincipal | undefined): PeerScope {
-    if (principal === undefined) return this.operator
+    if (principal === undefined) return this.browserPeer
     const key = JSON.stringify([principal.source, principal.id, principal.username, principal.role])
     const known = this.accountPeers.get(key)
     if (known !== undefined) return known.peer
-    const peer = new OperatorPeer(this.ctx)
+    const peer = new Peer(this.owner, { principal: { kind: 'owner' } })
     this.accountPeers.set(key, { peer, principal })
     this.peerPrincipals.set(peer, principal)
     return peer
@@ -176,13 +216,71 @@ export class HostConnectionService extends Service implements HostConnectionHand
 
   /** A request that passes the fence and authentication speaks for the operator. */
   admit(request: ConnectionTrustRequest): PeerAdmission {
-    const rejection = this.requestRejection(request)
-    return rejection === undefined ? { peer: this.operator } : { rejection }
+    if (!this.isTrusted(request)) return { rejection: 403 }
+    if (this.disposed) return { rejection: 401 }
+    const secure = this.owner.get('webServer')?.protocol === 'https:'
+    if (this.browserAuth.isAuthenticated(request, secure)) return { peer: this.browserPeer }
+    const id = this.browserAuth.authenticateApi(request, secure)
+    const record = id === undefined ? undefined : this.peers.get(id)
+    return record === undefined ? { rejection: 401 } : { peer: record.peer }
   }
 
-  /** Authenticate an index request through the process-token exchange or cookie. */
+  /** Create one in-process Peer owned by the Context that read this service. */
+  createPeer(options: { readonly principal: Principal; readonly interactions?: ConnectionInteractions }): PeerScope {
+    return new Peer(this.ctx, options)
+  }
+
+  /** Claim API socket ownership synchronously; callers release on termination or failed upgrade. */
+  admitConnection(request: ConnectionTrustRequest): ConnectionAdmission {
+    const admission = this.admit(request)
+    if ('rejection' in admission) return admission
+    const record = this.peers.get(admission.peer.id)
+    if (record === undefined) return { ...admission, release: () => Promise.resolve() }
+    if (record.ownsSocket) return { rejection: 409 }
+    record.ownsSocket = true
+    let released: Promise<void> | undefined
+    return {
+      peer: record.peer,
+      release: () => {
+        if (released !== undefined) return released
+        this.peers.delete(record.peer.id)
+        released = record.peer.dispose()
+        return released
+      },
+    }
+  }
+
+  private isTrusted(request: ConnectionTrustRequest): boolean {
+    const carrier = this.owner.get('webServer')
+    return isTrustedApiRequest(request, this.trustedHosts, carrier?.host, carrier?.protocol ?? 'http:')
+  }
+
+  private publishPeer(interactions: ConnectionInteractions): PeerId {
+    const peer = new Peer(this.owner, { principal: { kind: 'owner' }, interactions })
+    this.peers.set(peer.id, { peer, ownsSocket: false })
+    return peer.id
+  }
+
+  /**
+   * Authenticate and publish a credential before sending the connect redirect.
+   * @param request - launch-token request on /connect.
+   * @param response - response owned to completion.
+   */
+  authorizeConnect(request: ConnectionIndexRequest, response: ConnectionIndexResponse): void {
+    if (!this.isTrusted(request) || this.disposed) {
+      response.writeHead(this.disposed ? 401 : 403)
+      response.end(this.disposed ? 'unauthorized' : 'forbidden')
+      return
+    }
+    this.browserAuth.authorizeConnect(request, response,
+      this.owner.get('webServer')?.protocol === 'https:', interactions => this.publishPeer(interactions))
+  }
+
+  /**
+   * Authenticate an index request; native TLS listeners mint Secure cookies.
+   */
   authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
-    return this.browserAuth.authorizeIndex(request, response)
+    return this.browserAuth.authorizeIndex(request, response, this.ctx.get('webServer')?.protocol === 'https:')
   }
 
   /** Add this process's launch token to the clean application URL. */
@@ -203,20 +301,15 @@ export class HostConnectionService extends Service implements HostConnectionHand
         const route = this.fetchRoutes.get(url.pathname)
         return route?.methods.has(method) === true ? route.requestBody : 'buffered'
       },
-      fetch: async (request, authorization) => {
-        let principal: AuthenticatedPrincipal | undefined
-        if (authorization === undefined) {
-          try {
-            principal = await this.authenticateRequest(request)
-          } catch (_authenticationFailure) {
-            return new Response('unauthorized', { status: 401 })
-          }
-        } else {
-          principal = authorization.principal
-        }
+      fetch: async (request, peer) => {
         const pathname = new URL(request.url).pathname
         const route = this.fetchRoutes.get(pathname)
-        if (route?.methods.has(request.method) === true) return route.fetch(request, principal)
+        if (route?.methods.has(request.method) === true) {
+          // Exact routes bypass Gateway access checks, so only the owner reaches them.
+          // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
+          if (peer.principal.kind !== 'owner') return Promise.resolve(new Response('forbidden', { status: 403 }))
+          return route.fetch(request, this.principalOfPeer(peer), peer)
+        }
         const endpoint = endpointFromPath(channel, pathname)
         const registered = this.interceptors.get(channel)
         if (endpoint === undefined || registered === undefined) {
@@ -234,7 +327,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
           interceptor = candidate
         }
         if (interceptor === undefined) return new Response('not found', { status: 404 })
-        return rpcFetchHandler(channel, interceptor.handler, this.peerForPrincipal(principal)).fetch(request)
+        return interceptor.fetchHandler.fetch(request, peer)
       },
     }
   }
@@ -266,6 +359,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     assertChannel(channel)
     const server = owner.get('webServer')
     if (server === undefined) throw new Error('connection: RPC channels require a Web server')
+    const fetchHandler = rpcFetchHandler(channel, handler)
     const route: WebRoute = {
       kind: 'prefix',
       path: channel,
@@ -276,10 +370,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
           res.end(admission.rejection === 401 ? 'unauthorized' : 'forbidden')
           return
         }
-        await bridge(req, res, {
-          requestBodyMode: () => 'buffered',
-          fetch: request => rpcFetchHandler(channel, handler, admission.peer).fetch(request),
-        })
+        await bridge(req, res, fetchHandler, admission.peer)
       },
     }
     return owner.effect(
@@ -299,7 +390,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
     const interceptor: ConnectionRpcInterceptor = {
       matches,
-      handler,
+      fetchHandler: rpcFetchHandler(channel, handler),
     }
     return owner.effect(() => {
       const registered = this.interceptors.get(channel) ?? new Set<ConnectionRpcInterceptor>()
@@ -316,11 +407,10 @@ export class HostConnectionService extends Service implements HostConnectionHand
 function rpcFetchHandler(
   channel: string,
   handler: ConnectionRpcHandler,
-  peer: PeerScope,
 ): ConnectionFetchHandler {
   return {
     requestBodyMode: () => 'buffered',
-    async fetch(request: Request): Promise<Response> {
+    async fetch(request: Request, peer: PeerScope): Promise<Response> {
       const endpoint = endpointFromPath(channel, new URL(request.url).pathname)
       if (request.method !== 'POST' || endpoint === undefined) {
         return new Response('not found', { status: 404 })

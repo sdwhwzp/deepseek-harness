@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-21-fork-account-history-integration.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-21-fork-account-history-integration.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-21-fork-account-history-integration:
+  en: 9263e6102b056447
+  zh: 6392a23c3ff2c7d0
+/2026-10-21-fork-account-history-integration/summary:
+  en: a7004775fe2333a9
+  zh: a6a8b9f078d2f1df
+/2026-10-21-fork-account-history-integration/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-21-fork-account-history-integration/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-21-fork-account-history-integration/compatibility:
+  en: 172b2efd29ece0fe
+  zh: bda78dd41416ed0d
+/2026-10-21-fork-account-history-integration/verification:
+  en: e4a73be1c681d47c
+  zh: f80d5f190dedb502
+/2026-10-21-fork-account-history-integration/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

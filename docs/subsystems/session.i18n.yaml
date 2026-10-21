@@ -59,6 +59,9 @@
 /sessions/plugin-contributed-log-only-events:
   en: a10b9577ce50ab03
   zh: 07340ebc2c912d77
+/sessions/plugin-contributed-log-only-events/plugin-records:
+  en: 15102fd0b937fbf3
+  zh: 37ebf1d715db097c
 /sessions/durability-contract:
   en: 62e3e4fbcba292a3
   zh: cb6dcaf531621e85

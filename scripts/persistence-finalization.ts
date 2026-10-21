@@ -21,10 +21,9 @@ export interface PersistenceFinalizationCheckpoint {
   readonly acceptedRecords: Readonly<Record<string, string>>
 }
 
-/** Latest accepted baseline schemas and the record ids locked by retained checkpoints. */
+/** Latest finalized version and the record ids locked by retained checkpoints. */
 export interface PersistenceFinalization {
   readonly version: number
-  readonly roots: ReadonlyMap<string, PersistenceRoot>
   readonly acceptedRecords: ReadonlySet<string>
 }
 
@@ -47,6 +46,7 @@ function recordDigest(entry: PersistenceHistoryEntry): string {
   const semantic = { record: { schemaVersion: record.schemaVersion, id: record.id, baseline: record.baseline,
     changes: [...record.changes].sort((a, b) => compare(a.root, b.root)).map(change => ({
       root: change.root, previous: change.previous, after: change.after, decision: change.decision,
+      ...(change.integrates === undefined ? {} : { integrates: [...change.integrates].sort(compare) }),
     })) }, snapshot: { formatVersion: entry.snapshot.formatVersion,
     roots: [...entry.snapshot.roots].sort((a, b) => compare(a.key, b.key)).map(root => ({
       key: root.key, ...identity(root), schema: root.schema,
@@ -105,7 +105,7 @@ function status(root: string, path: string): number | undefined {
 }
 
 /**
- * Validate retained checkpoints against accepted history and reconstruct the latest accepted baseline.
+ * Validate retained checkpoints against accepted history and collect their locked record ids.
  * @param root - checkout or isolated fixture root.
  * @param history - parsed acknowledgement entries, including later successors.
  * @returns finalization state, or undefined for a checkout with neither status nor checkpoints.
@@ -120,7 +120,6 @@ export function loadPersistenceFinalization(root: string, history: Pick<Persiste
   if (!files.includes(`v${version}.json`)) throw new Error(`missing persistence finalization checkpoint v${version}.json`)
   const entries = new Map(history.entries.map(entry => [entry.record.id, entry]))
   const acceptedRecords = new Set<string>()
-  let latestRoots: Map<string, PersistenceRoot> | undefined
   for (const file of files) {
     const match = /^v(0|[1-9]\d*)\.json$/u.exec(file)
     const capturedVersion = match === null ? NaN : Number(match[1])
@@ -142,9 +141,10 @@ export function loadPersistenceFinalization(root: string, history: Pick<Persiste
     if (selected.length === 0 || !selected.some(entry => entry.record.baseline)) throw new Error(`${file}: accepted records must include the persistence baseline`)
     const predecessors = new Set<string>()
     for (const entry of selected) for (const change of entry.record.changes) {
-      if (change.previous !== null) {
-        if (!Object.hasOwn(locked, change.previous)) throw new Error(`${file}: accepted history omits predecessor ${change.previous}`)
-        predecessors.add(JSON.stringify([change.previous, change.root]))
+      for (const previous of [change.previous, ...change.integrates ?? []]) {
+        if (previous === null) continue
+        if (!Object.hasOwn(locked, previous)) throw new Error(`${file}: accepted history omits predecessor ${previous}`)
+        predecessors.add(JSON.stringify([previous, change.root]))
       }
     }
     const tips = new Map<string, PersistenceRoot>()
@@ -165,8 +165,6 @@ export function loadPersistenceFinalization(root: string, history: Pick<Persiste
         || Object.entries(expected).some(([field, expectedValue]) => value[field] !== expectedValue)
     })) throw new Error(`${file}: finalized roots do not match complete accepted history`)
     if (writerVersion([...tips.values()]) !== capturedVersion) throw new Error(`${file}: accepted SessionHeader.version does not match finalized version`)
-    if (capturedVersion === version) latestRoots = tips
   }
-  if (latestRoots === undefined) throw new Error(`missing finalized schemas for Session format ${version}`)
-  return { version, roots: latestRoots, acceptedRecords }
+  return { version, acceptedRecords }
 }

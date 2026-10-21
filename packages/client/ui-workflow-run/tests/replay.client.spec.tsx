@@ -7,8 +7,8 @@ import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-ui-conversati
 import type { ConversationNodeDefinition, ConversationViewDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { SessionListState, SessionLiveEventEntry } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
-import { chatSnapshot, conversationSnapshot, makeTranslate, sessionSnapshot, workspaceSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
+import { SessionSeq, type SessionEvent, type SessionId } from '@deepseek-ai/dsh-session/types'
+import { allowAllAccess, chatSnapshot, conversationSnapshot, makeTranslate, sessionSnapshot, workspaceSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import { WorkflowRunPanel, type WorkflowRunPanelProps } from '../src/client/WorkflowRunPanel.tsx'
 import { zh } from '../src/client/locales.ts'
 import { workflowRunDefinition, type WorkflowRunChatData } from '../src/client/workflow-definition.ts'
@@ -60,16 +60,17 @@ function liveList(): SessionListState {
   }
   return {
     ids: [PARENT_ID, ...childIds], byId, phase: 'ready',
-    projectionsBySession: { [PARENT_ID]: {
+    projectionsBySession: Object.fromEntries(childIds.map(id => [id, {
       state: 'ready', error: null,
-      values: { subagentCatalog: childIds.map(id => ({ id, mode: 'one-shot' as const, createdAt: 0 })) },
-    } },
+      values: { subagent: { mode: 'one-shot' as const, seq: SessionSeq(0) } },
+    }])),
   }
 }
 
 function props(node: ChatConversationViewNode, sessions: SessionListState): WorkflowRunPanelProps {
   const attention = new Map<SessionId, never>()
   return {
+    ...allowAllAccess,
     node: node as WorkflowRunPanelProps['node'], sessionId: PARENT_ID,
     usePanelInfo: selector => selector({ activePanelId: null }),
     useSessions: s => s(sessions), useResource,
@@ -93,8 +94,9 @@ function props(node: ChatConversationViewNode, sessions: SessionListState): Work
     useWorkspaces: s => s(workspaceSnapshot()),
     useTurnData: () => undefined,
     useDisclosure: () => { throw new Error('unused') },
-    openFile: () => {}, openSkill: () => {}, inspectCall: () => {}, forkAt: () => {},
-    loadImage: () => Promise.reject(new Error('not used')), renderMessageImages: () => null, fileMentions: () => undefined,
+    useGroupAction: () => { throw new Error('unused group action') },
+    openFile: () => {}, inspectCall: () => {}, forkAt: () => {},
+    loadImage: () => Promise.reject(new Error('not used')), fileMentions: () => undefined,
     openSession: vi.fn(), t: makeTranslate(zh),
   }
 }

@@ -40,6 +40,35 @@ async function collect(
 }
 
 describe('principalWorkspaceFollow', () => {
+  it.each(['upsert', 'order'] as const)('restores a revoked Workspace after a %s without a deletion frame', async (trigger) => {
+    const ctx = new Context()
+    const row = workspace('one', ['owned', 'hidden'])
+    let allowed = true
+    ctx.provide('principalAccess', {
+      resolve: async () => ({
+        readableWorkspaceIds: new Set(allowed ? [row.workspaceId] : []),
+        readableSessionIds: new Set([SessionId('owned')]),
+      }),
+    } as never)
+    async function* frames(): AsyncIterable<WorkspaceFollowFrame> {
+      yield { type: 'baseline', value: { items: [row], archivedSessionIds: [], pinnedSessionIds: [] } }
+      allowed = false
+      yield trigger === 'upsert' ? { type: 'upsert', workspace: row } : { type: 'order', workspaceIds: [row.workspaceId] }
+      allowed = true
+      yield { type: 'upsert', workspace: row }
+      yield { type: 'replace', value: { items: [row], archivedSessionIds: [], pinnedSessionIds: [] } }
+    }
+    const result: WorkspaceFollowFrame[] = []
+    for await (const frame of principalWorkspaceFollow(ctx, PRINCIPAL, frames(), new AbortController().signal)) result.push(frame)
+    const visible = workspace('one', ['owned'])
+    expect(result).toEqual([
+      { type: 'baseline', value: { items: [visible], archivedSessionIds: [], pinnedSessionIds: [] } },
+      { type: 'replace', value: { items: [], archivedSessionIds: [], pinnedSessionIds: [] } },
+      { type: 'upsert', workspace: visible },
+      { type: 'replace', value: { items: [visible], archivedSessionIds: [], pinnedSessionIds: [] } },
+    ])
+  })
+
   it('preserves the complete local projection without an authenticated deployment', async () => {
     const ctx = new Context()
     const one = workspace('one', ['session-one'])
@@ -114,8 +143,8 @@ describe('principalWorkspaceFollow', () => {
       { type: 'order', workspaceIds: [visible.workspaceId] },
       { type: 'archived', archivedSessionIds: [SessionId('session-visible')] },
       { type: 'pinned', pinnedSessionIds: [SessionId('session-visible')] },
-      { type: 'remove', workspaceId: visible.workspaceId },
+      { type: 'replace', value: { items: [], archivedSessionIds: [SessionId('session-visible')], pinnedSessionIds: [SessionId('session-visible')] } },
     ])
-    expect(resolve).toHaveBeenCalledTimes(4)
+    expect(resolve).toHaveBeenCalledTimes(6)
   })
 })

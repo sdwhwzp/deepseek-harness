@@ -7,7 +7,7 @@ import { PrincipalAccessDeniedError, requirePrincipalAccess, resolvePrincipalAcc
 import type {} from '@deepseek-ai/dsh-api-workspace-files'
 import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
-import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import { type PeerScope, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-session-query'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
@@ -46,10 +46,10 @@ export function registerPresentOpen(ctx: Context): void {
       path,
       methods: [...methods],
       requestBody: 'buffered',
-      fetch: (request, principal) => {
+      fetch: (request, principal, peer) => {
         const task = handler(ctx, new Request(request, {
           signal: AbortSignal.any([request.signal, lifetime.signal]),
-        }), principal)
+        }), principal, peer)
         pending.add(task)
         void task.then(() => { pending.delete(task) }, () => { pending.delete(task) })
         return task
@@ -104,7 +104,7 @@ async function readTarget(ctx: Context, request: Request, id: string, seq: numbe
  * Session controller decides it against the same principal.
  * @returns the HTTP status to answer with.
  */
-async function openVerified(ctx: Context, request: Request, sessionId: SessionId, path: string, action: 'open' | 'reveal', principal: Principal): Promise<Response> {
+async function openVerified(ctx: Context, request: Request, sessionId: SessionId, path: string, action: 'open' | 'reveal', principal: Principal, peer: PeerScope): Promise<Response> {
   const { fs } = ctx
   const mapped = fs.processPathFromHostPath(path)
   if (mapped === undefined || fs.processPath(await fs.resolve(mapped, { signal: request.signal })) !== path) {
@@ -115,7 +115,7 @@ async function openVerified(ctx: Context, request: Request, sessionId: SessionId
     await requireSessionRead(ctx, request, sessionId, principal)
     return Response.json(await ctx.typertGateway.invoke({
       namespace: 'session', method: 'workspacePathApplications', args: { request: { sessionId, path } },
-      signal: request.signal, ...(principal === undefined ? {} : { principal }),
+      peer, signal: request.signal, ...(principal === undefined ? {} : { principal }),
     }),
     { headers: { 'cache-control': 'no-store' } })
   }
@@ -124,12 +124,12 @@ async function openVerified(ctx: Context, request: Request, sessionId: SessionId
     namespace: 'session', method: 'openWorkspacePath',
     args: { request: { sessionId, path, ...(action === 'reveal' ? { action }
       : application === null ? {} : { application }) } },
-    signal: request.signal, ...(principal === undefined ? {} : { principal }),
+    peer, signal: request.signal, ...(principal === undefined ? {} : { principal }),
   })
   return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
 }
 
-async function handlePresentOpen(ctx: Context, request: Request, principal: Principal): Promise<Response> {
+async function handlePresentOpen(ctx: Context, request: Request, principal: Principal, peer: PeerScope): Promise<Response> {
   const query = new URL(request.url).searchParams
   const action = query.get('action') ?? 'open'
   if (action !== 'open' && action !== 'reveal') return new Response('Invalid file action.', { status: 400 })
@@ -148,7 +148,7 @@ async function handlePresentOpen(ctx: Context, request: Request, principal: Prin
       sessionId: id as SessionId,
       workspaceRoot: session.cwd ?? ctx.sandboxPolicy.workspaceRoot,
     }, file.path, request.signal)
-    return await openVerified(ctx, request, id as SessionId, path, action, principal)
+    return await openVerified(ctx, request, id as SessionId, path, action, principal, peer)
   } catch (error: unknown) {
     request.signal.throwIfAborted()
     return new Response('Presented file unavailable.', { status: failureStatus(error) })
@@ -199,7 +199,7 @@ async function handleChangesDiff(ctx: Context, request: Request, principal: Prin
   }
 }
 
-async function handleChangesOpen(ctx: Context, request: Request, principal: Principal): Promise<Response> {
+async function handleChangesOpen(ctx: Context, request: Request, principal: Principal, peer: PeerScope): Promise<Response> {
   const action = new URL(request.url).searchParams.get('action') ?? 'open'
   if (action !== 'open' && action !== 'reveal') return new Response('Invalid file action.', { status: 400 })
   const coordinates = changedFileCoordinates(request)
@@ -215,7 +215,7 @@ async function handleChangesOpen(ctx: Context, request: Request, principal: Prin
     const file = changes.files[index]
     if (file === undefined) return new Response('Changed file not found in this summary.', { status: 404 })
     const { absolutePath: path } = await ctx.workspaceFiles.stat({ sessionId: id, workspaceRoot }, file.path, request.signal)
-    return await openVerified(ctx, request, id, path, action, principal)
+    return await openVerified(ctx, request, id, path, action, principal, peer)
   } catch (error: unknown) {
     request.signal.throwIfAborted()
     return new Response('Changed file unavailable.', { status: failureStatus(error) })

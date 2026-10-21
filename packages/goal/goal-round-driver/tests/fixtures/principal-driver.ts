@@ -1,5 +1,6 @@
 /** Exercise authenticated Remote goal creation through the shipped headless composition. */
 import assert from 'node:assert/strict'
+import { Peer } from '@deepseek-ai/dsh-client-connection'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import type { PrincipalAccessSubjects } from '@deepseek-ai/dsh-principal-access'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -45,7 +46,7 @@ try {
     return next()
   })
   await ctx.typertGateway.invoke({
-    namespace: 'goals', method: 'create', principal,
+    peer: new Peer(ctx, { principal: { kind: 'owner' } }), namespace: 'goals', method: 'create', principal,
     args: { agentId: agent.id, request: { objective: 'Prove attributed goal execution', maxGoalRounds: 1 } },
   })
   process.stdout.write('GOAL_CREATED\n')
