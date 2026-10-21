@@ -309,6 +309,27 @@ describe('hand-declared providers', () => {
     expect(profile?.piProvider?.getModels().map(model => model.id)).toEqual(['valid'])
   })
 
+  it('retains mixed protocol entries and lets a route override their protocols', () => {
+    const providers = { 'opencode-go': { baseURL: 'https://opencode.test/v1', models: [
+      { id: 'configured-chat', api: 'openai-completions' as const },
+      { id: 'configured-responses', api: 'openai-responses' as const },
+    ] } }
+    const models = resolveProfiles(providers).get('opencode-go')!.piProvider!.getModels()
+    expect(models.map(({ id, api }) => ({ id, api }))).toEqual([
+      { id: 'configured-chat', api: 'openai-completions' },
+      { id: 'configured-responses', api: 'openai-responses' },
+    ])
+    const overridden = resolveProfiles({ 'opencode-go': { ...providers['opencode-go'], api: 'openai-completions' } })
+      .get('opencode-go')!.piProvider!.getModels()
+    expect(overridden.map(model => model.api)).toEqual(['openai-completions', 'openai-completions'])
+  })
+
+  it('refuses a model protocol that the installed provider cannot dispatch', () => {
+    expect(() => resolveProfiles({ 'acme-gateway': {
+      baseURL: 'https://acme.test', models: [{ id: 'model', api: 'openai-completions' }],
+    } })).toThrow('which the installed provider does not serve')
+  })
+
   it('rejects a declaration that names no wire protocol or endpoint', () => {
     expect(() => resolveProfiles({
       'acme-gateway': { baseURL: 'https://acme.test', models: [{ id: 'm', contextWindow: 1, maxTokens: 1 }] },

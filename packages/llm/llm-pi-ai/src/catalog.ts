@@ -37,6 +37,9 @@ import type {
  */
 const NO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
+/** Wire protocols a profile may explicitly declare for a model. */
+export type PiAiModelApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages'
+
 /** One request modality a pi-ai model may accept. */
 export type PiAiModality = Model<Api>['input'][number]
 
@@ -603,6 +606,8 @@ function assertOfferedCompatFields(
 export interface PiAiModelProfile {
   /** Model id sent to the provider and accepted by {@link GenerateOptions.model}. */
   id: string
+  /** Wire protocol for an entry missing from a mixed-protocol installed catalog; a route-level `api` wins. */
+  api?: PiAiModelApi
   /** Display name for selectors; defaults to the catalog name, then the id. */
   name?: string
   /** Maximum combined request and response context in tokens. */
@@ -914,7 +919,12 @@ export function resolveRouteModels(
     if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
     seen.add(entry.id)
     const base = defaults.get(entry.id)
-    const api = request.api ?? base?.api ?? routeApi
+    if (request.api === undefined && entry.api !== undefined
+      && ![...defaults.values()].some(model => model.api === entry.api)) {
+      invalid(provider, `model "${entry.id}" names api "${entry.api}", which the installed provider does not serve;`
+        + ' set the route\'s api to declare its transport')
+    }
+    const api = request.api ?? entry.api ?? base?.api ?? routeApi
     if (api === undefined) {
       invalid(provider, `model "${entry.id}" needs an api; the installed catalog does not describe it, so set the`
         + ' route\'s api to the wire protocol its endpoint speaks')

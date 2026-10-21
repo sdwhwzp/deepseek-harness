@@ -24,6 +24,7 @@ import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messag
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import { catalogProvider, PiAiCatalogError } from './catalog.ts'
+import type { PiAiModelApi } from './catalog.ts'
 import { createProvider } from './models.ts'
 
 /**
@@ -44,7 +45,7 @@ import { createProvider } from './models.ts'
  * still reach every protocol through their own provider; only an explicit
  * override is refused.
  */
-const PROTOCOLS: Readonly<Record<string, () => ProviderStreams>> = {
+const PROTOCOLS: Readonly<Record<PiAiModelApi, () => ProviderStreams>> = {
   'openai-completions': openAICompletionsApi,
   'openai-responses': openAIResponsesApi,
   'anthropic-messages': anthropicMessagesApi,
@@ -58,8 +59,8 @@ const PROTOCOLS: Readonly<Record<string, () => ProviderStreams>> = {
  * can read — leads.
  * @returns the supported protocol identifiers.
  */
-export function supportedProtocols(): readonly string[] {
-  return Object.keys(PROTOCOLS)
+export function supportedProtocols(): readonly PiAiModelApi[] {
+  return Object.keys(PROTOCOLS) as PiAiModelApi[]
 }
 
 /**
@@ -174,7 +175,7 @@ export function buildProvider(spec: ProviderSpec): Provider {
   // Every model on this path carries the route's protocol: model resolution
   // requires one for a route the catalog cannot default, and an explicit one
   // replaces each catalog model's own. So the route has a single API.
-  const factory = spec.api === undefined ? undefined : PROTOCOLS[spec.api]
+  const factory = spec.api === undefined ? undefined : PROTOCOLS[spec.api as PiAiModelApi]
   if (factory === undefined) {
     throw new PiAiCatalogError(
       `llm-pi-ai: provider "${spec.provider}" names api "${spec.api}", which this build cannot serve;`

@@ -1899,6 +1899,8 @@ export interface PiAiProviderProfile {
 export interface PiAiModelProfile {
   /** Model id sent to the provider and accepted by {@link GenerateOptions.model}. */
   id: string
+  /** Wire protocol for an entry missing from a mixed-protocol installed catalog; a route-level `api` wins. */
+  api?: PiAiModelApi
   /** Display name for selectors; defaults to the catalog name, then the id. */
   name?: string
   /** Maximum combined request and response context in tokens. */
@@ -2037,6 +2039,9 @@ export interface PiAiCompatProfile {
 
 /** One request modality a pi-ai model may accept. */
 export type PiAiModality = Model<Api>['input'][number]
+
+/** Wire protocols a profile may explicitly declare for a model. */
+export type PiAiModelApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages'
 
 /**
  * Selectable reasoning efforts for one model: each key is a level the model

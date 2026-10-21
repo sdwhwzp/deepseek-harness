@@ -87,6 +87,47 @@ async function loadComposition(): Promise<{ ctx: Context; settingsPath: string }
 }
 
 describe('llm-pi-ai real dormant composition', () => {
+  it('keeps per-model protocols when a mixed catalog no longer describes configured models', async () => {
+    const output = { type: 'message', id: 'msg_reply', role: 'assistant', content: [{ type: 'output_text', text: 'hello', annotations: [] }] }
+    const server = await mockServer([{ events: textEvents }, { events: [
+      JSON.stringify({ type: 'response.created', response: { id: 'resp_reply' } }),
+      JSON.stringify({ type: 'response.output_item.added', output_index: 0, item: output }),
+      JSON.stringify({ type: 'response.output_item.done', output_index: 0, item: output }),
+      JSON.stringify({ type: 'response.completed', response: {
+        id: 'resp_reply', status: 'completed', output: [output], usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 },
+      } }),
+    ] }])
+    const { ctx, settingsPath } = await loadComposition()
+    await writeFile(settingsPath, [
+      '- id: llm-pi-ai',
+      '  config:',
+      '    providers:',
+      '      opencode-go:',
+      '        apiKeyEnv: PI_COMPOSITION_KEY',
+      `        baseURL: ${server.url}/v1`,
+      '        models:',
+      '          - id: configured-chat-model',
+      '            api: openai-completions',
+      '          - id: configured-responses-model',
+      '            api: openai-responses',
+      '',
+    ].join('\n'))
+    await vi.waitFor(() => {
+      expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual(['opencode-go'])
+    }, { timeout: 5000 })
+    expect((await ctx.llm.listModels('opencode-go')).map(model => model.id))
+      .toEqual(['configured-chat-model', 'configured-responses-model'])
+    const reply = await assemble(ctx, { provider: 'opencode-go', model: 'configured-chat-model', messages: [] })
+    expect(reply.message.content).toEqual([{ type: 'text', text: 'hello' }])
+    expect(server.paths).toEqual(['/v1/chat/completions'])
+    expect(server.headers[0]?.authorization).toBe('Bearer key-from-store')
+    expect(reply.message.source).toMatchObject({ replayState: { response: { api: 'openai-completions' } } })
+    const responseReply = await assemble(ctx, { provider: 'opencode-go', model: 'configured-responses-model', messages: [] })
+    expect(responseReply.message.content).toEqual([{ type: 'text', text: 'hello' }])
+    expect(server.paths).toEqual(['/v1/chat/completions', '/v1/responses'])
+    expect(responseReply.message.source).toMatchObject({ replayState: { response: { api: 'openai-responses' } } })
+  })
+
   it('boots with zero routes and registers one the moment settings supply a profile', async () => {
     vi.stubEnv('PI_COMPOSITION_KEY', '')
     const server = await mockServer([{ events: textEvents }])
