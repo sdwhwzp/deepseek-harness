@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-24-fork-account-source-integration.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-24-fork-account-source-integration.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-24-fork-account-source-integration:
+  en: 0e780abb5940be67
+  zh: 8ffc199e70088e48
+/2026-10-24-fork-account-source-integration/summary:
+  en: 43ca6f351d81dcbc
+  zh: b60c820c68dfa5a6
+/2026-10-24-fork-account-source-integration/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-24-fork-account-source-integration/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-24-fork-account-source-integration/compatibility:
+  en: 34a293a33fb4f99f
+  zh: e148bf958c1975cd
+/2026-10-24-fork-account-source-integration/verification:
+  en: e2884d23a6693e15
+  zh: 04a1f516a77a64dc
+/2026-10-24-fork-account-source-integration/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

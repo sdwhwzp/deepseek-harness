@@ -48,7 +48,7 @@ Mount the driver beside the goal service and the goal tools; the driver itself t
 
 With an exact live agent idle, an active armed goal, and remaining capacity, the driver queues one goal-round prompt. It names the JSON-quoted objective, round number, and cap, and tells the model to use current workspace, tool results, and durable state as authority. An accepted round starts a distinct request series, so Chat renders its self-contained request header before the goal message. The round enters history as a goal-sourced user message; only an entered goal message consumes the cap, while human messages and stale reservations do not. Goal lifecycle mutations still require the independent authority checks in `dsh-tool-goal`.
 
-The driver captures the authenticated caller when a goal is created or explicitly resumed. Every automatic round retains that principal through the inbox, turn, model-call attribution, and accounting. Tool-created goals use their active turn owner; Host Remote calls use the verified Gateway caller. Edits and unrelated prompts do not transfer this authority. Anonymous local goals remain anonymous, and closed turns never supply an implicit account.
+The driver captures the authenticated caller when a goal is created or explicitly resumed. Every automatic round retains that principal through the inbox, turn, model-call attribution, and accounting. The plugin awaits its host-only owner projection before registering the driver listeners. Tool-created goals use their active turn owner; Host Remote calls use the verified Gateway caller. Edits and unrelated prompts do not transfer this authority. Anonymous local goals remain anonymous, and closed turns never supply an implicit account.
 
 ### When continuation stops
 

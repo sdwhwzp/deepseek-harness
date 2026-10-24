@@ -87,7 +87,7 @@ function props(node: ChatConversationViewNode, sessions: SessionListState): Work
     useInput: () => { throw new Error('unused') },
     inputActions: {
       captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
-      insertText: () => false,
+      insertText: () => false, insertQuote: () => false,
       setDraft: () => {}, addAttachments: () => false, removeAttachment: () => {},
       pruneAttachments: () => {}, submit: () => {}, persistDraft: () => {},
     },

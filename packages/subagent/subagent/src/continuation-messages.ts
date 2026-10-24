@@ -137,12 +137,15 @@ function settlementSummary(childId: SessionId, stopReason: SubagentResult['stopR
  * @param terminal - recorded terminal state for the settled Activation.
  * @param principal - owner of the child's last accepted turn, carried onto the notice.
  * @param continuable - whether the child can accept another task.
+ * @param omitClosingText - replace the closing text with a note that the child's
+ *   last message to the parent already carries it.
  * @returns the durable user-message representation delivered to the parent.
  */
 export function createSettlementMessage(
   childId: SessionId,
   terminal: SubagentResult,
   continuable = true,
+  omitClosingText = false,
   principal?: AuthenticatedPrincipal,
 ): ReturnType<typeof createUserMessage> {
   const summary = settlementSummary(childId, terminal.stopReason, continuable)
@@ -155,9 +158,11 @@ export function createSettlementMessage(
   return createUserMessage({
     content: [
       { type: 'text' as const, text: summary },
-      ...closingText.length === 0
-        ? [{ type: 'text' as const, text: 'It left no closing message.' }]
-        : [{ type: 'text' as const, text: 'Its closing message:' }, ...closingText],
+      ...omitClosingText
+        ? [{ type: 'text' as const, text: 'It sent you a message just before finishing, so its closing message is omitted.' }]
+        : closingText.length === 0
+          ? [{ type: 'text' as const, text: 'It left no closing message.' }]
+          : [{ type: 'text' as const, text: 'Its closing message:' }, ...closingText],
       ...terminal.structured !== undefined
         ? [{ type: 'text' as const, text: `Structured result: ${JSON.stringify(terminal.structured)}` }] : [],
       ...terminal.diagnostic !== undefined

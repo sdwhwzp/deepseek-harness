@@ -16,13 +16,6 @@ import { goalRoundOwnerProjection } from './principal.ts'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { renderGoalRoundPrompt } from './prompt.ts'
 
-declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
-    /** Authenticated owner of the open turn, without retaining closed-turn authority. */
-    goalRoundOwner: AuthenticatedPrincipal | null
-  }
-}
-
 export { renderGoalRoundPrompt } from './prompt.ts'
 
 export const name = 'goal-round-driver'
@@ -86,8 +79,9 @@ function renderThrown(value: unknown): string {
   return value instanceof Error ? value.message : String(value)
 }
 
-/** Install automatic same-session continuation and its race fences. */
-export function apply(ctx: Context): void {
+/** Install automatic same-session continuation after its owner projection is ready. */
+export async function apply(ctx: Context): Promise<void> {
+  const ownerProjection = await ctx.sessionProjections.register(goalRoundOwnerProjection)
   const states = new Map<Agent, DriverState>()
   // Releases drivers still joining subagents when the plugin unloads.
   const unloading = Promise.withResolvers<void>()
@@ -275,8 +269,6 @@ export function apply(ctx: Context): void {
   // One composite effect keeps the step fence installed until this
   // plugin's own scheduling tasks settle.
   ctx.effect(function* () {
-    ctx.sessionProjections.register(goalRoundOwnerProjection)
-
     ctx.on('agent/error', ({ agent }) => {
       const state = stateFor(agent)
       disarm(state)
@@ -326,7 +318,7 @@ export function apply(ctx: Context): void {
         const initiator = ctx.agents.currentInitiator()
         state.principal = initiator === undefined
           ? ctx.get('typertGateway')?.currentPrincipal()
-          : ctx.sessionProjections.stateOf(initiator.session, 'goalRoundOwner') ?? undefined
+          : ownerProjection.stateOf(initiator.session) ?? undefined
       }
       state.needsCheckpoint = true
       // A host-initiated pause stops goal execution: abort the live turn so the

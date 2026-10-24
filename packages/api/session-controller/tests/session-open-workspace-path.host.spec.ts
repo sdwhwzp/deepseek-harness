@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import * as nativeCommand from '@deepseek-ai/dsh-native-command'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import FsLocal from '@deepseek-ai/dsh-fs-local'
 import { onTestFinished } from 'vitest'
@@ -16,6 +17,7 @@ const sessionId = SessionId('session-open-path')
 async function context(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(FsLocal)
   onTestFinished(() => ctx.fiber.dispose())
@@ -25,7 +27,7 @@ async function context(): Promise<Context> {
 describe('session/openWorkspacePath', () => {
   it('reports the deployment opener capability independently of a Session', async () => {
     const ctx = await context()
-    const remote = createSessionTestRemote(ctx, {
+    const remote = await createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/default',
       canOpenPath: () => false,
@@ -35,21 +37,21 @@ describe('session/openWorkspacePath', () => {
   })
 
   it('derives opener availability from config, an injected opener, or the platform probe', async () => {
-    const configured = createSessionTestRemote(await context(), {
+    const configured = await createSessionTestRemote(await context(), {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/default',
       nativeOpen: false,
     })
     await expect(configured.canOpenWorkspacePath()).resolves.toEqual({ ok: true, value: false })
 
-    const injected = createSessionTestRemote(await context(), {
+    const injected = await createSessionTestRemote(await context(), {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/default',
       openPath: () => Promise.resolve(),
     })
     await expect(injected.canOpenWorkspacePath()).resolves.toEqual({ ok: true, value: true })
 
-    const detected = createSessionTestRemote(await context(), {
+    const detected = await createSessionTestRemote(await context(), {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/default',
     })
@@ -59,7 +61,7 @@ describe('session/openWorkspacePath', () => {
   it('hands a Client-resolved workspace path to the Host opener unchanged', async () => {
     const ctx = await context()
     const openPath = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
-    const remote = createSessionTestRemote(ctx, {
+    const remote = await createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/default',
       openPath,
@@ -75,7 +77,7 @@ describe('session/openWorkspacePath', () => {
   it('normalizes relative and absolute Host-resolvable paths', async () => {
     const ctx = await context()
     const openPath = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
-    const remote = createSessionTestRemote(ctx, {
+    const remote = await createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/default',
       openPath,
@@ -89,7 +91,7 @@ describe('session/openWorkspacePath', () => {
   it('rejects empty paths before opening anything', async () => {
     const ctx = await context()
     const openPath = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
-    const remote = createSessionTestRemote(ctx, {
+    const remote = await createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/default',
       openPath,
@@ -104,7 +106,7 @@ describe('session/openWorkspacePath', () => {
     const ctx = await context()
     const openPath = vi.fn((_path: string, _signal: AbortSignal) =>
       Promise.reject(new Error('Command failed: powershell.exe -EncodedCommand private-script-text')))
-    const remote = createSessionTestRemote(ctx, {
+    const remote = await createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/default',
       openPath,
@@ -131,7 +133,7 @@ describe('session/openWorkspacePath', () => {
         throw new Error('opening stopped')
       })
       .mockRejectedValueOnce('desktop unavailable')
-    const controller = createSessionTestController(ctx, {
+    const controller = await createSessionTestController(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/default',
       openPath,
@@ -153,7 +155,7 @@ it('reports Host file-manager metadata and dispatches reveal separately from def
   const ctx = await context()
   const revealPath = vi.fn(async (_path: string, _signal: AbortSignal) => {})
   const openPath = vi.fn(async (_path: string, _signal: AbortSignal) => {})
-  const controller = createSessionTestController(ctx, {
+  const controller = await createSessionTestController(ctx, {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', openPath, revealPath,
   })
   try {
@@ -170,7 +172,7 @@ it('uses the native reveal adapter without a test override and respects unsuppor
   const reveal = vi.spyOn(nativeCommand, 'revealNativePath').mockResolvedValue(undefined)
   const manager = vi.spyOn(nativeCommand, 'nativeFileManager').mockReturnValue(null)
   try {
-    const controller = createSessionTestController(ctx, {
+    const controller = await createSessionTestController(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: true,
     })
     expect(controller.workspaceDesktop()).toMatchObject({ available: false, fileManager: null })
@@ -186,7 +188,7 @@ it.each(['open', 'reveal'] as const)('rejects an unmapped remote path before nat
   onTestFinished(() => { mapping.mockRestore() })
   const openPath = vi.fn(async () => {})
   const revealPath = vi.fn(async () => {})
-  const controller = createSessionTestController(ctx, {
+  const controller = await createSessionTestController(ctx, {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', openPath, revealPath,
   })
   await expect(controller.openWorkspacePath({ sessionId, path: '/remote/report.html', ...(action === 'reveal' ? { action } : {}) }, new AbortController().signal))
@@ -200,7 +202,7 @@ it('rejects a filesystem mapping that resolves to another process path', async (
   const mapping = vi.spyOn(ctx.fs, 'processPath').mockReturnValue('/different/report.html')
   onTestFinished(() => { mapping.mockRestore() })
   const openPath = vi.fn(async () => {})
-  const controller = createSessionTestController(ctx, {
+  const controller = await createSessionTestController(ctx, {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', openPath,
   })
   await expect(controller.openWorkspacePath({ sessionId, path: '/report.html' }, new AbortController().signal))
@@ -212,7 +214,7 @@ it('dispatches default-app opening to the association adapter', async () => {
   const ctx = await context()
   const open = vi.spyOn(nativeCommand, 'openNativeAssociatedPath').mockResolvedValue(undefined)
   onTestFinished(() => { open.mockRestore() })
-  const controller = createSessionTestController(ctx, {
+  const controller = await createSessionTestController(ctx, {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: true,
   })
   const signal = new AbortController().signal
@@ -226,7 +228,7 @@ it('uses the same path verification for handler queries and explicit application
   const applications = [{ id: '/Applications/Music.app', name: 'Music', default: true, icon: null }]
   const fileApplications = vi.fn(async () => applications)
   const openFileApplication = vi.fn(async () => {})
-  const controller = createSessionTestController(ctx, {
+  const controller = await createSessionTestController(ctx, {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: true,
     fileApplications, openFileApplication,
   })
@@ -245,11 +247,11 @@ it('uses the same path verification for handler queries and explicit application
 
 it('avoids desktop queries when unavailable and rejects an empty query path', async () => {
   const fileApplications = vi.fn(async () => [])
-  const unavailable = createSessionTestController(await context(), {
+  const unavailable = await createSessionTestController(await context(), {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: false, fileApplications,
   })
   expect(await unavailable.workspacePathApplications({ sessionId, path: '/file.mp3' }, new AbortController().signal)).toEqual([])
-  const available = createSessionTestController(await context(), {
+  const available = await createSessionTestController(await context(), {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: true, fileApplications,
   })
   await expect(available.workspacePathApplications({ sessionId, path: '' }, new AbortController().signal)).rejects.toMatchObject({ code: 'gateway/bad-request' })
@@ -265,7 +267,7 @@ it('returns bounded query failures and classifies cancellation through the Remot
       lifetime.abort()
       throw new Error('native query stopped')
     })
-  const remote = createSessionTestRemote(await context(), {
+  const remote = await createSessionTestRemote(await context(), {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: true, fileApplications,
   })
   await expect(remote.workspacePathApplications({ sessionId, path: '/file.mp3' })).resolves.toMatchObject({

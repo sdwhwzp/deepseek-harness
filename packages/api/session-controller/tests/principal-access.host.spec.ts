@@ -6,6 +6,7 @@ import {
   type PrincipalAccessResult,
   type PrincipalAccessSubjects,
 } from '@deepseek-ai/dsh-principal-access'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { describe, expect, it, vi } from 'vitest'
@@ -48,6 +49,7 @@ class AllowListPrincipalAccess extends PrincipalAccessService {
 async function baseContext(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   return ctx
 }
@@ -64,7 +66,7 @@ describe('Session Controller principal access', () => {
     const ctx = await baseContext()
     if (withProvider) new AllowListPrincipalAccess(ctx, new Set())
     else installPrincipal(ctx, principal)
-    const controller = createSessionTestController(ctx, defaults)
+    const controller = await createSessionTestController(ctx, defaults)
 
     await expect(controller.list({}, new AbortController().signal)).rejects.toMatchObject({
       code: 'PRINCIPAL_ACCESS_DENIED', reason,
@@ -78,7 +80,7 @@ describe('Session Controller principal access', () => {
     installPrincipal(ctx, principal)
     const allowedIds = new Set([allowed.id])
     const access = new AllowListPrincipalAccess(ctx, allowedIds)
-    const controller = createSessionTestController(ctx, defaults)
+    const controller = await createSessionTestController(ctx, defaults)
 
     await expect(controller.list({}, new AbortController().signal)).resolves.toMatchObject({
       items: [{ sessionId: allowed.id }],
@@ -113,7 +115,7 @@ describe('Session Controller principal access', () => {
     installPrincipal(ctx, principal)
     new AllowListPrincipalAccess(ctx, new Set())
     const openPath = vi.fn(() => Promise.resolve())
-    const controller = createSessionTestController(ctx, { ...defaults, openPath })
+    const controller = await createSessionTestController(ctx, { ...defaults, openPath })
     const signal = new AbortController().signal
     const denied = [
       () => controller.selectModel({
@@ -151,7 +153,7 @@ describe('Session Controller principal access', () => {
     installPrincipal(ctx, principal)
     new AllowListPrincipalAccess(ctx, new Set())
     const resume = vi.spyOn(ctx.agents, 'resume')
-    createSessionTestController(ctx, defaults)
+    await createSessionTestController(ctx, defaults)
     const agentLookup = ctx.typert.lookups.get('agent')
     const sessionLookup = ctx.typert.lookups.get('session')
     const agentContext = ctx.typert.contexts.getHost('agent')
@@ -174,7 +176,7 @@ describe('Session Controller principal access', () => {
   it('keeps local-anonymous list behavior when no deployment services are mounted', async () => {
     const ctx = await baseContext()
     const session = ctx.sessions.create(SessionId('local'), { meta: { cwd: '/workspace' } })
-    const controller = createSessionTestController(ctx, defaults)
+    const controller = await createSessionTestController(ctx, defaults)
 
     await expect(controller.list({}, new AbortController().signal)).resolves.toMatchObject({
       items: [{ sessionId: session.id }],
@@ -185,7 +187,7 @@ describe('Session Controller principal access', () => {
     'refuses shared default model initialization for %s before reading credentials', async (state) => {
       const ctx = await baseContext()
       const save = vi.fn()
-      const controller = createSessionTestController(ctx, { ...defaults, saveDefaultModelSelection: save })
+      const controller = await createSessionTestController(ctx, { ...defaults, saveDefaultModelSelection: save })
       if (state !== 'missing') installPrincipal(ctx, { ...principal, role: state === 'user' ? 'user' : 'admin' })
       if (state !== 'provider-missing') {
         const access = new AllowListPrincipalAccess(ctx, new Set())

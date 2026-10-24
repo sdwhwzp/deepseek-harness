@@ -1,8 +1,9 @@
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import { z } from 'zod'
 
 /** Recover a tool caller from committed turn state, including a mid-turn plugin mount. */
-export const goalRoundOwnerProjection: ProjectionDefinition<'goalRoundOwner'> = {
+export const goalRoundOwnerProjection: ProjectionDefinition<'goalRoundOwner', AuthenticatedPrincipal | null> = {
   key: 'goalRoundOwner',
   stateVersion: 1,
   stateSchema: z.object({

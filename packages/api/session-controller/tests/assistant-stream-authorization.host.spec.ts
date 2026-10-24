@@ -8,6 +8,7 @@ import {
   type PrincipalAccessResult,
   type PrincipalAccessSubjects,
 } from '@deepseek-ai/dsh-principal-access'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionStore from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import type { SessionAssistantStreamFrame, SessionFollowFrame } from '../src/types.ts'
@@ -57,12 +58,13 @@ class DelayedPrincipalAccess extends PrincipalAccessService {
 async function harness(batch: boolean) {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
   const agent = { id: session.id, session, status: 'running', ctx } as Agent
   ctx.provide('typertGateway', { currentPrincipal: () => principal } as never)
   const access = new DelayedPrincipalAccess(ctx)
-  const controller = createSessionTestController(ctx, {
+  const controller = await createSessionTestController(ctx, {
     defaultModelSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
     cwd: '/workspace',
   })
