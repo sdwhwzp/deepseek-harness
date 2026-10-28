@@ -1,0 +1,114 @@
+name: Build Windows desktop packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/windows-portable.yml
+      - apps/desktop/**
+      - apps/desktop-host/**
+      - packages/bundle/web-app/**
+      - package.json
+      - pnpm-lock.yaml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows x64 · ${{ matrix.package }}
+    if: github.repository == 'sdwhwzp/deepseek-harness'
+    runs-on: windows-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: installer
+            script: package:desktop:win:x64:unsigned
+            output: apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts
+            extension: .exe
+          - package: portable
+            script: package:desktop:win:x64:portable:unsigned
+            output: apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/portable
+            extension: .zip
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Select the common package version
+        id: version
+        run: >-
+          node --input-type=module -e "import {appendFileSync,readFileSync} from 'node:fs';
+          const version=JSON.parse(readFileSync('apps/desktop/package.json','utf8')).version;
+          appendFileSync(process.env.GITHUB_OUTPUT,'version='+version+'\n');"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/desktop/tsnet/go.mod
+          cache-dependency-path: apps/desktop/tsnet/go.sum
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prepare unsigned application configuration
+        run: >-
+          node --input-type=module -e "import {writeFileSync} from 'node:fs';
+          writeFileSync('apps/desktop/.env.windows', 'DSH_DESKTOP_APP_ID=com.deepseek.harness\n');"
+      - name: Verify tsnet proxy behavior
+        working-directory: apps/desktop/tsnet
+        run: go test ./...
+      - name: Check Windows packaging tools
+        run: pnpm run ${{ matrix.script }} --check --build-version ${{ steps.version.outputs.version }}
+      - name: Build and verify the application
+        run: pnpm run ${{ matrix.script }} --build-version ${{ steps.version.outputs.version }}
+      - name: Record package checksums
+        env:
+          DSH_PACKAGE_OUTPUT: ${{ matrix.output }}
+          DSH_PACKAGE_EXTENSION: ${{ matrix.extension }}
+        run: |
+          @'
+          import {readdirSync,readFileSync,writeFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          import {join} from 'node:path';
+          const directory=process.env.DSH_PACKAGE_OUTPUT;
+          const archives=readdirSync(directory).filter(name=>name.endsWith(process.env.DSH_PACKAGE_EXTENSION));
+          if(archives.length!==1) throw Error('Expected one verified Windows package');
+          const rows=archives.map(name=>createHash('sha256').update(readFileSync(join(directory,name))).digest('hex')+'  '+name);
+          writeFileSync(join(directory,'SHA256SUMS'),rows.join('\n')+'\n');
+          writeFileSync(join(directory,'COMMIT'),process.env.GITHUB_SHA+'\n');
+          '@ | node --input-type=module
+      - name: Upload the verified Windows package
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: dsh-windows-${{ matrix.package }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ matrix.output }}/*${{ matrix.extension }}
+            ${{ matrix.output }}/SHA256SUMS
+            ${{ matrix.output }}/COMMIT
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Upload packaging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: dsh-windows-${{ matrix.package }}-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/desktop/.desktop-build/packaging-runs/
+          if-no-files-found: ignore
+          retention-days: 7

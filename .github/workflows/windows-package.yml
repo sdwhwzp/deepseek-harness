@@ -140,6 +140,12 @@ jobs:
       - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
+      - name: Set up tsnet build toolchain
+        if: ${{ hashFiles('apps/desktop/tsnet/go.mod') != '' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/desktop/tsnet/go.mod
+          cache-dependency-path: apps/desktop/tsnet/go.sum
       - name: Select packaging workspace
         id: build_workspace
         env:
