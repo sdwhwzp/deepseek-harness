@@ -44,6 +44,8 @@ dsh --profile web --no-open --port 8080
 
 已保存的模型选择覆盖组合默认值。设置卡接受兼容 Messages 的 API 地址与凭据引用。
 
+此分支在 Web 与 Desktop 共用的组合中包含 [dsh-boot-animation](https://github.com/sdwhwzp/dsh-boot-animation)，视频素材随包提供。通过「设置 → 启动动画」控制播放、声音与进入时机；关闭动画后恢复标准加载页。profile 补丁也可以完全禁用 `boot-animation` 条目。
+
 ### 配置
 
 `minimal` agent preset 使用持久 Shell、`read_image` 工具和固定 persona，支持自动历史压缩以及会话空闲时的 `/compact` 命令。它复用 Host token meter，并拥有隔离的压缩后端。[压缩配置与保留策略](../../compaction/compaction-basic/README.zh.md#use-this-package) 沿用现有后端。图片读取复用 Host 文件系统和附件存储，要求模型支持图片输入；不加载文本读取、写入和编辑工具。

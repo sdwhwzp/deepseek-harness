@@ -195,6 +195,9 @@
         publicUrl: !!js ctx.webStartup.publicUrl
         surfaceContext: true
 
+    - id: boot-animation
+      name: dsh-boot-animation
+
     # Model context for an agent that inspects or extends the harness serving
     # this GUI: value-free prompt sections plus the current checkout and GUI
     # URL as optional runtime context. A complete agent-preset persona replaces
