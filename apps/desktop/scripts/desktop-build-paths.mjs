@@ -118,11 +118,14 @@ export function developmentRuntimeDirectory(
 /**
  * Select the output directory and filename suffix for one packaging mode.
  * @param {{ artifacts: string, unsignedArtifacts: string, unnotarizedArtifacts: string }} paths Target artifact directories.
- * @param {{ unsigned: boolean, skipNotarization: boolean }} mode Validated packaging mode.
+ * @param {{ unsigned: boolean, skipNotarization: boolean, portable?: boolean }} mode Validated packaging mode.
  * @returns {{ directory: string, suffix: string }} Matching artifact destination and filename marker.
  */
 export function desktopArtifactOutput(paths, mode) {
-  if (mode.unsigned) return { directory: paths.unsignedArtifacts, suffix: '-unsigned' }
-  if (mode.skipNotarization) return { directory: paths.unnotarizedArtifacts, suffix: '-unnotarized' }
-  return { directory: paths.artifacts, suffix: '' }
+  const directory = mode.unsigned ? paths.unsignedArtifacts : mode.skipNotarization ? paths.unnotarizedArtifacts : paths.artifacts
+  const suffix = mode.unsigned ? '-unsigned' : mode.skipNotarization ? '-unnotarized' : ''
+  return {
+    directory: mode.portable ? join(directory, 'portable') : directory,
+    suffix: `${mode.portable ? '-portable' : ''}${suffix}`,
+  }
 }
