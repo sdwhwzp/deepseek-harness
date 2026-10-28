@@ -1,6 +1,19 @@
 /** Typed shell copy for every shipped language owned by the Electron shell. */
 
 export const en = {
+  remoteAccessMenu: 'Remote access…',
+  remoteAccessTitle: 'Private network with Tailscale',
+  remoteAccessOff: 'Connect DSH to Tailscale or Headscale for remote access and private services.',
+  remoteAccessLogin: 'Sign in to connect your private network.',
+  remoteAccessReady: 'Private network connected',
+  remoteAccessOpenWorkspace: 'Open the workspace on this desktop to enable incoming access.',
+  remoteAccessApproval: 'Approve this device in your Tailscale or Headscale administration console.',
+  remoteAccessFailed: 'Private networking is unavailable. Check its settings, then restart DSH to retry.',
+  remoteAccessConnecting: 'Connecting to your private network…',
+  remoteAccessEnable: 'Enable and restart',
+  remoteAccessDisable: 'Disable and restart',
+  remoteAccessCopy: 'Copy DSH access link',
+  remoteAccessSettings: 'Open network settings',
   cliCommandMenu: 'Manage dsh Command…',
   cliCommandTitle: 'Manage dsh Command',
   cliCommandLocation: 'Desktop command: {path}',
@@ -180,6 +193,19 @@ export const en = {
 export type DesktopMessages = { readonly [Key in keyof typeof en]: string }
 
 export const zh = {
+  remoteAccessMenu: '远程访问…',
+  remoteAccessTitle: 'Tailscale 私有网络',
+  remoteAccessOff: '连接 Tailscale 或 Headscale，让其他设备访问 DSH，同时访问内网服务。',
+  remoteAccessLogin: '登录以连接你的私有网络。',
+  remoteAccessReady: '私有网络已连接',
+  remoteAccessOpenWorkspace: '请先在这台桌面端打开工作区，再从其他设备访问。',
+  remoteAccessApproval: '请在 Tailscale 或 Headscale 管理端批准此设备。',
+  remoteAccessFailed: '私有网络不可用。请检查网络配置，然后重启 DSH 重试。',
+  remoteAccessConnecting: '正在连接私有网络…',
+  remoteAccessEnable: '启用并重启',
+  remoteAccessDisable: '停用并重启',
+  remoteAccessCopy: '复制 DSH 访问链接',
+  remoteAccessSettings: '打开网络配置',
   cliCommandMenu: '管理 dsh 命令…',
   cliCommandTitle: '管理 dsh 命令',
   cliCommandLocation: 'Desktop 命令：{path}',
@@ -357,6 +383,19 @@ export const zh = {
 
 /** Japanese copy, checked against the English keys. */
 export const ja = {
+  remoteAccessMenu: 'リモートアクセス…',
+  remoteAccessTitle: 'Tailscale プライベートネットワーク',
+  remoteAccessOff: 'DSH を Tailscale または Headscale に接続して、リモートアクセスと内部サービスを利用します。',
+  remoteAccessLogin: 'サインインしてプライベートネットワークに接続してください。',
+  remoteAccessReady: 'プライベートネットワークに接続済み',
+  remoteAccessOpenWorkspace: 'このデスクトップでワークスペースを開くと、他のデバイスからアクセスできます。',
+  remoteAccessApproval: 'Tailscale または Headscale の管理画面でこのデバイスを承認してください。',
+  remoteAccessFailed: 'ネットワークを利用できません。設定を確認し、DSH を再起動してください。',
+  remoteAccessConnecting: 'プライベートネットワークに接続中…',
+  remoteAccessEnable: '有効にして再起動',
+  remoteAccessDisable: '無効にして再起動',
+  remoteAccessCopy: 'DSH アクセスリンクをコピー',
+  remoteAccessSettings: 'ネットワーク設定を開く',
   cliCommandMenu: 'dsh コマンドを管理…',
   cliCommandTitle: 'dsh コマンドを管理',
   cliCommandLocation: 'デスクトップコマンド: {path}',
@@ -534,6 +573,19 @@ export const ja = {
 
 /** Spanish dictionary, checked against the English keys. */
 export const es = {
+  remoteAccessMenu: 'Acceso remoto…',
+  remoteAccessTitle: 'Red privada con Tailscale',
+  remoteAccessOff: 'Conecta DSH a Tailscale o Headscale para acceder de forma remota y usar servicios privados.',
+  remoteAccessLogin: 'Inicia sesión para conectar tu red privada.',
+  remoteAccessReady: 'Red privada conectada',
+  remoteAccessOpenWorkspace: 'Abre el espacio de trabajo en este escritorio para permitir el acceso desde otros dispositivos.',
+  remoteAccessApproval: 'Aprueba este dispositivo en la consola de administración de Tailscale o Headscale.',
+  remoteAccessFailed: 'La red privada no está disponible. Revisa su configuración y reinicia DSH.',
+  remoteAccessConnecting: 'Conectando a tu red privada…',
+  remoteAccessEnable: 'Activar y reiniciar',
+  remoteAccessDisable: 'Desactivar y reiniciar',
+  remoteAccessCopy: 'Copiar enlace de acceso a DSH',
+  remoteAccessSettings: 'Abrir configuración de red',
   cliCommandMenu: 'Administrar el comando dsh…',
   cliCommandTitle: 'Administrar el comando dsh',
   cliCommandLocation: 'Comando de escritorio: {path}',
@@ -711,6 +763,19 @@ export const es = {
 
 /** French dictionary, checked against the English keys. */
 export const fr = {
+  remoteAccessMenu: 'Accès à distance…',
+  remoteAccessTitle: 'Réseau privé avec Tailscale',
+  remoteAccessOff: 'Connectez DSH à Tailscale ou Headscale pour accéder à distance et utiliser les services privés.',
+  remoteAccessLogin: 'Connectez-vous pour rejoindre votre réseau privé.',
+  remoteAccessReady: 'Réseau privé connecté',
+  remoteAccessOpenWorkspace: 'Ouvrez cet espace de travail sur ce bureau pour permettre les accès entrants.',
+  remoteAccessApproval: 'Approuvez cet appareil dans la console Tailscale ou Headscale.',
+  remoteAccessFailed: 'Le réseau privé est indisponible. Vérifiez sa configuration, puis redémarrez DSH.',
+  remoteAccessConnecting: 'Connexion à votre réseau privé…',
+  remoteAccessEnable: 'Activer et redémarrer',
+  remoteAccessDisable: 'Désactiver et redémarrer',
+  remoteAccessCopy: 'Copier le lien d’accès DSH',
+  remoteAccessSettings: 'Ouvrir la configuration réseau',
   cliCommandMenu: 'Gérer la commande dsh…',
   cliCommandTitle: 'Gérer la commande dsh',
   cliCommandLocation: 'Commande de bureau : {path}',
@@ -888,6 +953,19 @@ export const fr = {
 
 /** German dictionary, checked against the English keys. */
 export const de = {
+  remoteAccessMenu: 'Fernzugriff…',
+  remoteAccessTitle: 'Privates Netzwerk mit Tailscale',
+  remoteAccessOff: 'Verbinden Sie DSH mit Tailscale oder Headscale für Fernzugriff und private Dienste.',
+  remoteAccessLogin: 'Melden Sie sich an, um Ihr privates Netzwerk zu verbinden.',
+  remoteAccessReady: 'Privates Netzwerk verbunden',
+  remoteAccessOpenWorkspace: 'Öffnen Sie den Arbeitsbereich auf diesem Desktop, um eingehenden Zugriff zu erlauben.',
+  remoteAccessApproval: 'Genehmigen Sie dieses Gerät in der Verwaltung von Tailscale oder Headscale.',
+  remoteAccessFailed: 'Privates Netzwerk nicht verfügbar. Prüfen Sie die Einstellungen und starten Sie DSH neu.',
+  remoteAccessConnecting: 'Verbindung zum privaten Netzwerk…',
+  remoteAccessEnable: 'Aktivieren und neu starten',
+  remoteAccessDisable: 'Deaktivieren und neu starten',
+  remoteAccessCopy: 'DSH-Zugriffslink kopieren',
+  remoteAccessSettings: 'Netzwerkeinstellungen öffnen',
   cliCommandMenu: 'dsh-Befehl verwalten…',
   cliCommandTitle: 'dsh-Befehl verwalten',
   cliCommandLocation: 'Desktop-Befehl: {path}',
@@ -1065,6 +1143,19 @@ export const de = {
 
 /** Russian dictionary, checked against the English keys. */
 export const ru = {
+  remoteAccessMenu: 'Удалённый доступ…',
+  remoteAccessTitle: 'Частная сеть Tailscale',
+  remoteAccessOff: 'Подключите DSH к Tailscale или Headscale для удалённого доступа и работы с внутренними сервисами.',
+  remoteAccessLogin: 'Войдите, чтобы подключиться к частной сети.',
+  remoteAccessReady: 'Частная сеть подключена',
+  remoteAccessOpenWorkspace: 'Откройте рабочее пространство на этом компьютере для входящего доступа.',
+  remoteAccessApproval: 'Одобрите устройство в консоли администрирования Tailscale или Headscale.',
+  remoteAccessFailed: 'Частная сеть недоступна. Проверьте настройки и перезапустите DSH.',
+  remoteAccessConnecting: 'Подключение к частной сети…',
+  remoteAccessEnable: 'Включить и перезапустить',
+  remoteAccessDisable: 'Отключить и перезапустить',
+  remoteAccessCopy: 'Копировать ссылку доступа к DSH',
+  remoteAccessSettings: 'Открыть настройки сети',
   cliCommandMenu: 'Управление командой dsh…',
   cliCommandTitle: 'Управление командой dsh',
   cliCommandLocation: 'Команда Desktop: {path}',
@@ -1242,6 +1333,19 @@ export const ru = {
 
 /** Portuguese dictionary, checked against the English keys. */
 export const pt = {
+  remoteAccessMenu: 'Acesso remoto…',
+  remoteAccessTitle: 'Rede privada com Tailscale',
+  remoteAccessOff: 'Conecte o DSH ao Tailscale ou Headscale para acesso remoto e serviços privados.',
+  remoteAccessLogin: 'Entre para conectar sua rede privada.',
+  remoteAccessReady: 'Rede privada conectada',
+  remoteAccessOpenWorkspace: 'Abra o espaço de trabalho neste computador para permitir o acesso de outros dispositivos.',
+  remoteAccessApproval: 'Aprove este dispositivo no console de administração do Tailscale ou Headscale.',
+  remoteAccessFailed: 'A rede privada está indisponível. Confira as configurações e reinicie o DSH.',
+  remoteAccessConnecting: 'Conectando à sua rede privada…',
+  remoteAccessEnable: 'Ativar e reiniciar',
+  remoteAccessDisable: 'Desativar e reiniciar',
+  remoteAccessCopy: 'Copiar link de acesso ao DSH',
+  remoteAccessSettings: 'Abrir configurações de rede',
   cliCommandMenu: 'Gerenciar comando dsh…',
   cliCommandTitle: 'Gerenciar comando dsh',
   cliCommandLocation: 'Comando da área de trabalho: {path}',

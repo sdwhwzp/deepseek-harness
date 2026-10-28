@@ -3,7 +3,7 @@ import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
 import { access, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app,
@@ -66,6 +66,9 @@ import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
+import { DesktopTsnet, desktopTsnetEnvironment, readDesktopTsnetConfig, writeDesktopTsnetEnabled } from './tsnet.ts'
+import type { DesktopTsnetConfig } from './tsnet.ts'
+import { DesktopTsnetMenu } from './tsnet-menu.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => { await stopOperationReports() }
@@ -375,8 +378,6 @@ async function main(): Promise<void> {
   const primaryRuntime = development
     ? developmentPrimaryRuntime()
     : join(process.resourcesPath, 'runtime', 'primary-runtime')
-  const activeProject = paths.profile
-  const manager = new DesktopProjectManager(paths, resources)
   // Dock and Finder launches inherit only launchd's environment; every Host shares one login-shell read.
   const loginShellRead = new AbortController()
   // The probe runs in its own process group, which outlives Desktop unless the read is aborted.
@@ -387,9 +388,57 @@ async function main(): Promise<void> {
     for (const failure of result.failures) console.warn(`desktop login shell: ${failure.shell} failed (${failure.reason})`)
     return result.environment
   })
-  let hostEnvironment: NodeJS.ProcessEnv = process.env
-  const prepareHostEnvironment = async (): Promise<void> => { hostEnvironment = await loginShell }
   let quitting = false
+  let tsnetConfig: DesktopTsnetConfig | undefined
+  let tsnet: DesktopTsnet | undefined
+  let tsnetProxy: string | undefined
+  let tsnetSetupFailure: Error | undefined
+  const startPrivateNetwork = async (): Promise<void> => {
+    if (tsnetConfig === undefined || !tsnetConfig.enabled) return
+    const environment = await loginShell
+    if (quitting) return
+    const directory = development ? resolve(primaryRuntime, '../../tsnet') : join(process.resourcesPath, 'tsnet')
+    tsnet = new DesktopTsnet(join(directory, process.platform === 'win32' ? 'dsh-tsnet.exe' : 'dsh-tsnet'), tsnetConfig,
+      join(app.getPath('userData'), 'desktop', 'tailscale-state'), (state) => {
+        if (state.phase === 'error') console.error('desktop private network:', state.code)
+      }, environment)
+    tsnetProxy = await tsnet.start()
+  }
+  try {
+    tsnetConfig = await readDesktopTsnetConfig(app.getPath('userData'))
+    await startPrivateNetwork()
+  } catch (_error) {
+    tsnetSetupFailure = new Error('Private networking could not start. Fix desktop/tailscale.json or disable it, then restart DSH.')
+    console.error(tsnetSetupFailure.message)
+  }
+  const networkSessions = new Set<Electron.Session>()
+  const configureBrowserNetwork = async (browserSession: Electron.Session): Promise<void> => {
+    networkSessions.add(browserSession)
+    if (tsnetProxy !== undefined) await browserSession.setProxy({ mode: 'fixed_servers', proxyRules: tsnetProxy,
+      proxyBypassRules: 'localhost;127.0.0.1;[::1]' })
+  }
+  await configureBrowserNetwork(session.defaultSession)
+  const withdrawPrivateAccess = async (): Promise<void> => {
+    try { await tsnet?.publishWorkspace() }
+    catch (error) { console.error('desktop private listener could not withdraw:', error); await tsnet?.close() }
+  }
+  const activeProject = paths.profile
+  const manager = new DesktopProjectManager(paths, resources)
+  let hostEnvironment: NodeJS.ProcessEnv = process.env
+  const prepareHostEnvironment = async (): Promise<void> => {
+    if (tsnetSetupFailure !== undefined) throw tsnetSetupFailure
+    const environment = await loginShell
+    hostEnvironment = tsnetProxy === undefined ? environment : desktopTsnetEnvironment(environment, tsnetProxy)
+  }
+  let tsnetStoppedForUpdate = false
+  const restorePrivateNetwork = async (): Promise<void> => {
+    if (!tsnetStoppedForUpdate) return
+    await tsnet?.close()
+    if (quitting) return
+    await startPrivateNetwork()
+    await Promise.all([...networkSessions].map(configureBrowserNetwork))
+    tsnetStoppedForUpdate = false
+  }
   let startup: Promise<void> | undefined
   let workspaceRecovery: Promise<void> | undefined
   let mainWindow: BrowserWindow | undefined
@@ -472,7 +521,7 @@ async function main(): Promise<void> {
   const applicationUrl = `${SCHEME}://app/`
   let hostUrl: string | undefined
   let hostCookie: string | undefined
-  const browserGuests = new DesktopBrowserGuests(() => hostUrl)
+  const browserGuests = new DesktopBrowserGuests(() => hostUrl, configureBrowserNetwork)
   let injections: readonly unknown[] = []
   let welcomeBackend: DesktopWelcomeBackend | undefined
   let reportedLaunch = false
@@ -513,7 +562,7 @@ async function main(): Promise<void> {
   }
   const platformView = new DesktopPlatformView(join(app.getAppPath(), 'lib', 'preload-platform-account.cjs'),
     () => locale.id === 'zh-CN' ? 'zh_CN' : 'en_US', process.platform === 'win32' ? 'win32' : 'darwin',
-    owner => isMandatory() || updateOverlays.input(owner).blocked)
+    owner => isMandatory() || updateOverlays.input(owner).blocked, configureBrowserNetwork)
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
@@ -551,7 +600,7 @@ async function main(): Promise<void> {
           }
           if (state.status === 'credential-stored' && attempt?.phase === 'succeeded' && welcomeWindow !== undefined) void enterWorkspace({ activate: false }).catch(() => undefined)
           if (previousAccountStatus === 'credential-stored' && state.status === 'signed-out') {
-            void readWelcomeState().then(async (value) => {
+            void withdrawPrivateAccess().then(readWelcomeState).then(async (value) => {
               if (needsWelcome(value) && !quitting) {
                 enteredWorkspace = false
                 await showWelcome()
@@ -565,7 +614,9 @@ async function main(): Promise<void> {
           // The stream reconnects; a transport failure does not change account state.
         }, () => {
           void readWelcomeState().then(async (value) => {
-            if (!needsWelcome(value) || quitting) return
+            if (quitting) return
+            await withdrawPrivateAccess()
+            if (!needsWelcome(value)) return
             pendingWelcomeNotice = 'session-expired'
             enteredWorkspace = false
             await showWelcome()
@@ -573,8 +624,10 @@ async function main(): Promise<void> {
             if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
           }).catch(() => undefined)
         }, (enabled) => { analyticsEnabled = enabled })
+        if (enteredWorkspace && !quitting && tsnet !== undefined) await tsnet.publishWorkspace(ready.url)
       },
       stop: async () => {
+        await withdrawPrivateAccess()
         analyticsEnabled = false
         stopAccount?.()
         try { await host.stop(requireCleanStop) }
@@ -627,7 +680,9 @@ async function main(): Promise<void> {
       updateStoppedHost = false
       if (restoreHost) {
         // Only confirmed process exit permits replacement before another installation confirmation.
-        const hostReady = backend.start(prepareHostEnvironment)
+        const hostReady = restorePrivateNetwork().then(async () => {
+          if (!quitting) await backend.start(prepareHostEnvironment)
+        })
         startup = hostReady
         const recovery = hostReady.then(async () => {
           if (quitting) return
@@ -654,7 +709,7 @@ async function main(): Promise<void> {
   stopForRecovery = async () => {
     const reports = stopOperationReports()
     try { await backend.close() }
-    finally { await Promise.all([operationJournal?.drain(500), reports]) }
+    finally { await Promise.all([operationJournal?.drain(500), reports, tsnet?.close()]) }
   }
 
   const reconcileBackend = (): Promise<void> => {
@@ -719,6 +774,8 @@ async function main(): Promise<void> {
         const stopFailure = updateStopFailure as DesktopHostUncleanExitError | undefined
         if (stopFailure !== undefined) throw new DesktopUpdatePreparationError('stop-failed', locale.messages.updateStopFailed, stopFailure.message)
         await operationJournal?.drain(500)
+        tsnetStoppedForUpdate = tsnet !== undefined
+        await tsnet?.close()
         updateJournal?.action('install-confirmed')
         shellInstallerOwnsQuit = true
       } catch (error) {
@@ -798,9 +855,12 @@ async function main(): Promise<void> {
     reportFatal(new Error(message), 'web-boot')
   })
 
-  ipcMain.handle(DESKTOP_IPC.browserAcquire, (event, workspace: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.browserAcquire, async (event, workspace: unknown) => {
     assertProductSender(event)
-    return browserGuests.acquire(event.sender, workspace)
+    const reservation = browserGuests.acquire(event.sender, workspace)
+    try { await browserGuests.prepare(reservation.lease) }
+    catch (error) { await browserGuests.release(event.sender, reservation.lease); throw error }
+    return reservation
   })
   ipcMain.handle(DESKTOP_IPC.browserRelease, (event, lease: unknown) => {
     assertProductSender(event)
@@ -1047,6 +1107,29 @@ async function main(): Promise<void> {
       { role: 'hideOthers', label: currentDesktopLocale().messages.hideOtherApplications },
       { role: 'unhide', label: currentDesktopLocale().messages.showAllApplications }, { type: 'separator' }]
     : []
+  const tsnetMenu = new DesktopTsnetMenu({
+    locale: currentDesktopLocale,
+    config: tsnetConfig, get client() { return tsnet },
+    show: ordinaryMessageBox,
+    open: url => shell.openExternal(url),
+    copy: text => clipboard.writeText(text),
+    settings: async () => {
+      const file = join(app.getPath('userData'), 'desktop', 'tailscale.json')
+      try { await access(file) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        await writeDesktopTsnetEnabled(app.getPath('userData'), tsnetConfig?.enabled ?? false)
+      }
+      const failure = await shell.openPath(file)
+      if (failure !== '') shell.showItemInFolder(file)
+    },
+    restart: async (enabled) => {
+      if (!await quitConfirmation.confirm()) return
+      await writeDesktopTsnetEnabled(app.getPath('userData'), enabled)
+      app.relaunch()
+      quitWithoutConfirmation()
+    },
+  })
   const applicationItems = (): MenuItemConstructorOptions[] => [
     // Windows has no system About panel; Electron's fallback is a plain
     // message box, so the shell shows its own dimmed dialog instead.
@@ -1056,6 +1139,8 @@ async function main(): Promise<void> {
       : { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
     { type: 'separator' },
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
+    { label: currentDesktopLocale().messages.remoteAccessMenu,
+      click: () => { void tsnetMenu.show().catch((error: unknown) => { console.error(error) }) } },
     ...process.platform === 'darwin' || process.platform === 'win32'
       ? [{ label: currentDesktopLocale().messages.cliCommandMenu, click: () => { void commandManager.show() } }] : [],
     ...development ? [
@@ -1232,6 +1317,7 @@ async function main(): Promise<void> {
     if (activate && development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
       window.webContents.openDevTools({ mode: 'detach' })
     }
+    if (hostUrl !== undefined && tsnet !== undefined) await tsnet.publishWorkspace(hostUrl)
   }
   let openingWelcome: Promise<void> | undefined
   const showWelcome = (): Promise<void> => {
@@ -1360,6 +1446,7 @@ async function main(): Promise<void> {
       }),
       platformView.dispose(),
       disposeFileDrag(),
+      tsnet?.close() ?? Promise.resolve(),
     ].map(cleanup => cleanup.catch((error: unknown) => { console.error(error) })))
       .then(() => { app.quit() })
   }

@@ -7,6 +7,7 @@ import { DESKTOP_IPC } from './ipc.ts'
 interface GuestLease {
   readonly owner: WebContents
   readonly partition: string
+  readonly networkReady: Promise<void>
   attached: boolean
   guest?: WebContents
   releaseInput?: () => void
@@ -14,11 +15,15 @@ interface GuestLease {
 
 /** Owns workspace storage partitions independently from individual tab guests. */
 export class DesktopBrowserGuests {
-  private readonly partitions = new Map<string, string>()
+  private readonly partitions = new Map<string, { partition: string; networkReady: Promise<void> }>()
   private readonly leases = new Map<DesktopBrowserLeaseId, GuestLease>()
 
-  /** @param hostUrl - current authenticated DSH Host, which guests cannot request. */
-  constructor(private readonly hostUrl: () => string | undefined) {}
+  /**
+   * @param hostUrl Current authenticated DSH Host, which guests cannot request.
+   * @param prepareNetwork Optional network initialization, awaited before releasing a reservation to the renderer.
+   */
+  constructor(private readonly hostUrl: () => string | undefined,
+    private readonly prepareNetwork: (browserSession: Session) => Promise<void> = async () => {}) {}
 
   /**
    * Reserve one guest in a workspace's process-lifetime partition.
@@ -30,15 +35,27 @@ export class DesktopBrowserGuests {
     if (typeof workspace !== 'string' || workspace.length === 0 || workspace.length > 4096) {
       throw new Error('desktop browser: a workspace storage identity is required')
     }
-    let partition = this.partitions.get(workspace)
-    if (partition === undefined) {
-      partition = `dsh-sidebar-browser-${randomUUID()}`
-      this.configureSession(session.fromPartition(partition))
-      this.partitions.set(workspace, partition)
+    let storage = this.partitions.get(workspace)
+    if (storage === undefined) {
+      const partition = `dsh-sidebar-browser-${randomUUID()}`
+      const browserSession = session.fromPartition(partition)
+      this.configureSession(browserSession)
+      storage = { partition, networkReady: this.prepareNetwork(browserSession) }
+      this.partitions.set(workspace, storage)
     }
     const lease = randomUUID() as DesktopBrowserLeaseId
-    this.leases.set(lease, { owner, partition, attached: false })
-    return { lease, partition }
+    this.leases.set(lease, { owner, ...storage, attached: false })
+    return { lease, partition: storage.partition }
+  }
+
+  /**
+   * Complete network initialization before the renderer can navigate a reserved guest.
+   * @param id Lease returned by acquire.
+   */
+  async prepare(id: DesktopBrowserLeaseId): Promise<void> {
+    const lease = this.leases.get(id)
+    if (lease === undefined) throw new Error('desktop browser: guest lease was released')
+    await lease.networkReady
   }
 
   /**
