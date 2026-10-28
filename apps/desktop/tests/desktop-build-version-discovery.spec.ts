@@ -89,4 +89,14 @@ describe('desktop build version discovery', () => {
     await expect(suggestDesktopBuildVersion({ productVersion: PRERELEASE, target: 'win-x64', environment: {}, date: DATE, artifactsRoot }))
       .resolves.toBe(`${PRERELEASE}.${DATE}.3`)
   })
+
+  it('counts signed and unsigned portable ZIPs without counting their blockmaps', async () => {
+    const artifactsRoot = await artifactsWith([
+      `deepseek-harness-${PRERELEASE}.${DATE}.2-win-x64-portable.zip`,
+      `deepseek-harness-${PRERELEASE}.${DATE}.4-win-x64-portable-unsigned.zip`,
+      `deepseek-harness-${PRERELEASE}.${DATE}.9-win-x64-portable-unsigned.zip.blockmap`,
+    ])
+    await expect(suggestDesktopBuildVersion({ productVersion: PRERELEASE, target: 'win-x64', environment: {}, date: DATE, artifactsRoot }))
+      .resolves.toBe(`${PRERELEASE}.${DATE}.5`)
+  })
 })

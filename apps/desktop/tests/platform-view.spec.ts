@@ -80,6 +80,33 @@ function view() {
 }
 const bounds = { x: 10, y: 20, width: 800, height: 600 }
 
+it('waits for private-network configuration before creating or loading a Platform document', async () => {
+  const { owner } = setup()
+  const gate = Promise.withResolvers<undefined>()
+  const prepare = vi.fn(() => gate.promise)
+  const manager = new DesktopPlatformView('/bundled/preload.cjs', () => 'en_US', 'darwin', () => false, prepare)
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'fixture-secret' })
+  const operation = manager.open(owner, 'usage', bounds)
+  expect(prepare).toHaveBeenCalledOnce()
+  expect(state.views).toHaveLength(0)
+  gate.resolve(undefined)
+  await operation
+  expect(view().webContents.loadURL).toHaveBeenCalledWith('https://platform.deepseek.com/usage')
+  await manager.dispose()
+})
+
+it('releases its owner after network setup fails and permits a subsequent open', async () => {
+  const { owner } = setup()
+  const prepare = vi.fn().mockRejectedValueOnce(new Error('proxy unavailable')).mockResolvedValue(undefined)
+  const manager = new DesktopPlatformView('/bundled/preload.cjs', () => 'en_US', 'darwin', () => false, prepare)
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'fixture-secret' })
+  await expect(manager.open(owner, 'usage', bounds)).rejects.toThrow('proxy unavailable')
+  expect(owner.listenerCount('closed')).toBe(0)
+  await manager.open(owner, 'usage', bounds)
+  expect(view().webContents.loadURL).toHaveBeenCalledWith('https://platform.deepseek.com/usage')
+  await manager.dispose()
+})
+
 it('bootstraps only the owned main frame and never puts the token in a URL', async () => {
   const { manager, owner } = setup()
   await manager.open(owner, 'usage', bounds)

@@ -89,17 +89,45 @@ describe('installer preparation preserves application dependencies', () => {
     }
   })
 
-  it('names unsigned Windows artifacts so they cannot pass for release builds', async () => {
+  it('builds unsigned Windows installers without update services or signing credentials', async () => {
     const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
     const config = createElectronBuilderConfig({
       DSH_DESKTOP_APP_ID: 'com.example.installer',
-      DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
-      DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
       DSH_DESKTOP_TARGET_PLATFORM: 'win32',
       DSH_DESKTOP_TARGET_ARCH: 'x64',
       DSH_DESKTOP_UNSIGNED: '1',
     }, 'win32', 'x64')
     expect(config.artifactName).toBe('deepseek-harness-${version}-${os}-${arch}-unsigned.${ext}')
+    expect(config.win.target).toEqual(['nsis'])
+    expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
+    expect(config.publish).toBeNull()
+  })
+
+  it('builds portable ZIPs without installer preparation, update feeds or mandatory policies', async () => {
+    execute.mockClear()
+    write.mockClear()
+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+    const config = createElectronBuilderConfig({
+      DSH_DESKTOP_APP_ID: 'com.example.portable',
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
+      DSH_DESKTOP_TARGET_ARCH: 'x64',
+      DSH_DESKTOP_UNSIGNED: '1',
+      DSH_DESKTOP_PORTABLE: '1',
+    }, 'win32', 'x64')
+    expect(config.win.target).toEqual(['zip'])
+    expect(config.extraResources.find(resource => resource.to === 'tsnet')?.from).toMatch(/targets[\\/]win-x64[\\/]tsnet$/u)
+    expect(config.artifactName).toBe('deepseek-harness-${version}-${os}-${arch}-portable-unsigned.${ext}')
+    expect(config.directories.output).toMatch(/unsigned-artifacts[\\/]portable$/u)
+    expect(config.extraMetadata.dshDesktopPortable).toBe(true)
+    expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
+    expect(config.publish).toBeNull()
+    expect(await config.beforeBuild()).toBe(true)
+    expect(execute).not.toHaveBeenCalled()
+    expect(write).not.toHaveBeenCalled()
+    expect(() => createElectronBuilderConfig({ DSH_DESKTOP_APP_ID: 'com.example.portable', DSH_DESKTOP_PORTABLE: '1' }, 'darwin', 'arm64'))
+      .toThrow('portable packaging requires Windows')
+    expect(() => createElectronBuilderConfig({ DSH_DESKTOP_APP_ID: 'com.example.portable', DSH_DESKTOP_PORTABLE: 'invalid' }, 'win32', 'x64'))
+      .toThrow('DSH_DESKTOP_PORTABLE must be 0 or 1')
   })
 
   it('packages every preload entry point the shell loads', async () => {

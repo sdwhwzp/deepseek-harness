@@ -45,6 +45,16 @@ function supervisor(failure?: string) {
   return { run, stages }
 }
 
+it.each([false, true])('keeps portable artifacts out of installer publication records (unsigned: %s)', async (unsigned) => {
+  const { run, stages } = supervisor()
+  const args = ['win-x64', '--portable', ...(unsigned ? ['--unsigned'] : [])]
+  await packageTarget(parseDesktopPackageInvocation(args, 'win32', 'x64'), environment, run)
+  const builder = run.run.mock.calls.find(([stage]) => stage.includes('electron-builder --config'))
+  expect(builder?.[3].env.DSH_DESKTOP_PORTABLE).toBe('1')
+  expect(stages.some(stage => stage.includes('smoke-packaged-runtime.ts') && stage.endsWith('--portable'))).toBe(true)
+  expect(writeFileSync).not.toHaveBeenCalled()
+})
+
 it.each(['pack', 'runtime'] as const)('overlaps Windows preparation and waits for both before signing when %s finishes first', async (first) => {
   const { run, stages } = supervisor()
   const pack = Promise.withResolvers<undefined>()
@@ -183,7 +193,8 @@ it('initializes shared storage only after acquiring the preflight stage lock', a
   await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run)
 })
 
-it.each(['preflight:windows-signing', 'run build:official', 'run sign:primary-runtime', 'run prepare:dsh --defer-runtime-smoke', 'run sign:primary-runtime --dsh',
+it.each(['preflight:windows-signing', 'run build:official', 'run prepare:tsnet', 'run sign:primary-runtime',
+  'run prepare:dsh --defer-runtime-smoke', 'run sign:primary-runtime --dsh',
   'exec tsx scripts/smoke-packaged-runtime.ts',
   'exec electron-builder --config electron-builder.config.mjs --win --x64 --publish never'])
 ('never continues or records a release after %s fails', async (failure) => {
