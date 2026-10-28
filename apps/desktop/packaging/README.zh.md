@@ -18,6 +18,7 @@ description: "在本地或 Windows／macOS Actions 中生成 Desktop 安装包�
 - [Windows Actions 打包](#windows-actions)
 - [macOS 自托管打包](#macos-actions)
 - [未签名 Windows 测试安装包](#unsigned-windows-test-installer)
+- [Windows 免安装 ZIP](#windows-portable-zip)
 - [无发布签名的本地 macOS DMG](#local-macos-dmg-without-release-signing)
 - [macOS 发布签名与诊断](#macos-release-signing)
 - [目录构建与准备](#directory-and-preparation)
@@ -158,9 +159,21 @@ bash apps/desktop/scripts/macos-runner-service.sh status "$HOME/dsh-ci/runner"
 pnpm run package:desktop:win:x64:unsigned
 ```
 
-该命令读取 `.env.windows`，要求设置 `DSH_DESKTOP_APP_ID` 和[强制更新策略配置](../README.zh.md#mandatory-update-policy)，包括真实的 HTTPS 服务 origin。本机验收和 CI 使用 Node 24；其他工具为根 `packageManager` 固定版本的 pnpm、Git、PowerShell 7（`pwsh`）、tar、Python、Visual C++ Build Tools 和 Windows SDK。Python 不在 `PATH` 中时设置 `PYTHON`。命令将安装包写入 `.desktop-build/targets/win-x64/unsigned-artifacts/`，省略普通自动更新配置，清除签名凭据，且不生成发布完成记录。无需 EV 或上传凭据。签名打包和上传仍遵循正式发布要求。
+该命令读取 `.env.windows`，要求设置 `DSH_DESKTOP_APP_ID`。本机验收和 CI 使用 Node 24；其他工具为根 `packageManager` 固定版本的 pnpm、Git、PowerShell 7（`pwsh`）、tar、Python、Visual C++ Build Tools 和 Windows SDK。Python 不在 `PATH` 中时设置 `PYTHON`。命令将安装包写入 `.desktop-build/targets/win-x64/unsigned-artifacts/`，省略自动更新配置和强制更新策略，清除签名凭据，且不生成发布完成记录。无需 EV、上传或更新服务凭据。签名打包和上传仍遵循正式发布要求。
 
 先运行 `pnpm install --frozen-lockfile`，再运行 `pnpm run package:desktop:win:x64:unsigned --check` 校验配置和工具，最后执行上面的完整命令。打包自行执行完整构建和隔离的运行时 smoke，不调用在线模型。阶段日志保留在 `.desktop-build/packaging-runs/`；仅构建成功不代表安装包验证通过。依赖安装和运行时准备需要访问 npm、GitHub release 资源和 nodejs.org；网络需要时使用现有 registry 和代理配置。缓存与工具位置属于构建机器配置，不在跟踪文件中固定个人路径。
+
+<a id="windows-portable-zip"></a>
+
+## Windows 免安装 ZIP
+
+压缩包包含官方 tsnet 辅助进程及其依赖许可证。构建需要 Go 1.27.3 或更新版本，也可通过 `DSH_DESKTOP_GO_BINARY` 指定。最终用户通过 Desktop 运行辅助进程，无需安装 Go、Tailscale 服务或虚拟网卡。启用方式、Headscale 配置与 HTTPS/WSS 路由见[私有网络与远程访问](../README.zh.md#private-network-and-remote-access)。
+
+在 Windows x64 上运行 `pnpm --dir apps/desktop run package:win:x64:portable:unsigned`。命令读取 `.env.windows` 或选定的机器 preset，要求应用 ID 以及未签名安装包打包所需的相同构建工具，无需更新策略或签名凭据。产物为 `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/portable/deepseek-harness-<version>-win-x64-portable-unsigned.zip`。将完整压缩包解压到可写目录后运行 `DeepSeek Harness.exe`；Node、pnpm、Host 与启动视频均已包含。添加 `--check` 仅验证配置，添加 `--dir` 只保留解包应用。配置 Windows 签名后使用 `package:win:x64:portable`，可在 `artifacts/portable/` 下生成已签名 ZIP。
+
+免安装包省略安装器准备、自动更新源、强制更新策略和安装包发布完成记录。更新时先关闭 DSH，再手动替换解压后的应用文件。用户数据仍保存在标准 Harness home 和 Electron 用户数据目录中，不会移到可执行文件旁。`DSH_HOME` 仍可指定其他 Harness home。
+
+此分叉的 [Windows 打包工作流](../../../.github/workflows/windows-portable.yml)会在 `dev` 分支的相关提交后，使用 GitHub 托管的 Windows 并行构建未签名安装 EXE 和免安装 ZIP。两者使用包版本号和同一个源码提交。工作流安装 Node 24 以及项目指定版本的 pnpm 和 Go，运行 tsnet 代理测试与打包运行时 smoke，再将每个包及其 `SHA256SUMS` 和 `COMMIT` 分别上传为保留 14 天的 Actions 产物。两者包含相同的 DSH 功能、启动动画和 tsnet 辅助程序。安装版创建应用入口并支持 Windows 卸载；ZIP 解压后运行。两者使用标准用户数据目录，并通过手动替换或安装新版更新。工作流生成本地应用配置，无需签名或更新服务凭据。Mac DMG 使用下方的[本地未签名 Mac 命令](#local-macos-dmg-without-release-signing)生成。
 
 <a id="local-macos-dmg-without-release-signing"></a>
 

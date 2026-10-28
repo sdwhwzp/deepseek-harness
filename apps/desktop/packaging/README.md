@@ -18,6 +18,7 @@ Build Desktop installers locally or through Windows or macOS Actions, choose dep
 - [Windows Actions packaging](#windows-actions)
 - [macOS self-hosted packaging](#macos-actions)
 - [Unsigned Windows test installer](#unsigned-windows-test-installer)
+- [Windows portable ZIP](#windows-portable-zip)
 - [Local macOS DMG without release signing](#local-macos-dmg-without-release-signing)
 - [macOS release signing and diagnostics](#macos-release-signing)
 - [Directory builds and preparation](#directory-and-preparation)
@@ -158,9 +159,21 @@ On Windows x64, use the complete unsigned packaging command for local installati
 pnpm run package:desktop:win:x64:unsigned
 ```
 
-The command reads `.env.windows` and requires `DSH_DESKTOP_APP_ID` and the [mandatory-update policy settings](../README.md#mandatory-update-policy), including a real HTTPS service origin. The local run and CI use Node 24; the remaining tools are the root `packageManager` version of pnpm, Git, PowerShell 7 (`pwsh`), tar, Python, Visual C++ Build Tools and a Windows SDK. Set `PYTHON` when Python is absent from `PATH`. It writes the installer to `.desktop-build/targets/win-x64/unsigned-artifacts/`, omits ordinary automatic-update configuration, strips signing credentials, and creates no release completion record. EV and upload credentials are unnecessary. Signed packaging and upload retain their release requirements.
+The command reads `.env.windows` and requires `DSH_DESKTOP_APP_ID`. The local run and CI use Node 24; the remaining tools are the root `packageManager` version of pnpm, Git, PowerShell 7 (`pwsh`), tar, Python, Visual C++ Build Tools and a Windows SDK. Set `PYTHON` when Python is absent from `PATH`. It writes the installer to `.desktop-build/targets/win-x64/unsigned-artifacts/`, omits automatic-update configuration and mandatory-update policies, strips signing credentials, and creates no release completion record. EV, upload, and update-service credentials are unnecessary. Signed packaging and upload retain their release requirements.
 
 Run `pnpm install --frozen-lockfile`, then `pnpm run package:desktop:win:x64:unsigned --check` to validate configuration and tooling before the full command above. Packaging performs its own complete build and isolated runtime smoke without an online model. Stage logs remain under `.desktop-build/packaging-runs/`; a successful build alone does not qualify the installer. Dependency installation and runtime preparation need access to npm, GitHub release assets and nodejs.org; use the existing registry and proxy configuration when the network requires it. Caches and tool locations belong to the build machine, not tracked personal paths.
+
+<a id="windows-portable-zip"></a>
+
+## Windows portable ZIP
+
+The package includes the official tsnet helper and its dependency licenses. Building requires Go 1.27.3 or later, optionally selected through `DSH_DESKTOP_GO_BINARY`. End users run the helper as part of Desktop without installing Go, a Tailscale service, or a virtual adapter. Activation, Headscale configuration, and HTTPS/WSS routing are described under [private network and remote access](../README.md#private-network-and-remote-access).
+
+On Windows x64, run `pnpm --dir apps/desktop run package:win:x64:portable:unsigned`. The command reads `.env.windows` or the selected machine preset and requires the application ID and the same build tools as unsigned installer packaging, without update-policy or signing credentials. It creates `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/portable/deepseek-harness-<version>-win-x64-portable-unsigned.zip`. Extract the complete archive into a writable directory and launch `DeepSeek Harness.exe`; Node, pnpm, the Host, and the startup videos are included. Add `--check` to validate configuration, or `--dir` to keep the unpacked application only. Use `package:win:x64:portable` with the Windows signing configuration to produce a signed ZIP under `artifacts/portable/`.
+
+Portable packages omit installer preparation, automatic-update feeds, mandatory-update policies, and installer publication records. Replace the extracted application files manually while DSH is closed to update. User data retains the standard Harness home and Electron user-data directories; it does not move beside the executable. `DSH_HOME` still selects an alternate Harness home.
+
+The fork's [Windows packaging workflow](../../../.github/workflows/windows-portable.yml) builds an unsigned installer EXE and portable ZIP in parallel on GitHub-hosted Windows for matching `dev` pushes. Both use the package version and the same source commit. It installs Node 24 and the project's selected pnpm and Go versions, runs the tsnet proxy tests and packaged-runtime smoke, then uploads each package with `SHA256SUMS` and `COMMIT` as a separate Actions artifact for 14 days. Both contain the same DSH features, startup animation, and tsnet helper. The installer creates application entries and supports Windows uninstall; the ZIP runs after extraction. Both use the standard user-data directories and require manual updates. Its generated local application configuration needs no signing or update-service credentials. Mac DMGs use the [local unsigned Mac commands](#local-macos-dmg-without-release-signing) below.
 
 <a id="local-macos-dmg-without-release-signing"></a>
 
