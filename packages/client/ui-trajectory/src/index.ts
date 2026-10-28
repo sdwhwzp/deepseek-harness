@@ -4,6 +4,8 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-api-gateway/types'
+import { requirePrincipalAccess, resolvePrincipalAccess } from '@deepseek-ai/dsh-principal-access'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-tool-executor-ptc'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -98,7 +100,9 @@ export default class SessionToolResults extends TypertRemoteService {
    * Values disappear on count eviction or when the exact Session instance leaves
    * the registry. A cold read stays unavailable; opening a new stream observes
    * the current instance. Inspection does not extend a result's retention.
-   * @param request - Authorized Session identity and durable result event sequence.
+   * The transport-verified account must retain read access before opening and
+   * before each value is emitted. Denied reads acquire no result listener.
+   * @param request - Session identity and durable result event sequence.
    * @param signal - Remote consumer lifetime.
    * @returns Current availability and changes until cancellation or service disposal.
    */
@@ -106,6 +110,12 @@ export default class SessionToolResults extends TypertRemoteService {
   async *watch(request: SessionToolResultRequest, signal: AbortSignal): AsyncIterable<SessionToolResultValue> {
     const lifetime = AbortSignal.any([signal, this.lifetime.signal])
     if (lifetime.aborted) return
+    const principal = this.ctx.get('typertGateway')?.currentPrincipal()
+    const requireReadable = async (): Promise<void> => {
+      const access = await resolvePrincipalAccess(this.ctx, principal, { sessionIds: [request.sessionId] }, lifetime)
+      requirePrincipalAccess(access, { kind: 'session', id: request.sessionId })
+    }
+    await requireReadable()
     const state = this.forRequest(request)
     let update = Promise.withResolvers<void>()
     const changed = (seq?: number): void => {
@@ -115,6 +125,7 @@ export default class SessionToolResults extends TypertRemoteService {
     using _cancellation = addAbortListener(lifetime, () => { update.resolve() })
     try {
       while (!lifetime.aborted) {
+        await requireReadable()
         const value = state.values.get(request.seq)
         yield value === undefined ? { available: false } : { available: true, value }
         await update.promise

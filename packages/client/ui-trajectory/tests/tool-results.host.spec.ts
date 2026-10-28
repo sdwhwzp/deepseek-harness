@@ -5,10 +5,31 @@ import { expect, it, onTestFinished } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
+import { PrincipalAccessService, type PrincipalAccessResult, type PrincipalAccessSubjects } from '@deepseek-ai/dsh-principal-access'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import SessionToolResults, { type Config } from '../src/index.ts'
+
+const principal: AuthenticatedPrincipal = { source: 'fixture', id: 'account-one', username: 'display', role: 'user' }
+
+class AccountSessionAccess extends PrincipalAccessService {
+  readonly allowed = new Set<SessionId>()
+
+  override async resolve(candidate: AuthenticatedPrincipal, subjects: PrincipalAccessSubjects): Promise<PrincipalAccessResult> {
+    return {
+      readableSessionIds: new Set(candidate.id === principal.id
+        ? (subjects.sessionIds ?? []).filter(id => this.allowed.has(id)) : []),
+      readableWorkspaceIds: new Set(),
+    }
+  }
+}
+
+function installPrincipal(ctx: Context, candidate: AuthenticatedPrincipal): void {
+  // Only the transport principal accessor is used by the Host inspector.
+  ctx.provide('typertGateway', { currentPrincipal: () => candidate } as never)
+}
 
 async function setup(value: JsonValue = { answer: 42 }, config: Partial<Config> = {}) {
   const ctx = new Context()
@@ -49,6 +70,31 @@ async function setup(value: JsonValue = { answer: 42 }, config: Partial<Config> 
   }
   return { ctx, results, feature, agent, owner, execute, watch }
 }
+
+it.each(['principal-required', 'provider-required'] as const)('refuses inspection when account authorization is %s', async (reason) => {
+  const { ctx, execute, watch } = await setup()
+  const event = await execute()
+  if (reason === 'principal-required') new AccountSessionAccess(ctx)
+  else installPrincipal(ctx, principal)
+  await expect(watch(event.seq).next()).rejects.toMatchObject({ code: 'PRINCIPAL_ACCESS_DENIED', reason })
+})
+
+it('denies another account Session and rechecks an authorized inspector before publishing changes', async () => {
+  const { ctx, agent, execute, watch } = await setup({ private: true }, { maxResultsPerSession: 1 })
+  installPrincipal(ctx, principal)
+  const access = new AccountSessionAccess(ctx)
+  const event = await execute()
+  await expect(watch(event.seq).next()).rejects.toMatchObject({ code: 'PRINCIPAL_ACCESS_DENIED', reason: 'subject-denied' })
+  access.allowed.add(agent.id)
+  const own = watch(event.seq)
+  await expect(own.next()).resolves.toMatchObject({ value: { available: true, value: { private: true } } })
+  const changed = own.next()
+  access.allowed.clear()
+  await execute()
+  await expect(changed).rejects.toMatchObject({ code: 'PRINCIPAL_ACCESS_DENIED', reason: 'subject-denied' })
+  access.allowed.add(agent.id)
+  await expect(watch(event.seq).next()).resolves.toMatchObject({ value: { available: false } })
+})
 
 it.each([null, false, 0, '', { answer: 42 }])('retains final live value %j without adding it to the journal', async (value) => {
   const { execute, watch } = await setup(value)

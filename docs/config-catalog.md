@@ -712,7 +712,7 @@ export type ThemePreference = typeof THEME_PREFERENCES[number]
 ## `@deepseek-ai/dsh-client-ui-trajectory`
 
 - `inject`: `sessions` · `typert`
-- `source`: [`packages/client/ui-trajectory/src/index.ts:25`](../packages/client/ui-trajectory/src/index.ts)
+- `source`: [`packages/client/ui-trajectory/src/index.ts:27`](../packages/client/ui-trajectory/src/index.ts)
 
 ```ts config-catalog
 /** Count limit for each live Session's transient tool results. */
