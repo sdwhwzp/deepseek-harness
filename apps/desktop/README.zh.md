@@ -23,6 +23,7 @@ Desktop 在原生应用中运行 Harness 工作区。本参考文档说明应用
 - [打包](#package)
 - [Windows 安装界面](#windows-installer-interface)
 - [更新](#updates)
+- [私有网络与远程访问](#private-network-and-remote-access)
 - [底层开发覆盖项](#low-level-development-overrides)
 - [已知限制](#known-limitations)
 - [开发备注](#dev-note)
@@ -59,7 +60,7 @@ Desktop Host 的 Platform API 请求与更新策略请求用相同的 Platform �
 
 ## 终端命令
 
-应用菜单中的**管理 dsh 命令…**位于**检查更新…**下方，显示当前命令，并提供安装、修复和移除操作。命令复用 Desktop 已安装的运行时和普通 [dsh CLI](../cli/README.zh.md)，Desktop 应用关闭后也可以使用。安装后打开新终端，运行 `dsh --version`。
+应用菜单中的**管理 dsh 命令…**显示当前命令，并提供安装、修复和移除操作。命令复用 Desktop 已安装的运行时和普通 [dsh CLI](../cli/README.zh.md)，Desktop 应用关闭后也可以使用。安装后打开新终端，运行 `dsh --version`。
 
 macOS 安装会创建 `/usr/local/bin/dsh`；目录权限需要时，系统会请求管理员认证，不会修改 shell 启动文件。Windows 管理对话框将命令注册到当前用户的 PATH。切换已有命令前会要求确认；修复当前已选中的 Desktop 命令不会重复要求切换确认。macOS 链接会保留并恢复被替换的启动器；Windows 会保留其他 PATH 条目，包括注册前就已存在的条目。若其他命令的 PATH 优先级更高，对话框会显示其位置。移动应用后，macOS 使用“修复”，Windows 从新位置使用“安装”。“移除”不会改动无关安装。
 
@@ -261,6 +262,31 @@ Windows 打包使用 Visual C++ Build Tools 和 Windows SDK 编译 x86 Win32/GDI
 Windows 卸载程序会随应用一起删除 Electron 用户数据目录（`%APPDATA%` 下按包作用域嵌套的浏览器存储与缓存）、`%APPDATA%` 下的产品目录，以及 `%LOCALAPPDATA%` 下的更新下载缓存，随后移除 `%APPDATA%` 之下普通且已空的作用域目录。Harness 主目录（`~/.dsh` 或 `DSH_HOME`：会话、设置、凭据、插件）不会被触碰；以 Windows 环境变量发布的 `DSH_HOME` 还会保护所有与其重叠的目标。静默卸载删除相同的数据；以 `--updated` 或 `/KEEP_APP_DATA` 启动的卸载程序保留数据，electron-builder 在原地更新和从其他目录替换旧安装时正是这样启动它。删除通过原生辅助程序执行：它拒绝受保护的 Windows 目录以及与安装目录或主目录重叠的路径，要求固定的本地驱动器，链接的根目录或祖先目录原样保留，遇到重解析点只解除链接而不进入目标，清除只读属性，并在遇到被占用文件后继续删除其余兄弟项；残余不会中止卸载，也不会提示。安装时在 Windows 卸载注册项上记录 `InstallLocation` 作为标准的清单元数据；在 Windows 11 上，开始菜单右键菜单中的“卸载”对所有 Win32 应用都会打开已安装应用列表，只有 MSIX 包能从那里直接卸载。卸载程序声明 DPI 感知，中文使用微软雅黑 UI。此行为仅适用于 Windows。
 
 使用 `node apps/desktop/scripts/test-windows-installer.mjs --uninstall-only --compile-only` 以每次运行唯一的带作用域包名编译独立的中英文夹具。省略 `--compile-only` 可对预置数据运行原生删除器回归，以及交互、静默、`--updated`、`/KEEP_APP_DATA` 和 `DSH_HOME` 位于 Electron 数据内的检查。编译本身不能证明已安装卸载行为。
+
+<a id="private-network-and-remote-access"></a>
+
+## 私有网络与远程访问
+
+应用菜单中的「远程访问…」管理随包提供的官方 [tsnet](https://tailscale.com/docs/features/tsnet) 节点。默认不开启网络功能。选择「打开网络配置」编辑 `userData/desktop/tailscale.json`，然后选择「启用并重启」。重启前会询问是否中断正在运行的任务。需要注册时选择「登录」；若提示设备待批准，请到 Tailscale 或 Headscale 管理端批准设备。辅助进程以当前用户运行，无需安装 VPN 服务、虚拟网卡或系统代理。节点身份保存在 `userData/desktop/tailscale-state/` 中。
+
+同一个节点提供双向访问。桌面工作区打开后可选择「复制 DSH 访问链接」，链接沿用 DSH 原有的启动认证令牌。退出账号、停止 Host 或退出应用时会撤下入站访问。其他设备加入同一个 tailnet 后打开复制的链接即可访问。DSH Host、支持 HTTP 代理环境变量的子工具以及隔离的浏览器视图，可通过辅助进程的回环 HTTP 代理访问内网服务。普通外网流量使用直接连接或原登录 shell 的 HTTP(S) 代理。此代理仅作用于应用进程。更新安装会等待辅助进程退出；安装失败时先恢复私有节点与浏览器代理，再重启 Host 并发布新的访问链接。
+
+如果内网服务的证书使用公网域名，可将该域名映射到其 tailnet 地址：
+
+```json
+{
+  "enabled": false,
+  "hostname": "dsh-desktop",
+  "controlURL": "https://controlplane.tailscale.com",
+  "routes": [
+    { "host": "gr.gr-iot.cn", "address": "100.64.0.6" }
+  ]
+}
+```
+
+此映射同时覆盖 3081 端口的 HTTPS 和 3082 端口的 WSS，并保留原域名、端口、路径和证书校验。继续使用 `https://gr.gr-iot.cn:3081/`，以及应用原先配置的 `wss://gr.gr-iot.cn:3082` 地址。映射作用于该域名的所有端口；路由接受 Tailscale IPv4 或 IPv6 地址。使用 Headscale 时，将 `controlURL` 替换为其 HTTPS 控制服务器地址。可选的 `authKeyEnvironment` 指定保存注册密钥的环境变量名称；密钥值通过 stdin 传给辅助进程，不会写入此配置文件或出现在进程命令行中。未配置此项时，通过登录链接完成注册。配置变更需要重启；选择「停用并重启」恢复普通应用网络。辅助进程停止后会报告网络故障，需要重启或停用该功能。
+
+本地开发通过 `pnpm --dir apps/desktop run prepare:tsnet` 准备辅助进程。构建机器需要 PATH 中的 Go 1.27.3 或更新版本，也可通过 `DSH_DESKTOP_GO_BINARY` 显式指定；最终用户无需 Go，也无需另外安装 Tailscale。固定模块版本和校验和保存在 `tsnet/go.mod` 与 `tsnet/go.sum`。桌面 GitHub 打包工作流根据该模块文件选择 Go 版本，并缓存其依赖。打包会编译目标平台的可执行文件、包含依赖许可证，并在运行时 smoke 测试前检查随包辅助进程的协议。真实 tailnet 注册、ACL、设备批准和 Headscale 连接需要操作者凭据，与离线代理测试分开验证。
 
 <a id="updates"></a>
 

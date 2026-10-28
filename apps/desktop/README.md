@@ -23,6 +23,7 @@ Desktop runs the Harness workspace in a native application. This reference cover
 - [Package](#package)
 - [Windows installer interface](#windows-installer-interface)
 - [Updates](#updates)
+- [Private network and remote access](#private-network-and-remote-access)
 - [Low-level development overrides](#low-level-development-overrides)
 - [Known limitations](#known-limitations)
 - [Dev Note](#dev-note)
@@ -59,7 +60,7 @@ Press F12 (Fn+F12 on media-key keyboards), Command+Option+I on macOS, or Ctrl+Sh
 
 ## Terminal command
 
-The application menu's **Manage dsh Command…** entry, immediately below **Check for Updates…**, shows the current command and offers Install, Repair, and Remove. The command uses Desktop's installed runtime and the ordinary [dsh CLI](../cli/README.md), including when the Desktop application is closed. Open a new terminal after installation and run `dsh --version`.
+The application menu's **Manage dsh Command…** entry shows the current command and offers Install, Repair, and Remove. The command uses Desktop's installed runtime and the ordinary [dsh CLI](../cli/README.md), including when the Desktop application is closed. Open a new terminal after installation and run `dsh --version`.
 
 On macOS, installation creates `/usr/local/bin/dsh` and requests administrator authentication when the directory requires it. Shell startup files are unchanged. On Windows, the management dialog registers the command in the current user's PATH. A pre-existing command requires confirmation before switching; repairing Desktop's own selected command does not repeat that confirmation. The macOS link preserves and restores the displaced launcher; Windows preserves other PATH entries, including entries that predate registration. A command with higher PATH precedence is reported with its location. After moving the application, use Repair on macOS or Install from the new location on Windows. Remove leaves unrelated installations intact.
 
@@ -261,6 +262,31 @@ Run `pnpm --dir apps/desktop run test:installer` from the repository root on an 
 The Windows uninstaller removes the Electron user-data directory (browser storage and caches under `%APPDATA%`, nested under the package scope), the `%APPDATA%` product directory, and the updater download cache under `%LOCALAPPDATA%` together with the application, then removes ordinary empty scope directories below `%APPDATA%`. The Harness home (`~/.dsh` or `DSH_HOME`: sessions, settings, credentials, plugins) is never touched, and a `DSH_HOME` published as a Windows environment variable additionally protects any target overlapping it. Silent uninstalls remove the same data; an uninstaller started with `--updated` or `/KEEP_APP_DATA`, as electron-builder does for in-place updates and for replacing an older installation from another directory, retains it. Removal runs through the native helper, which refuses protected Windows folders and paths overlapping the installation or the home, requires a fixed local drive, leaves a linked root or ancestor in place, unlinks reparse points without entering their targets, clears read-only attributes, and keeps deleting siblings after a locked file; residue never stops uninstallation and is not reported. Installation records `InstallLocation` on the Windows uninstall entry as standard inventory metadata; on Windows 11, Uninstall in the Start menu context menu opens the installed-apps list for every Win32 application, and only MSIX packages uninstall directly from there. The uninstaller declares DPI awareness and uses Microsoft YaHei UI for Chinese. This behavior is Windows-only.
 
 Use `node apps/desktop/scripts/test-windows-installer.mjs --uninstall-only --compile-only` to compile isolated English and Chinese fixtures with a per-run scoped package name. Omit `--compile-only` to run the native remover regression and the interactive, silent, `--updated`, `/KEEP_APP_DATA` and `DSH_HOME`-inside-Electron-data checks against seeded data. Compilation does not establish installed-uninstall behavior.
+
+<a id="private-network-and-remote-access"></a>
+
+## Private network and remote access
+
+The application menu's **Remote access…** entry manages the bundled official [tsnet](https://tailscale.com/docs/features/tsnet) node. Networking is disabled by default. Choose **Open network settings** to edit `userData/desktop/tailscale.json`, then **Enable and restart**. Restart asks before interrupting running tasks. Choose **Sign in** when enrollment is needed, or approve the device in the Tailscale or Headscale administration console when requested. The helper runs as the current user without installing a VPN service, virtual adapter, or system proxy. Its node identity persists in `userData/desktop/tailscale-state/`.
+
+The same node provides both directions. **Copy DSH access link** becomes available after the desktop workspace opens; that link retains DSH's ordinary authenticated launch token. Sign-out, Host stop, and application exit withdraw inbound access. Other devices join the same tailnet and open the copied link. DSH's Host, child tools that support HTTP proxy variables, and isolated browser views can access private services through the helper's loopback HTTP proxy. Ordinary Internet traffic uses direct networking or the original login-shell HTTP(S) proxy. Only the application processes use this proxy. Update installation waits for the helper to stop; installation failure restores the private node and browser proxy before restarting the Host and publishing its new access link.
+
+For a private service whose certificate uses a public hostname, map that hostname to its tailnet address:
+
+```json
+{
+  "enabled": false,
+  "hostname": "dsh-desktop",
+  "controlURL": "https://controlplane.tailscale.com",
+  "routes": [
+    { "host": "gr.gr-iot.cn", "address": "100.64.0.6" }
+  ]
+}
+```
+
+This mapping covers HTTPS on port 3081 and WSS on port 3082 while preserving their original domains, ports, paths, and certificate checks. Continue using `https://gr.gr-iot.cn:3081/` and the application's configured `wss://gr.gr-iot.cn:3082` URL. A mapping applies to every port on that hostname; routes accept Tailscale IPv4 or IPv6 addresses. For Headscale, replace `controlURL` with its HTTPS control-server URL. Optional `authKeyEnvironment` names an environment variable holding a registration key; the value goes to the helper over stdin and is never written to this settings file or passed on its command line. Without that option, enrollment uses the sign-in URL. Changes require a restart; **Disable and restart** restores ordinary application networking. A stopped helper is reported as a network failure and requires restarting or disabling the feature.
+
+Local development prepares the helper with `pnpm --dir apps/desktop run prepare:tsnet`. Build machines need Go 1.27.3 or later on PATH, or an explicit `DSH_DESKTOP_GO_BINARY`; end users need neither Go nor a separate Tailscale installation. The pinned module and checksums live in `tsnet/go.mod` and `tsnet/go.sum`. Desktop GitHub packaging workflows select Go from that module file and cache its dependencies. Packaging compiles the target executable, includes dependency licenses, and checks the bundled helper's protocol before runtime smoke tests. Tailnet enrollment, ACLs, device approval, and connections to a real Headscale deployment require operator credentials and are verified separately from offline proxy tests.
 
 <a id="updates"></a>
 
