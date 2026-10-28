@@ -29,7 +29,15 @@ export async function requireReadableSession(
   principal: AuthenticatedPrincipal | undefined,
   signal?: AbortSignal,
 ): Promise<void> {
-  const readable = await resolvePrincipalAccess(ctx, principal, { sessionIds: [sessionId] }, signal)
+  let readable: Awaited<ReturnType<typeof resolvePrincipalAccess>>
+  try {
+    readable = await resolvePrincipalAccess(ctx, principal, { sessionIds: [sessionId] }, signal)
+  } catch (error) {
+    if (signal?.aborted) {
+      throw new RemoteError('gateway/cancelled', 'Session read was cancelled', {}, { cause: error })
+    }
+    throw error
+  }
   if (readable.readableSessionIds.has(sessionId)) return
   throw new RemoteError('session/not-found', `session "${sessionId}" not found`, { sessionId })
 }

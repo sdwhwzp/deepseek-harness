@@ -52,8 +52,8 @@ describe('OpenInAppPathController gestures', () => {
     const openWorkspacePath = vi.fn(async (_request: SessionOpenWorkspacePathRequest, _signal?: AbortSignal) =>
       ({ ok: true as const, value: { opened: true as const } }))
     const controller = new OpenInAppPathController(remoteOf({ openWorkspacePath }))
-    expect(await controller.openPath(SessionId('owner'), '/w/clip.mp4', 'open')).toBeNull()
-    expect(await controller.openPath(SessionId('owner'), '/w/clip.mp4', 'reveal')).toBeNull()
+    expect(await controller.openPath(SessionId('owner'), '/w/clip.mp4', 'open')).toEqual({ kind: 'opened' })
+    expect(await controller.openPath(SessionId('owner'), '/w/clip.mp4', 'reveal')).toEqual({ kind: 'revealed' })
     expect(openWorkspacePath.mock.calls.map(call => call[0])).toEqual([
       { sessionId: SessionId('owner'), path: '/w/clip.mp4' },
       { sessionId: SessionId('owner'), path: '/w/clip.mp4', action: 'reveal' },
@@ -64,11 +64,11 @@ describe('OpenInAppPathController gestures', () => {
     const refused = new OpenInAppPathController(remoteOf({
       openWorkspacePath: async () => ({ ok: false, error: new RemoteError('gateway/internal', 'boom', {}) }),
     }))
-    expect(await refused.openPath(SessionId('owner'), '/w/clip.mp4', 'open')).toBe('openError')
-    expect(await refused.openPath(SessionId('owner'), '/w/clip.mp4', 'reveal')).toBe('revealError')
+    expect(await refused.openPath(SessionId('owner'), '/w/clip.mp4', 'open')).toEqual({ kind: 'failed', failure: 'openError' })
+    expect(await refused.openPath(SessionId('owner'), '/w/clip.mp4', 'reveal')).toEqual({ kind: 'failed', failure: 'revealError' })
 
     const rejecting = new OpenInAppPathController(remoteOf({ openWorkspacePath: () => Promise.reject(new Error('down')) }))
-    expect(await rejecting.openPath(SessionId('owner'), '/w/clip.mp4', 'open')).toBe('openError')
+    expect(await rejecting.openPath(SessionId('owner'), '/w/clip.mp4', 'open')).toEqual({ kind: 'failed', failure: 'openError' })
   })
 })
 

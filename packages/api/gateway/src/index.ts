@@ -42,6 +42,7 @@ import {
 } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   InvokeRemoteRequest,
+  PendingRemoteEventInfo,
   TypertGateway,
   TypertGatewayErrorCode,
   TypertGatewayWireStream,
@@ -76,6 +77,7 @@ import {
 
 export type {
   InvokeRemoteRequest,
+  PendingRemoteEventInfo,
   TypertGateway,
   TypertGatewayErrorCode,
   TypertGatewayWireStream,
@@ -351,6 +353,14 @@ export class TypertGatewayService extends Service implements TypertGateway {
       if (client.answers && !client.signal.aborted) return true
     }
     return false
+  }
+
+  /**
+   * Inspect unsettled forwarded events without changing their lifetime.
+   * @returns detached event names and Agent identities.
+   */
+  getPendingRemoteEvents(): readonly PendingRemoteEventInfo[] {
+    return [...this.pendingRemoteEvents.values()].map(({ frame }) => ({ event: frame.event, agentId: frame.agentId }))
   }
 
   /**

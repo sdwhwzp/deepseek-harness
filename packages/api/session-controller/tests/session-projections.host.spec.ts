@@ -470,8 +470,8 @@ describe('session.history projections block', () => {
 describe('session.list projections column', () => {
   it('sends only the title hint for compact list requests', async () => {
     const { ctx, session } = await harness(true)
-    ctx.sessionProjections.register(titleProjectionDefinition)
-    ctx.sessionProjections.register(lastUserUnit())
+    await ctx.sessionProjections.register(titleProjectionDefinition)
+    await ctx.sessionProjections.register(lastUserUnit())
     const gateway = await remote(ctx)
     await new Promise(resolve => setTimeout(resolve, 0))
     session.append('session/title', {

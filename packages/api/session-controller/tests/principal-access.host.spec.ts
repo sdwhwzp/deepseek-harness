@@ -9,7 +9,7 @@ import {
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createSessionTestController } from './test-remote.ts'
 
 const defaults = {
@@ -55,7 +55,7 @@ async function baseContext(): Promise<Context> {
 }
 
 function installPrincipal(ctx: Context, value: AuthenticatedPrincipal | undefined): void {
-  ctx.provide('typertGateway', { currentPrincipal: () => value } as never)
+  ctx.provide('typertGateway', { currentPrincipal: () => value, getPendingRemoteEvents: () => [] } as never)
 }
 
 describe('Session Controller principal access', () => {
@@ -85,6 +85,7 @@ describe('Session Controller principal access', () => {
     await expect(controller.list({}, new AbortController().signal)).resolves.toMatchObject({
       items: [{ sessionId: allowed.id }],
     })
+    // oxlint-disable-next-line typescript/no-deprecated -- The legacy page entry must retain its account authorization.
     await expect(controller.page({
       address: { kind: 'session', sessionId: hidden.id }, throughSeq: 0,
     }, new AbortController().signal)).rejects.toMatchObject({
@@ -107,6 +108,68 @@ describe('Session Controller principal access', () => {
     followAbort.abort()
     await follow.return?.()
     expect(access.resolveCall.mock.calls.every(([candidate]) => candidate === principal)).toBe(true)
+  })
+
+  it('rejects every passive read and observation of another account’s Session', async () => {
+    const ctx = await baseContext()
+    onTestFinished(() => ctx.fiber.dispose())
+    const hidden = ctx.sessions.create(SessionId('hidden-passive'), { meta: { cwd: '/workspace' } })
+    installPrincipal(ctx, { ...principal, role: 'user' })
+    new AllowListPrincipalAccess(ctx, new Set())
+    const controller = await createSessionTestController(ctx, defaults)
+    const signal = new AbortController().signal
+    const address = { kind: 'session', sessionId: hidden.id } as const
+    const denied = [
+      () => controller.events({ address }, signal),
+      () => controller.state({ sessionId: hidden.id }, signal),
+      () => controller.wait({ sessionId: hidden.id }, signal),
+      () => controller.observeEvent({ address }, signal)[Symbol.asyncIterator]().next(),
+      () => controller.observeProjections({ sessionId: hidden.id }, signal)[Symbol.asyncIterator]().next(),
+      () => controller.observeState({ sessionId: hidden.id }, signal)[Symbol.asyncIterator]().next(),
+    ]
+    for (const operation of denied) {
+      await expect(operation()).rejects.toMatchObject({
+        code: 'session/not-found', details: { sessionId: hidden.id },
+      })
+    }
+    expect(hidden.snapshotEvents()).toEqual([])
+    expect(ctx.agents.get(hidden.id)).toBeUndefined()
+  })
+
+  it('checks read access again before delivering a passive event after revocation', async () => {
+    const ctx = await baseContext()
+    onTestFinished(() => ctx.fiber.dispose())
+    const session = ctx.sessions.create(SessionId('revoked-passive'), { meta: { cwd: '/workspace' } })
+    installPrincipal(ctx, { ...principal, role: 'user' })
+    const allowedIds = new Set([session.id])
+    new AllowListPrincipalAccess(ctx, allowedIds)
+    const controller = await createSessionTestController(ctx, defaults)
+    const abort = new AbortController()
+    onTestFinished(() => { abort.abort() })
+    const events = controller.observeEvent({ address: { kind: 'session', sessionId: session.id } }, abort.signal)[Symbol.asyncIterator]()
+    await expect(events.next()).resolves.toMatchObject({ value: { type: 'ready' } })
+    const next = events.next()
+    allowedIds.delete(session.id)
+    session.append('turn/start', { turn: 1 })
+    await expect(next).rejects.toMatchObject({ code: 'session/not-found' })
+    await events.return?.()
+  })
+
+  it('refuses a wait result when access expires while the state is being read', async () => {
+    const ctx = await baseContext()
+    onTestFinished(() => ctx.fiber.dispose())
+    const session = ctx.sessions.create(SessionId('revoked-wait'), { meta: { cwd: '/workspace' } })
+    installPrincipal(ctx, { ...principal, role: 'user' })
+    const access = new AllowListPrincipalAccess(ctx, new Set([session.id]))
+    const resolve = access.resolveCall.getMockImplementation()
+    if (resolve === undefined) throw new Error('Missing access fixture')
+    access.resolveCall.mockImplementationOnce(resolve).mockResolvedValue({
+      readableSessionIds: new Set(), readableWorkspaceIds: new Set(),
+    })
+    const controller = await createSessionTestController(ctx, defaults)
+    await expect(controller.wait({ sessionId: session.id }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'session/not-found' })
+    expect(access.resolveCall).toHaveBeenCalledTimes(2)
   })
 
   it('authorizes every existing-Session mutation before observing the target', async () => {

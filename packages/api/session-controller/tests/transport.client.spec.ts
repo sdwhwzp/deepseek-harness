@@ -25,7 +25,7 @@ import type {
   SessionFollowFrame,
   SessionFollowRequest,
   SessionHistoryRecord,
-  SessionPage,
+  SessionEventsPage,
   SessionPageRequest,
   SessionWireEvent,
 } from '../src/types.ts'
@@ -44,8 +44,8 @@ function entry(seq: number): SessionEventEntry {
   return { type: 'event', event: { type: 'turn/start', seq, time: seq, data: { turn: seq } } }
 }
 
-function page(records: readonly SessionHistoryRecord[], hasMore = false): SessionPage {
-  return { records, hasMore }
+function page(records: readonly SessionHistoryRecord[], hasMore = false): SessionEventsPage {
+  return { cursor: records.at(-1)?.event?.seq ?? -1, records, hasMore }
 }
 
 function snapshot(
@@ -102,7 +102,7 @@ class ScriptedSessionRemote implements SessionTransportRemote {
 
   constructor(
     private readonly generations: FollowGeneration[],
-    private readonly pages: RemoteResult<SessionPage>[],
+    private readonly pages: RemoteResult<SessionEventsPage>[],
     private readonly controlFrames: readonly SessionControlFrame[] = [],
     private readonly holdControl = true,
   ) {}
@@ -126,7 +126,7 @@ class ScriptedSessionRemote implements SessionTransportRemote {
     }
   }
 
-  page(request: SessionPageRequest): Promise<RemoteResult<SessionPage>> {
+  page(request: SessionPageRequest): Promise<RemoteResult<SessionEventsPage>> {
     this.pageRequests.push(request)
     const result = this.pages.shift()
     if (result === undefined) throw new Error('no scripted Session page')
@@ -337,7 +337,7 @@ describe('Session Client stream adapters', () => {
       await stream.open({})
       await vi.waitFor(() => { expect(changes).toHaveLength(4) })
 
-      expect(remote.followRequests).toEqual([{ address: ADDRESS, assistantStream: true, assistantStreamBatch: true }])
+      expect(remote.followRequests).toEqual([{ address: ADDRESS, activate: true, assistantStream: true, assistantStreamBatch: true }])
       expect(changes).toMatchObject([
         { type: 'replace', page: { assistantStream: baseline } },
         { type: 'assistant-stream', frame },
@@ -422,7 +422,7 @@ describe('Session Client stream adapters', () => {
         code: 'gateway/internal',
         message: 'session event stream emitted an entry before its opening cursor',
       })
-      expect(remote.followRequests).toEqual([{ address: ADDRESS, assistantStream: true, assistantStreamBatch: true }])
+      expect(remote.followRequests).toEqual([{ address: ADDRESS, activate: true, assistantStream: true, assistantStreamBatch: true }])
     } finally {
       await stream.dispose()
     }
@@ -595,7 +595,8 @@ describe('Session Client stream adapters', () => {
     await stream.prepend({ beforeSeq: 2, maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } })
 
     expect(remote.followRequests).toEqual([{
-      address: ADDRESS, assistantStream: true, assistantStreamBatch: true, maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 },
+      address: ADDRESS, activate: true, assistantStream: true, assistantStreamBatch: true,
+      maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 },
     }])
     expect(remote.pageRequests).toEqual([
       { address: ADDRESS, throughSeq: 4, beforeSeq: 2, maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } },
@@ -633,9 +634,9 @@ describe('Session Client stream adapters', () => {
     await vi.waitFor(() => { expect(remote.followRequests).toHaveLength(2) })
 
     expect(remote.followRequests).toEqual([
-      { address: ADDRESS, assistantStream: true, assistantStreamBatch: true,
+      { address: ADDRESS, activate: true, assistantStream: true, assistantStreamBatch: true,
         maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } },
-      { address: ADDRESS, assistantStream: true, assistantStreamBatch: true,
+      { address: ADDRESS, activate: true, assistantStream: true, assistantStreamBatch: true,
         maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } },
     ])
     expect(remote.pageRequests).toEqual([])
@@ -666,8 +667,8 @@ describe('Session Client stream adapters', () => {
     finish.resolve(undefined)
     await vi.waitFor(() => { expect(remote.followRequests).toHaveLength(2) })
     expect(remote.followRequests).toEqual([
-      { address: ADDRESS, assistantStream: true, assistantStreamBatch: true },
-      { address: ADDRESS, assistantStream: true, assistantStreamBatch: true },
+      { address: ADDRESS, activate: true, assistantStream: true, assistantStreamBatch: true },
+      { address: ADDRESS, activate: true, assistantStream: true, assistantStreamBatch: true },
     ])
     expect(remote.pageRequests).toEqual([])
     await stream.dispose()

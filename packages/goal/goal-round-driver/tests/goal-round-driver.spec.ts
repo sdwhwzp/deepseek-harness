@@ -13,6 +13,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import * as goalSession from '../src/index.ts'
+import { goalRoundOwnerProjection } from '../src/principal.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -1308,7 +1309,8 @@ describe('goal-round account attribution', () => {
     await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
     expect(test.agent.session.snapshotEvents().flatMap(event =>
       event.type === 'turn/start' ? [event.data.principal] : [])).toEqual([bob, bob])
-    expect(test.ctx.sessionProjections.stateOf(test.agent.session, 'goalRoundOwner')).toBeNull()
+    const owner = await test.ctx.sessionProjections.register(goalRoundOwnerProjection)
+    expect(owner.stateOf(test.agent.session)).toBeNull()
   })
 
   it('does not reuse a closed authenticated turn for an anonymous host goal', async () => {

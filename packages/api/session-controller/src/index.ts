@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-file-upload'
 import { canOpenNativePath, nativeFileManager, nativeFileApplications, openNativeFileApplication, openNativeAssociatedPath, revealNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
-import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
+import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { Remote, RemoteError, TypertRemoteService, principalOf, type TypertResourceResolveInput } from '@deepseek-ai/dsh-typert-protocol'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
@@ -23,7 +23,9 @@ import {
 } from './agent.ts'
 import { SessionCommandController, hasPromptContent } from './commands.ts'
 import { SessionControlController } from './control.ts'
-import { SessionHistoryController } from './history.ts'
+import { HistoryController } from './history/controller.ts'
+import { StateController } from './state/controller.ts'
+import { WebController } from './web/controller.ts'
 import { SessionFileReferences } from './file-references.ts'
 import { ApiSessionList } from './list.ts'
 import { buildModelCatalog, hasProviderApiKey } from './catalog.ts'
@@ -50,8 +52,8 @@ import type {
   SessionListValue,
   SessionOpenWorkspacePathRequest,
   SessionOpenWorkspacePathValue,
-  SessionPage,
-  SessionPageRequest,
+  SessionEventsPage, SessionPageRequest, SessionEventFrame, SessionObserveEventRequest,
+  SessionProjectionFrame, SessionStateRequest, SessionState, SessionWaitRequest, SessionWaitValue,
   SessionPromptRequest,
   SessionPromptValue,
   SessionRenameRequest,
@@ -62,7 +64,6 @@ import type {
   SessionSelectModelValue,
   SessionProjectionsRequest,
   SessionProjectionsValue,
-  SessionProjectionValues,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
 } from './types.ts'
@@ -146,6 +147,7 @@ export class SessionController extends TypertRemoteService {
     'sessionProjections',
     'sessionQuery',
     'typert',
+    'typertGateway',
     'workspaceRegistry',
   ]
 
@@ -154,10 +156,13 @@ export class SessionController extends TypertRemoteService {
     listWorkSliceMs: z.natural().min(1).default(16),
   })
 
+  private historyController!: HistoryController
+  private stateController!: StateController
+  private webController!: WebController
+
   private agents!: ApiSessionAgentController
   private commands!: SessionCommandController
   private controlState!: SessionControlController
-  private history!: SessionHistoryController
   private listState!: ApiSessionList
   private readonly openPath: (path: string, signal: AbortSignal) => Promise<void>
   private readonly fileApplications: typeof nativeFileApplications
@@ -200,7 +205,11 @@ export class SessionController extends TypertRemoteService {
     ctx.effect(() => async () => {
       await Promise.allSettled([...this.promotions])
     }, 'session-controller.promotions')
-    this.history = new SessionHistoryController(ctx, (observation) => { this.promote(observation) })
+    // Assistant-stream observation must be live before the list read yields: an Agent's
+    // opening frame arriving during that await would otherwise have no listener.
+    this.historyController = new HistoryController(ctx)
+    this.stateController = new StateController(ctx, this.historyController)
+    this.webController = new WebController(ctx, this.historyController, (observation) => { this.promote(observation) })
     this.listState = new ApiSessionList(ctx, this.listWorkSliceMs)
     await this.listState.initialize()
     ctx.plugin(SessionFileReferences)
@@ -236,6 +245,10 @@ export class SessionController extends TypertRemoteService {
     })
   }
 
+  /**
+   * Request background activation through the existing Session Agent controller.
+   * @param observation - owned lease disposed by the background task; callers retain their own lease separately.
+   */
   private promote(observation: SessionObservation): void {
     const sessionId = observation.header.id
     const task = (async () => {
@@ -523,8 +536,8 @@ export class SessionController extends TypertRemoteService {
   }
 
   /**
-   * Read one image proven reachable from the addressed Session log.
-   * @param request - Session and attachment identities used for authorization.
+   * Read one image from the attachment store after gateway authorization.
+   * @param request - image reference and gateway permission scope; Session existence is not checked.
    * @returns the durable attachment reference and base64-encoded bytes.
    */
   @Remote('attachment')
@@ -557,14 +570,102 @@ export class SessionController extends TypertRemoteService {
 
   /**
    * Read one cold-safe, message-aligned Session history page.
-   * @param request - durable address, backward cursor, and page budget.
+   * @deprecated Use `events`; this entry point remains for existing Web callers.
+   * @param request - durable address, optional fixed cut, backward cursor, and page budget.
    * @param signal - cancellation for persistence reads.
-   * @returns one chronological page.
+   * @returns one chronological page with its inclusive cursor; an omitted `throughSeq` selects the observed log end.
    */
   @Remote('page')
-  async page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionPage> {
+  async page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionEventsPage> {
     await this.requireReadableAddress(request.address, this.currentPrincipal(), signal)
-    return this.history.page(request, signal)
+    return this.historyController.events(request, signal)
+  }
+
+  /**
+   * Read one cold-safe, message-aligned Session history page.
+   * @param request - durable address, optional fixed cut, backward cursor, and page budget.
+   * @param signal - cancellation for persistence reads.
+   * @returns one chronological page with its inclusive cursor.
+   */
+  @Remote
+  async events(request: SessionPageRequest, signal: AbortSignal): Promise<SessionEventsPage> {
+    await this.requireReadableAddress(request.address, this.currentPrincipal(), signal)
+    return this.historyController.events(request, signal)
+  }
+
+  /**
+   * Subscribe to Session events without reading a snapshot.
+   * @param request - Session address.
+   * @param signal - subscription cancellation.
+   * @returns readiness and subsequent events, without a snapshot.
+   */
+  @Remote({ mode: 'stream' })
+  async *observeEvent(request: SessionObserveEventRequest, signal: AbortSignal): AsyncIterable<SessionEventFrame> {
+    const principal = this.currentPrincipal()
+    await this.requireReadableAddress(request.address, principal, signal)
+    for await (const frame of this.historyController.observeEvent(request, signal)) {
+      await this.requireReadableAddress(request.address, principal, signal)
+      yield frame
+    }
+  }
+
+  /**
+   * Subscribe to sparse Session projection changes.
+   * @param request - target Session.
+   * @param signal - subscription cancellation.
+   * @returns readiness and sparse projection changes.
+   */
+  @Remote({ mode: 'stream' })
+  async *observeProjections(request: SessionProjectionsRequest, signal: AbortSignal): AsyncIterable<SessionProjectionFrame> {
+    const principal = this.currentPrincipal()
+    await requireReadableSession(this.ctx, request.sessionId, principal, signal)
+    for await (const frame of this.historyController.observeProjections(request, signal)) {
+      await requireReadableSession(this.ctx, request.sessionId, principal, signal)
+      yield frame
+    }
+  }
+
+  /**
+   * Read passive Session state.
+   * @param request - target Session.
+   * @param signal - read cancellation.
+   * @returns current passive state.
+   */
+  @Remote
+  async state(request: SessionStateRequest, signal: AbortSignal): Promise<SessionState> {
+    await requireReadableSession(this.ctx, request.sessionId, this.currentPrincipal(), signal)
+    return this.stateController.state(request, signal)
+  }
+
+  /**
+   * Subscribe to complete Session state replacements.
+   * @param request - target Session.
+   * @param signal - subscription cancellation.
+   * @returns complete passive state replacements.
+   */
+  @Remote({ mode: 'stream' })
+  async *observeState(request: SessionStateRequest, signal: AbortSignal): AsyncIterable<SessionState> {
+    const principal = this.currentPrincipal()
+    await requireReadableSession(this.ctx, request.sessionId, principal, signal)
+    for await (const frame of this.stateController.observeState(request, signal)) {
+      await requireReadableSession(this.ctx, request.sessionId, principal, signal)
+      yield frame
+    }
+  }
+
+  /**
+   * Wait for Session quiescence or pending input with bounded assistant output.
+   * @param request - Session, wait bounds and output window.
+   * @param signal - caller cancellation.
+   * @returns stopping state and bounded assistant output.
+   */
+  @Remote
+  async wait(request: SessionWaitRequest, signal: AbortSignal): Promise<SessionWaitValue> {
+    const principal = this.currentPrincipal()
+    await requireReadableSession(this.ctx, request.sessionId, principal, signal)
+    const result = await this.stateController.wait(request, signal)
+    await requireReadableSession(this.ctx, request.sessionId, principal, signal)
+    return result
   }
 
   /**
@@ -587,49 +688,8 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('projections')
   async projections(request: SessionProjectionsRequest, signal: AbortSignal): Promise<SessionProjectionsValue> {
-    const { sessionId } = request
-    if (sessionId.length === 0) {
-      throw new RemoteError('gateway/bad-request', 'sessionId must not be empty', {})
-    }
-    try {
-      await requireReadableSession(this.ctx, sessionId, this.currentPrincipal(), signal)
-      signal.throwIfAborted()
-      const live = this.liveProjections(sessionId)
-      if (live !== undefined) return live
-      const stored = await this.ctx.get('sessionPersistence')?.stat(sessionId, { signal })
-      signal.throwIfAborted()
-      const attached = this.liveProjections(sessionId)
-      if (attached !== undefined) return attached
-      if (stored === undefined) return null
-      if (stored.formatStatus === 'migration-required') {
-        const cached = this.ctx.get('sessionProjectionCache')?.cachedSnapshot(stored.header)
-        return { kind: 'migration-required', values: { ...cached?.values } as SessionProjectionValues }
-      }
-      using observation = await this.ctx.sessionQuery.observeSession(sessionId, { signal })
-      const projections = observation.projections
-      if (projections === undefined) {
-        throw new RemoteError('session/projections-unavailable', 'Session projections are unavailable', {})
-      }
-      return { kind: 'sequenced', asOfSeq: projections.asOfSeq, values: projections.values as SessionProjectionValues }
-    } catch (error: unknown) {
-      if (error instanceof SessionQueryError && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') {
-        return this.liveProjections(sessionId) ?? null
-      }
-      if (signal.aborted || (error instanceof SessionQueryError && error.code === 'SESSION_QUERY_ABORTED')) {
-        throw new RemoteError('gateway/cancelled', 'Session projection read was cancelled', {}, { cause: error })
-      }
-      if (error instanceof RemoteError) throw error
-      throw new RemoteError('gateway/internal', 'Session projection read failed', {}, { cause: error })
-    }
-  }
-
-  private liveProjections(
-    sessionId: SessionId,
-  ): Extract<SessionProjectionsValue, { readonly kind: 'sequenced' }> | undefined {
-    const session = this.ctx.sessions.get(sessionId)
-    if (session === undefined) return undefined
-    const snapshot = this.ctx.sessionProjections.snapshot(session)
-    return { kind: 'sequenced', asOfSeq: snapshot.asOfSeq, values: snapshot.values as SessionProjectionValues }
+    await requireReadableSession(this.ctx, request.sessionId, this.currentPrincipal(), signal)
+    return this.historyController.projections(request, signal)
   }
 
   /**
@@ -679,7 +739,7 @@ export class SessionController extends TypertRemoteService {
     signal: AbortSignal,
   ): AsyncIterable<SessionFollowFrame> {
     await this.requireReadableAddress(request.address, principal, signal)
-    for await (const frame of this.history.follow(request, signal)) {
+    for await (const frame of this.webController.follow(request, signal)) {
       await this.requireReadableAddress(request.address, principal, signal)
       yield frame
     }

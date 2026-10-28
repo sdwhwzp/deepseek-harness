@@ -139,8 +139,10 @@ for (const [file, jobIds] of [['release.yml', ['dependencies', 'pack']], ['relea
         it('retains the dependency and pack verification commands', () => {
           const commands = job.steps.flatMap(step => step.run === undefined ? [] : [step.run])
           if (jobId === 'dependencies') {
-            expect(commands).toContain('pnpm run verify-package-dependencies')
-            expect(commands).toContain('pnpm run verify-npm-install-layout')
+            // Both verifications share one step so the lane pays the longer half.
+            const combined = commands.find(command => command.includes('verify-package-dependencies'))
+            expect(combined).toContain('verify-npm-install-layout')
+            expect(combined).toContain('wait "$layout_pid"')
           } else {
             const family = file === 'release.yml' ? 'dsh' : 'vendor'
             const output = family === 'dsh' ? 'dist/npm' : 'dist/npm-vendor'
@@ -161,8 +163,17 @@ for (const [file, jobIds] of [['release.yml', ['dependencies', 'pack']], ['relea
   })
 }
 
-it.each(['release-publish.yml', 'release-vendor-publish.yml'])('keeps %s manual and entirely hosted', (file) => {
+it.each(['release-publish.yml', 'release-vendor-publish.yml'])('keeps %s publication hosted and confines pack failover to trusted dispatches', (file) => {
   const publish = workflow(file)
   expect(Object.keys(publish.on)).toEqual(['workflow_dispatch'])
-  for (const job of Object.values(publish.jobs)) expect(job['runs-on']).toBe(hosted)
+  for (const [jobId, job] of Object.entries(publish.jobs)) {
+    if (file !== 'release-publish.yml' || jobId !== 'pack') {
+      expect(job['runs-on']).toBe(hosted)
+      continue
+    }
+    expect(evaluate(job['runs-on'], { ...trustedPush, 'github.event_name': 'workflow_dispatch' })).toEqual(selfhosted)
+    expect(evaluate(job['runs-on'], { ...trustedPush, 'github.event_name': 'workflow_dispatch', 'vars.DSH_CI_FAILOVER_LINUX': '' })).toBe(hosted)
+    expect(evaluate(job['runs-on'], { ...trustedPush, 'github.event_name': 'workflow_dispatch', 'github.repository': 'outsider/fork' })).toBe(hosted)
+    expect(evaluate(job['runs-on'], { ...trustedPush, 'github.event_name': 'workflow_dispatch', 'github.actor': 'dependabot[bot]' })).toBe(hosted)
+  }
 })
