@@ -52,9 +52,11 @@ export class DesktopPlatformView {
    * @param getLocale - current resolved Desktop language.
    * @param platform - operating system this shell runs on, reported to Platform.
    * @param blocked - Whether shell policy or an update prompt prevents opening a product view.
+   * @param prepareNetwork Optional network initialization completed before any document request.
    */
   constructor(private readonly preload: string, private readonly getLocale: () => PlatformLocale,
-    private readonly platform: 'darwin' | 'win32', private readonly blocked: (owner: PlatformOwner) => boolean) {}
+    private readonly platform: 'darwin' | 'win32', private readonly blocked: (owner: PlatformOwner) => boolean,
+    private readonly prepareNetwork: (browserSession: Session) => Promise<void> = async () => {}) {}
 
   /** @param next - private Host credentials; identity enrichment preserves an already open temporary document. */
   setSession(next: PlatformSession | null): void {
@@ -104,6 +106,9 @@ export class DesktopPlatformView {
     const partition = account.userId === null ? `dsh-platform-${randomUUID()}`
       : `persist:dsh-platform-${createHash('sha256').update(JSON.stringify([account.origin, account.userId])).digest('hex')}`
     const browserSession = session.fromPartition(partition)
+    try { await this.prepareNetwork(browserSession) }
+    catch (error) { if (generation === this.generation) this.close(); throw error }
+    if (generation !== this.generation) return
     // Sanitize persisted authentication even after an unclean previous process exit.
     const failure = await this.cleanStorage(browserSession)
     if (generation !== this.generation) return

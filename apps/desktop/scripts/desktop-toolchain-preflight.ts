@@ -81,6 +81,18 @@ export async function probeDesktopToolchain(
   const failures: DesktopToolchainProbeFailure[] = []
   const tar = await probeTar()
   if (tar !== undefined) failures.push({ tool: 'tar', detail: tar })
+  try {
+    const go = await run(environment.DSH_DESKTOP_GO_BINARY ?? 'go', ['version'], {
+      env: { ...environment, GOTOOLCHAIN: 'local' }, windowsHide: true, timeout: 20_000,
+    })
+    const version = /go(\d+)\.(\d+)\.(\d+)/u.exec(go.stdout)
+    if (version === null || Number(version[1]) < 1
+      || (Number(version[1]) === 1 && (Number(version[2]) < 27 || (Number(version[2]) === 27 && Number(version[3]) < 3)))) {
+      failures.push({ tool: 'go', detail: 'Go 1.27.3 or later is required to compile the bundled tsnet helper' })
+    }
+  } catch (error) {
+    failures.push({ tool: 'go', detail: error instanceof Error ? error.message : String(error) })
+  }
   if (platform === 'win32') failures.push(...await probeWindowsInstallerToolchain(environment))
   return failures
 }

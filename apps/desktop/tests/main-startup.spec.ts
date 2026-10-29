@@ -15,12 +15,40 @@ import { en, zh } from '../src/locale.ts'
 import { DesktopUpdatePreparationError } from '../src/update-error.ts'
 import { writeCrashReport } from '../src/crash-report.ts'
 import { runOperationReportJob } from '../src/operation-report-job.ts'
+import type { DesktopTsnet, DesktopTsnetState } from '../src/tsnet.ts'
 
 type InvokeEvent = { sender?: unknown; senderFrame: { url: string } }
 type InvokeHandler = (event: InvokeEvent, ...args: unknown[]) => unknown
 
 const fileDrag = vi.hoisted(() => ({ dispose: vi.fn<() => Promise<void>>(), install: vi.fn() }))
 vi.mock('../src/file-drag.ts', () => ({ installDesktopFileDrag: () => { fileDrag.install(); return fileDrag.dispose } }))
+
+const privateNetwork = vi.hoisted(() => {
+  const clients: FakeTsnet[] = []
+  class FakeTsnet {
+    readonly proxyURL = `http://127.0.0.1:${55000 + clients.length}`
+    state: DesktopTsnetState = { phase: 'online', url: `http://100.64.0.${clients.length + 2}/` }
+    target: string | undefined
+    readonly start = vi.fn(async () => this.proxyURL)
+    readonly close = vi.fn(async () => { this.target = undefined; this.state = { phase: 'disabled' } })
+    readonly publishWorkspace = vi.fn(async (url?: string) => {
+      if (url !== undefined && this.state.phase === 'disabled') throw new Error('Tailscale process is closed')
+      this.target = url
+    })
+    get accessURL(): string | undefined {
+      if (this.state.phase !== 'online' || this.target === undefined) return undefined
+      return `${this.state.url}${new URL(this.target).search}`
+    }
+    constructor(readonly executable: string, readonly config: ConstructorParameters<typeof DesktopTsnet>[1],
+      readonly stateDir: string, readonly publish: ConstructorParameters<typeof DesktopTsnet>[3], readonly environment: NodeJS.ProcessEnv) {
+      clients.push(this)
+    }
+  }
+  return { clients, FakeTsnet, setProxy: vi.fn(async (_config: Electron.ProxyConfig) => {}), copy: vi.fn(async (_text: string) => {}) }
+})
+vi.mock('../src/tsnet.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/tsnet.ts')>(), DesktopTsnet: privateNetwork.FakeTsnet,
+}))
 
 vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'test-cookie', serveWebDocument: vi.fn(), forwardWebRequest: vi.fn() }))
 vi.mock('../src/operation-report-job.ts', () => ({ runOperationReportJob: vi.fn(async () => ({ appended: false, timedOut: false, cancelled: false })) }))
@@ -305,6 +333,7 @@ vi.mock('electron', () => ({
   WebContentsView: harness.FakeView,
   dialog: harness.dialog,
   shell: { openExternal: harness.openExternal },
+  clipboard: { writeText: privateNetwork.copy },
   nativeTheme: harness.nativeTheme,
   net: { fetch: vi.fn() },
   ipcMain: {
@@ -317,6 +346,7 @@ vi.mock('electron', () => ({
   },
   Menu: { setApplicationMenu: harness.menu.setApplicationMenu, buildFromTemplate: harness.menu },
   session: { defaultSession: {
+    setProxy: privateNetwork.setProxy,
     setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeSendHeaders: harness.socketHeaders },
   } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: harness.protocolHandle },
@@ -404,6 +434,12 @@ function configureTestAuthPopup(allow: boolean): void {
   writeFileSync(join(directory, 'settings.json'), JSON.stringify({ updates: { allowTestAuthPopupWindow: allow } }))
 }
 
+function enablePrivateNetwork(): void {
+  const directory = join(harness.app.getPath('userData'), 'desktop')
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(join(directory, 'tailscale.json'), JSON.stringify({ enabled: true }))
+}
+
 function invoke(channel: string, origin = channel === DESKTOP_IPC.boot ? 'app' : 'shell', ...args: unknown[]): unknown {
   const handler = harness.handlers.get(channel)
   if (handler === undefined) throw new Error(`missing handler ${channel}`)
@@ -431,6 +467,7 @@ beforeEach(() => {
   testAuth.login.mockResolvedValue('cancelled')
   vi.useFakeTimers()
   harness.reset()
+  privateNetwork.clients.length = 0
   const userData = mkdtempSync(join(tmpdir(), 'dsh-main-user-data-'))
   onTestFinished(() => { rmSync(userData, { recursive: true, force: true }) })
   harness.app.getPath.mockImplementation(name => name === 'userData' ? userData : join(userData, `desktop-test-${name}`))
@@ -474,6 +511,7 @@ describe('desktop main startup', () => {
   it.each([true, false])('selects the package manager before Host startup (packaged=%s)', async (packaged) => {
     harness.app.isPackaged = packaged
     await readyForUpdate()
+    expect(privateNetwork.clients).toHaveLength(0)
     const host = harness.hosts[0]!
     expect(host.node).toBe(process.execPath)
     expect(host.primaryRuntime).toBe(packaged
@@ -1030,7 +1068,7 @@ describe('desktop main startup', () => {
     expect(() => handler(event, 'application', NaN, 34)).toThrow('invalid popup request')
     const application = handler(event, 'application', 48, 34)
     expect(harness.menu.buildFromTemplate.mock.lastCall![0].map(item => item.label ?? item.type)).toEqual([
-      '关于 DeepSeek Harness', 'separator', '检查更新…', '管理 dsh 命令…', 'separator', '退出',
+      '关于 DeepSeek Harness', 'separator', '检查更新…', '远程访问…', '管理 dsh 命令…', 'separator', '退出',
     ])
     expect(harness.popup.mock.lastCall![0]).toMatchObject({ window, x: 48, y: 34 })
     expect(harness.popup.mock.lastCall![0].callback).toBeTypeOf('function')
@@ -1067,8 +1105,9 @@ describe('desktop main startup', () => {
       : ['Application', 'editMenu'])
     const application = template[0]!.submenu as MenuItemConstructorOptions[]
     expect(application.filter(item => item.visible !== false).map(describeItem)).toEqual(platform === 'darwin'
-      ? ['about', 'separator', en.checkUpdatesMenu, en.cliCommandMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
-      : ['about', 'separator', en.checkUpdatesMenu, 'separator', 'quit'])
+      ? ['about', 'separator', en.checkUpdatesMenu, en.remoteAccessMenu, en.cliCommandMenu,
+        'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
+      : ['about', 'separator', en.checkUpdatesMenu, en.remoteAccessMenu, 'separator', 'quit'])
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
   })
 
@@ -1292,6 +1331,20 @@ describe('desktop main startup', () => {
     await Promise.resolve(invoke(DESKTOP_IPC.boot))
     return host
   }
+
+  it('withdraws remote access on sign-out while retaining a workspace with an API key', async () => {
+    enablePrivateNetwork()
+    const host = await readyWorkspace()
+    const client = privateNetwork.clients[0]!
+    expect(client.target).toBe(host.url)
+    const links = { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top_up' }
+    harness.publishAccount({ status: 'credential-stored', links, attempt: null })
+    harness.publishAccount({ status: 'signed-out', links, attempt: null })
+    await vi.waitFor(() => { expect(client.target).toBeUndefined() })
+    expect(client.close).not.toHaveBeenCalled()
+    expect(host.stop).not.toHaveBeenCalled()
+    expect(harness.windows).toHaveLength(1)
+  })
 
   it('hides the workspace before intentional Host shutdown can look like reconnection', async () => {
     const host = await readyWorkspace()
@@ -2074,6 +2127,40 @@ describe('desktop main startup', () => {
     expect(harness.platformDispose).toHaveBeenCalledOnce()
     expect(harness.app.quit).toHaveBeenCalledTimes(2)
     disposal.resolve()
+  })
+
+  it('restores the private network, browser proxy and access link before recovering from installer failure', async () => {
+    enablePrivateNetwork()
+    const host = await readyWorkspace()
+    const client = privateNetwork.clients[0]!
+    expect(client.environment.DSH_TEST_LOGIN_SHELL).toBe('login')
+    expect(host.environment?.HTTPS_PROXY).toBe(client.proxyURL)
+    const stopped = Promise.withResolvers<undefined>()
+    client.close.mockImplementationOnce(async () => { await stopped.promise; client.state = { phase: 'disabled' } })
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
+    let prepared = false
+    const preparing = harness.prepareUpdate().then((value) => { prepared = true; return value })
+    await host.stopping.promise
+    host.exited.resolve()
+    await vi.waitFor(() => { expect(client.close).toHaveBeenCalledOnce() })
+    expect(prepared).toBe(false)
+    stopped.resolve(undefined)
+    await expect(preparing).resolves.toBe(true)
+    const restarted = harness.nextHostStart()
+    harness.publishUpdate({ phase: 'error', version: '1.0.1', failedOperation: 'install', message: 'Installer failed' })
+    await restarted
+    const restored = privateNetwork.clients[1]!
+    const replacement = harness.hosts[1]!
+    expect(restored.stateDir).toBe(client.stateDir)
+    expect(replacement.environment?.HTTPS_PROXY).toBe(restored.proxyURL)
+    expect(privateNetwork.setProxy).toHaveBeenLastCalledWith(expect.objectContaining({ proxyRules: restored.proxyURL }))
+    replacement.url = 'http://127.0.0.1:3099/?token=replacement'
+    replacement.ready.resolve()
+    await vi.waitFor(() => { expect(restored.target).toBe(replacement.url) })
+    const menu = applicationMenuItems().find(item => item.label === en.remoteAccessMenu)!
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
+    Reflect.apply(menu.click!, undefined, [])
+    await vi.waitFor(() => { expect(privateNetwork.copy).toHaveBeenCalledWith('http://100.64.0.3/?token=replacement') })
   })
 
   it.each([false, true])('restores a cleanly stopped Host after installer failure and retains mandatory blocking: %s', async (mandatory) => {

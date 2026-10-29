@@ -3354,6 +3354,9 @@ importers:
       commander:
         specifier: ^15.0.0
         version: 15.0.0
+      dsh-boot-animation:
+        specifier: github:sdwhwzp/dsh-boot-animation#14e40fe921b671f29f7344e5948172fc7c1d9e55
+        version: https://codeload.github.com/sdwhwzp/dsh-boot-animation/tar.gz/14e40fe921b671f29f7344e5948172fc7c1d9e55(@deepseek-ai/schemastery@vendor+schemastery)
       open:
         specifier: ^11.0.2
         version: 11.0.4
@@ -22696,6 +22699,13 @@ packages:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
     engines: {node: '>=12'}
 
+  dsh-boot-animation@https://codeload.github.com/sdwhwzp/dsh-boot-animation/tar.gz/14e40fe921b671f29f7344e5948172fc7c1d9e55:
+    resolution: {gitHosted: true, integrity: sha512-vbVOQ/XwYawCK6rnA8D7uo189TkvXKpBdDHvugoMuUT9J49ySzNsUUZire4d7DzZ0/R4w06j1+8QVJ0FKNobRQ==, tarball: https://codeload.github.com/sdwhwzp/dsh-boot-animation/tar.gz/14e40fe921b671f29f7344e5948172fc7c1d9e55}
+    version: 0.2.0
+    engines: {node: ^22.19.0 || >=24.0.0}
+    peerDependencies:
+      '@deepseek-ai/schemastery': '*'
+
   dshmarket@1.66.8:
     resolution: {integrity: sha512-zOYCijI/du6qlcmUbx47aaUv6OM7Z/akIQ8n3f9Q2ihtV3U3sbRI5nG0guS+8npsb/vhA2turyEf9Yblg6LweQ==}
     peerDependencies:
@@ -30280,6 +30290,10 @@ snapshots:
       dotenv: 16.6.1
 
   dotenv@16.6.1: {}
+
+  dsh-boot-animation@https://codeload.github.com/sdwhwzp/dsh-boot-animation/tar.gz/14e40fe921b671f29f7344e5948172fc7c1d9e55(@deepseek-ai/schemastery@vendor+schemastery):
+    dependencies:
+      '@deepseek-ai/schemastery': link:vendor/schemastery
 
   dshmarket@1.66.8(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-settings@packages+settings+settings)(@deepseek-ai/schemastery@vendor+schemastery):
     dependencies:

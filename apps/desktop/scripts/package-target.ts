@@ -196,6 +196,7 @@ export function resolveDesktopPackageTarget(
 interface DesktopPackageInvocation {
   readonly target: DesktopPackageTarget
   readonly directory: boolean
+  readonly portable: boolean
   readonly prepareOnly: boolean
   readonly unsigned: boolean
   readonly skipNotarization: boolean
@@ -229,6 +230,7 @@ export function parseDesktopPackageInvocation(
     allowPositionals: true,
     options: {
       dir: { type: 'boolean', default: false },
+      portable: { type: 'boolean', default: false },
       'prepare-only': { type: 'boolean', default: false },
       unsigned: { type: 'boolean', default: false },
       'skip-notarization': { type: 'boolean', default: false },
@@ -238,6 +240,7 @@ export function parseDesktopPackageInvocation(
   })
   if (positionals.length > 1) throw new Error('desktop package: expected at most one target')
   const name = positionals[0] ?? hostTargetName(hostPlatform, hostArch)
+  if (values.portable && name !== 'win-x64') throw new Error('desktop package: --portable requires win-x64')
   if (values.unsigned && values['prepare-only']) throw new Error('desktop package: --unsigned cannot use --prepare-only')
   if (values['skip-notarization'] && (name === 'win-x64' || values.unsigned || values['prepare-only'])) {
     throw new Error('desktop package: --skip-notarization requires a signed macOS build, without --prepare-only')
@@ -249,6 +252,7 @@ export function parseDesktopPackageInvocation(
   return {
     target: resolveDesktopPackageTarget(name, hostPlatform, hostArch),
     directory: values.dir,
+    portable: values.portable,
     prepareOnly: values['prepare-only'],
     unsigned: values.unsigned,
     skipNotarization: values['skip-notarization'],
@@ -332,7 +336,7 @@ async function resolveRequestedBuildVersion(
   return suggestDesktopBuildVersion({
     productVersion, target: invocation.target.name,
     // Machine presets own packaging, not upload credentials; local auto numbering uses existing artifacts.
-    environment: environment.DSH_PACKAGING_PRESET === undefined ? environment : {},
+    environment: environment.DSH_PACKAGING_PRESET === undefined && !invocation.portable ? environment : {},
     // Unsigned builds land beside the signed output, so numbering has to read the directory this run writes.
     artifactsRoot: desktopArtifactOutput(paths, invocation).directory,
   })
@@ -366,7 +370,7 @@ async function main(): Promise<void> {
   const secrets = Object.entries(environment).filter(([name]) => /KEY|SECRET|TOKEN|PASSWORD|APPLE_ID/iu.test(name)).map(([, value]) => value ?? '')
   const run = createPackagingRun(join(APP_ROOT, '.desktop-build', 'packaging-runs'), {
     target: target.name, unsigned: invocation.unsigned, skipNotarization: invocation.skipNotarization,
-    directory: invocation.directory, prepareOnly: invocation.prepareOnly,
+    directory: invocation.directory, portable: invocation.portable, prepareOnly: invocation.prepareOnly,
     version: buildVersion, productVersion, node: process.version,
     commit: packaged.commit,
     dirty: packaged.dirty,
@@ -428,7 +432,7 @@ export async function packageTarget(
   const packArguments = ['--concurrency', String(packConcurrency)]
   const buildPaths = desktopTargetBuildPaths(target.name, environment)
   const releaseRecordPath = join(buildPaths.artifacts, desktopBuildRecordFilename(target.name))
-  if (!invocation.prepareOnly && !invocation.unsigned && !invocation.skipNotarization) {
+  if (!invocation.prepareOnly && !invocation.unsigned && !invocation.skipNotarization && !invocation.portable) {
     rmSync(releaseRecordPath, { force: true })
     rmSync(`${releaseRecordPath}.tmp`, { force: true })
   }
@@ -438,6 +442,7 @@ export async function packageTarget(
   const targetEnv: NodeJS.ProcessEnv = {
     ...buildEnv,
     DSH_DESKTOP_MACOS_SKIP_NOTARIZATION: invocation.skipNotarization ? '1' : '0',
+    DSH_DESKTOP_PORTABLE: invocation.portable ? '1' : '0',
     DSH_DESKTOP_TARGET_PLATFORM: target.platform,
     DSH_DESKTOP_TARGET_ARCH: target.arch,
   }
@@ -520,6 +525,7 @@ export async function packageTarget(
     await pack()
     await prepareRuntime()
   }
+  await execute(['run', 'prepare:tsnet'], targetEnv)
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
   await execute(['run', 'prepare:packages'], targetEnv)
   await execute(['run', 'prepare:dsh', ...(signPrimaryRuntime ? ['--defer-runtime-smoke'] : [])], downloadEnv)
@@ -559,9 +565,10 @@ export async function packageTarget(
       await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
     }
     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts',
-      ...(invocation.unsigned ? ['--unsigned'] : []), ...(invocation.skipNotarization ? ['--skip-notarization'] : [])], targetEnv)
+      ...(invocation.unsigned ? ['--unsigned'] : []), ...(invocation.skipNotarization ? ['--skip-notarization'] : []),
+      ...(invocation.portable ? ['--portable'] : [])], targetEnv)
   }
-  if (!invocation.directory && !invocation.unsigned && !invocation.skipNotarization) {
+  if (!invocation.directory && !invocation.unsigned && !invocation.skipNotarization && !invocation.portable) {
     writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
   }
   if (journal) recordPackagingEvent(journal, { type: 'artifacts', directory: artifactsRoot })

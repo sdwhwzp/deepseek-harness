@@ -63,6 +63,7 @@ const installFixture = installDesktopShortcuts as (
 ) => KeyboardFixture
 type GuestsFixture = {
   acquire(owner: ContentsFixture, workspace: unknown): DesktopBrowserReservation
+  prepare(id: DesktopBrowserLeaseId): Promise<void>
   release(owner: ContentsFixture, id: unknown): Promise<void>
   bind(window: WindowFixture, attachInput: (guest: ContentsFixture, name: DesktopBrowserLeaseId) => () => void): void
 }
@@ -70,6 +71,23 @@ type GuestsFixture = {
 function desktopDefaults(binding: ShortcutBinding): ShortcutDefinition['defaults'] {
   return { 'desktop:macos': binding, 'desktop:windows': binding, 'desktop:linux': binding }
 }
+
+it('holds browser reservations until private-network initialization finishes and reuses workspace preparation', async () => {
+  const f = await fixture()
+  const gate = Promise.withResolvers<undefined>()
+  const prepareNetwork = vi.fn(() => gate.promise)
+  const guests = new DesktopBrowserGuests(() => undefined, prepareNetwork) as GuestsFixture
+  const first = guests.acquire(f.contents, 'network-workspace')
+  const second = guests.acquire(f.contents, 'network-workspace')
+  expect(prepareNetwork).toHaveBeenCalledOnce()
+  const ready = guests.prepare(first.lease)
+  await expect(Promise.race([ready.then(() => 'ready'), Promise.resolve('blocked')])).resolves.toBe('blocked')
+  gate.resolve(undefined)
+  await ready
+  await guests.prepare(second.lease)
+  await guests.release(f.contents, first.lease)
+  await guests.release(f.contents, second.lease)
+})
 
 function browserGuest(reservation: DesktopBrowserReservation) {
   const frame: FrameFixture = { url: `about:blank#${reservation.lease}`, name: '', parent: null }

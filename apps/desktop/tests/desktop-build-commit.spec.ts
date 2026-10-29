@@ -1,7 +1,8 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ExecFileOptions } from 'node:child_process'
 import {
   DESKTOP_BUILD_COMMIT_ENV,
   DESKTOP_BUILD_DIRTY_ENV,
@@ -11,10 +12,27 @@ import {
 } from '../scripts/desktop-build-commit.mjs'
 import { probeDesktopToolchain } from '../scripts/desktop-toolchain-preflight.ts'
 
+const { goVersion } = vi.hoisted(() => ({
+  goVersion: vi.fn(async (_file: string, _options: ExecFileOptions) => ({
+    stdout: 'go version go1.27.3 test/arch', stderr: '',
+  })),
+}))
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:child_process')>()
+  const { promisify } = await import('node:util')
+  const execute = promisify(original.execFile)
+  return { ...original, execFile: Object.assign(vi.fn(), {
+    [promisify.custom]: (file: string, args: readonly string[], options: ExecFileOptions) =>
+      args.length === 1 && args[0] === 'version' ? goVersion(file, options) : execute(file, args, options),
+  }) }
+})
+
 const COMMIT = '0123456789abcdef0123456789abcdef01234567'
 const directories: string[] = []
 
 afterEach(async () => {
+  goVersion.mockReset()
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true })
 })
 
@@ -63,7 +81,10 @@ describe('desktop toolchain preflight', () => {
       expect(failures[0]?.detail).not.toBe('')
     }
     finally {
-      Object.assign(process.env, saved)
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, key)
+        else process.env[key] = value
+      }
     }
   })
 
@@ -71,6 +92,20 @@ describe('desktop toolchain preflight', () => {
     const failures = await probeDesktopToolchain('win32', {})
     expect(failures.map(failure => failure.tool)).toContain('vswhere')
     expect(failures.find(failure => failure.tool === 'vswhere')?.detail).toContain('ProgramFiles(x86)')
+  })
+
+  it.each(['go1.26.9', 'go1.27.2', 'unexpected output'])('rejects unsupported Go output: %s', async (version) => {
+    goVersion.mockResolvedValueOnce({ stdout: `go version ${version}`, stderr: '' })
+    expect((await probeDesktopToolchain('darwin', {})).map(failure => failure.tool)).toEqual(['go'])
+  })
+
+  it('reports an unavailable Go compiler and honors the configured executable', async () => {
+    goVersion.mockRejectedValueOnce(new Error('compiler unavailable'))
+    expect(await probeDesktopToolchain('darwin', { DSH_DESKTOP_GO_BINARY: '/custom/go' }))
+      .toEqual([{ tool: 'go', detail: 'compiler unavailable' }])
+    expect(goVersion).toHaveBeenCalledWith('/custom/go', expect.objectContaining({
+      env: expect.objectContaining({ GOTOOLCHAIN: 'local' }),
+    }))
   })
 
   it('writes nothing into the working directory while probing', async () => {

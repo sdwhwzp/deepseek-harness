@@ -1,6 +1,7 @@
 import { join, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  desktopArtifactOutput,
   desktopTargetBuildPaths,
   desktopTargetPlatform,
   developmentRuntimeDirectory,
@@ -9,6 +10,14 @@ import {
 } from '../scripts/desktop-build-paths.mjs'
 
 describe('desktop build paths', () => {
+  it.each([false, true])('isolates portable output from installer directories (unsigned: %s)', (unsigned) => {
+    const paths = desktopTargetBuildPaths('win-x64')
+    const installer = desktopArtifactOutput(paths, { unsigned, skipNotarization: false })
+    const portable = desktopArtifactOutput(paths, { unsigned, skipNotarization: false, portable: true })
+    expect(portable.directory).toBe(join(installer.directory, 'portable'))
+    expect(portable.suffix).toBe(`-portable${unsigned ? '-unsigned' : ''}`)
+  })
+
   it('isolates every mutable build directory by complete target', () => {
     const arm64 = desktopTargetBuildPaths('mac-arm64')
     const x64 = desktopTargetBuildPaths('mac-x64')

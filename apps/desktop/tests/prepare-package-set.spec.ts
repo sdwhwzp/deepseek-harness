@@ -1,15 +1,56 @@
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { DESKTOP_HOST_RUNTIME_FILES, DESKTOP_PACKAGES_DIR } from '../src/core-package-set.ts'
 import {
   assertDesktopHostPackageFiles,
+  prepareBootAnimationArchive,
   prepareDesktopPackageSet,
   selectDesktopPackageClosure,
   type PackedDesktopPackage,
 } from '../scripts/prepare-package-set.ts'
+
+it('installs the pinned startup plugin through a local archive with exotic subdependencies blocked', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'desktop-boot-package-'))
+  onTestFinished(() => { rmSync(directory, { recursive: true, force: true }) })
+  const archives = join(directory, 'archives')
+  prepareBootAnimationArchive(archives)
+  expect(readdirSync(archives)).toEqual(['dsh-boot-animation-0.2.0.tgz'])
+  const archive = join(archives, 'dsh-boot-animation-0.2.0.tgz')
+  const files = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).split('\n')
+  expect(files).toContain('package/entry.js')
+  expect(files.filter(name => name.endsWith('.mp4'))).toHaveLength(4)
+  const wrapper = join(directory, 'wrapper')
+  mkdirSync(join(wrapper, 'package'), { recursive: true })
+  const source: { dependencies: Record<string, string> } = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, '../../../packages/bundle/web-app/package.json'), 'utf8'),
+  )
+  writeFileSync(join(wrapper, 'package/package.json'), JSON.stringify({ name: 'desktop-boot-wrapper', version: '1.0.0',
+    dependencies: { 'dsh-boot-animation': source.dependencies['dsh-boot-animation'] } }))
+  const wrapperArchive = join(directory, 'wrapper.tgz')
+  execFileSync('tar', ['-czf', wrapperArchive, '-C', wrapper, 'package'])
+  const project = join(directory, 'project')
+  mkdirSync(project)
+  writeFileSync(join(project, 'package.json'), JSON.stringify({ private: true,
+    dependencies: { 'desktop-boot-wrapper': `file:${wrapperArchive}` } }))
+  const config = 'autoInstallPeers: false\nblockExoticSubdeps: true\n'
+  writeFileSync(join(project, 'pnpm-workspace.yaml'), config)
+  const args = [resolve(import.meta.dirname, '../node_modules/pnpm/bin/pnpm.mjs'), 'install', '--offline',
+    '--ignore-scripts', '--store-dir', join(directory, 'store')]
+  const blocked = spawnSync(process.execPath, args, { cwd: project, encoding: 'utf8' })
+  expect(blocked.status).not.toBe(0)
+  expect(blocked.stdout + blocked.stderr).toMatch(/ERR_PNPM_(?:EXOTIC_SUBDEP|NO_OFFLINE_TARBALL)/u)
+  writeFileSync(join(project, 'pnpm-workspace.yaml'), `${config}overrides:\n  dsh-boot-animation: ${JSON.stringify(`file:${archive}`)}\n`)
+  const installed = spawnSync(process.execPath, args, { cwd: project, encoding: 'utf8' })
+  expect(installed.stdout + installed.stderr).not.toContain('ERR_PNPM_EXOTIC_SUBDEP')
+  expect(installed.status, installed.stdout + installed.stderr).toBe(0)
+  expect(readFileSync(join(project, 'pnpm-lock.yaml'), 'utf8')).toContain('dsh-boot-animation@file:')
+  const require = createRequire(realpathSync(join(project, 'node_modules/desktop-boot-wrapper/package.json')))
+  expect(JSON.parse(readFileSync(require.resolve('dsh-boot-animation/package.json'), 'utf8')).version).toBe('0.2.0')
+}, 20_000)
 
 function packed(name: string, manifest: Record<string, unknown> = {}): PackedDesktopPackage {
   return { tarball: `${name}.tgz`, manifest: { name, version: '1.0.0', ...manifest } }

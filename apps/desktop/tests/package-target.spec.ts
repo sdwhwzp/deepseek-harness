@@ -44,6 +44,16 @@ describe('desktop package target', () => {
       .toThrow(/at most one target/u)
   })
 
+  it('accepts portable Windows ZIPs and rejects portable macOS invocations', () => {
+    expect(parseDesktopPackageInvocation(['win-x64', '--portable', '--unsigned'], 'win32', 'x64'))
+      .toMatchObject({ portable: true, unsigned: true, directory: false })
+    expect(parseDesktopPackageInvocation(['win-x64', '--portable', '--dir'], 'win32', 'x64'))
+      .toMatchObject({ portable: true, directory: true })
+    expect(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64').portable).toBe(false)
+    expect(() => parseDesktopPackageInvocation(['mac-arm64', '--portable'], 'darwin', 'arm64'))
+      .toThrow('--portable requires win-x64')
+  })
+
   it('parses a build version, including the separator a pnpm run script forwards', () => {
     expect(parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64').requestedBuildVersion).toBeUndefined()
     expect(parseDesktopPackageInvocation(['mac-arm64', '--build-version', '0.1.6-alpha.2.20260921.1'], 'darwin', 'arm64')
