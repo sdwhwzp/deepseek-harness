@@ -33,6 +33,8 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { PrincipalAccessSubjects } from '@deepseek-ai/dsh-principal-access'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
 
+type AttachmentId = NonNullable<PrincipalAccessSubjects['attachmentIds']>[number]
+
 interface AccessAgent {
   readonly id: string
 }
@@ -712,8 +714,8 @@ describe('Gateway forwarded events for non-owner Peers', () => {
     ))[Symbol.asyncIterator]()
     try {
       await expect(events.next()).resolves.toMatchObject({ value: { type: 'ready' } })
-      push({ event: 'fixture/notice', args: ['foreign'], readSubjects: { attachmentIds: [brandString('foreign')] } })
-      push({ event: 'fixture/notice', args: ['owned'], readSubjects: { attachmentIds: [brandString('owned')] } })
+      push({ event: 'fixture/notice', args: ['foreign'], readSubjects: { attachmentIds: [brandString<AttachmentId>('foreign')] } })
+      push({ event: 'fixture/notice', args: ['owned'], readSubjects: { attachmentIds: [brandString<AttachmentId>('owned')] } })
       await expect(events.next()).resolves.toMatchObject({ value: { type: 'emit', args: ['owned'] } })
     } finally {
       abort.abort()

@@ -2,6 +2,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
+import type { PrincipalAccessSubjects } from '@deepseek-ai/dsh-principal-access'
 import type { SessionEvent, SessionHeader, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
@@ -79,22 +81,42 @@ function query(overrides: {
 async function mounted(
   sessionQuery: unknown,
   persistence?: Pick<SessionPersistence, 'stat'>,
+  auth?: { readonly principal?: AuthenticatedPrincipal; readonly provider: boolean },
 ): Promise<{
   readonly shared: ReturnType<HostConnectionService['createSharedFetchHandler']>
   readonly connection: HostConnectionService
+  readonly peer: HostConnectionService['browserPeer']
   readonly dispose: () => Promise<void>
 }> {
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
+  if (auth?.principal !== undefined) {
+    const principal = auth.principal
+    ctx.provide('requestPrincipal', { authenticate: () => principal })
+  }
+  if (auth?.provider) {
+    ctx.provide('principalAccess', {
+      resolve: async (principal: AuthenticatedPrincipal, subjects: PrincipalAccessSubjects) => ({
+        readableSessionIds: new Set((subjects.sessionIds ?? [])
+          .filter(id => principal.id === 'alice' && id === SESSION_ID)),
+        readableWorkspaceIds: new Set(),
+      }),
+    } as never)
+  }
   ctx.provide('commands', { register: () => () => {} } as never)
   if (sessionQuery !== undefined) ctx.provide('sessionQuery', sessionQuery as never)
   if (persistence !== undefined) ctx.provide('sessionPersistence', persistence as SessionPersistence)
   const connection = new HostConnectionService(ctx, [], {} as BrowserAuth)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber
+  const admission = auth?.principal === undefined ? undefined : await connection.admitRequest({
+    method: 'GET', url: SESSION_MARKDOWN_EXPORT_PATH, headers: { host: 'localhost' },
+  })
+  if (admission !== undefined && 'rejection' in admission) throw new Error('fixture account was refused')
   return {
     shared: connection.createSharedFetchHandler('/api'),
     connection,
+    peer: admission?.peer ?? connection.browserPeer,
     dispose: () => fiber.dispose(),
   }
 }
@@ -104,6 +126,36 @@ function request(path: string, init?: RequestInit): Request {
 }
 
 describe('Session Markdown Fetch route', () => {
+  it.each([
+    ['alice', true, 200],
+    ['bob', true, 404],
+    ['alice', false, 503],
+    [undefined, true, 401],
+  ] as const)('authorizes Markdown content and metadata for %s/provider=%s', async (id, provider, status) => {
+    const readSession = vi.fn(async () => ({ session: HEADER, inheritedEventCount: 0, events: EVENTS }))
+    const stat = vi.fn(async () => ({ header: HEADER, revision: SessionPersistenceRevision('test:auth') }))
+    const route = await mounted({ readSession }, { stat }, {
+      provider,
+      ...(id === undefined ? {} : { principal: { source: 'fixture', id, username: 'same', role: 'user' } }),
+    })
+    for (const method of ['GET', 'HEAD']) {
+      const response = await route.shared.fetch(
+        request(`${SESSION_MARKDOWN_EXPORT_PATH}?sessionId=${SESSION_ID}`, { method }),
+        route.peer,
+      )
+      expect(response.status).toBe(status)
+      if (method === 'HEAD') expect(response.body).toBeNull()
+      if (status !== 200) expect(response.headers.get('cache-control')).toBe('private, no-store')
+    }
+    if (status === 200) {
+      expect(readSession).toHaveBeenCalledTimes(2)
+      expect(stat).toHaveBeenCalledTimes(2)
+    } else {
+      expect(readSession).not.toHaveBeenCalled()
+      expect(stat).not.toHaveBeenCalled()
+    }
+  })
+
   it('registers one GET/HEAD route and removes it with the plugin fiber', async () => {
     const { shared, connection, dispose } = await mounted(query())
     const response = await shared.fetch(

@@ -36,6 +36,8 @@ Workspace 变更会在写入前要求每个既有 Workspace、Session 与排序�
 
 精确的 `/api/session.export` Fetch 路由接收传输层 principal，并在追踪 lineage 前授权根 Session。请求包含后代时，它会在 flush 或读取任何原始产物或附件前授权完整的后代集合。资源被拒绝时返回与 Session 不存在相同的 not-found 响应；principal 存在但缺少 provider 时返回服务不可用，provider 支持的请求缺少 principal 时返回未授权。全有或全无检查可防止产生部分归档。
 
+Markdown 路由在读取记录或持久化元数据之前，对其确切 Session 鉴权。原始 `/api/file` 路由没有账号级路径授权提供方，因此在文件系统访问前拒绝所有账号组合；本地匿名文件展示仍然可用。
+
 ### 转发的 Remote 事件
 
 API Remotes 根据 Session Controller 通知声明的 Session 参数附加只存在于进程内的 `readSubjects`。Gateway 针对每个已连接 Client 的 principal 独立解析这些 subject，并且仅在全部具名 Session 或 Workspace 可读时才将通知入队。能归因到请求的普通事件还要求 principal 完全匹配；只有既无身份归因也无 read subject 的通知才会全局广播。这两个进程内字段都不会进入 Remote 事件 wire frame。

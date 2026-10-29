@@ -108,6 +108,8 @@ Both entry paths issue a `HEAD` preflight to the document-relative `api/session.
 
 The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, handle-based log reads and attachment reads, ZIP generation, and HTTP status semantics.
 
+Both export routes authorize the exact Session against the captured transport principal before reading content or persistence metadata. A denied Session returns 404, a missing principal returns 401, and missing deployment authorization returns 503. ZIP attachment bytes additionally require independent account grants; Session history alone cannot grant access. Local-anonymous compositions retain their existing behavior.
+
 ### Markdown copy flow
 
 The Header asks the Markdown copy controller for the clicked Session. During the click, the controller requests the deferred `ClipboardItem` write while it loads the document-relative `api/session.markdown?sessionId=<id>` route; other hosts fall back to the shared clipboard helper after preparation. The Host route reads the complete live-preferred logical log through `ctx.sessionQuery.readSession` and passes those events to the pure formatter. It separately asks `ctx.get('sessionPersistence')?.stat` for the selected materialized artifact path and passes that optional path to the formatter; a metadata-read failure is a sanitized preparation failure. The read is a detached export observation: it creates no Agent, retains no Session, and writes no Session data. It answers 404 for an absent Session and a sanitized 500 for every other read failure.

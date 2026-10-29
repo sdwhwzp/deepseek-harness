@@ -116,8 +116,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     path: SESSION_MARKDOWN_EXPORT_PATH,
     methods: ['GET', 'HEAD'],
     requestBody: 'buffered',
-    fetch: async (request) => {
-      const response = await sessionMarkdownResponse(ctx, request)
+    fetch: async (request, principal) => {
+      const response = await sessionMarkdownResponse(ctx, request, principal)
       if (request.method === 'GET') return response
       await response.body?.cancel()
       return new Response(null, { status: response.status, headers: response.headers })
@@ -138,9 +138,14 @@ function connectionOf(ctx: Context): SessionLogConnection {
  * read; the corpus read itself has no cancellation parameter.
  * @param ctx - host context carrying Connection and session-query.
  * @param request - authenticated Fetch request with a required `sessionId` query.
+ * @param principal - captured transport identity for the exact Session authorization.
  * @returns the Markdown response, or a sanitized status for invalid, missing, or unavailable reads.
  */
-async function sessionMarkdownResponse(ctx: Context, request: Request): Promise<Response> {
+async function sessionMarkdownResponse(
+  ctx: Context,
+  request: Request,
+  principal: AuthenticatedPrincipal | undefined,
+): Promise<Response> {
   const sessionIdValue = new URL(request.url).searchParams.get('sessionId')
   if (sessionIdValue === null || sessionIdValue.length === 0) {
     return new Response('missing or invalid sessionId query parameter', { status: 400 })
@@ -150,6 +155,8 @@ async function sessionMarkdownResponse(ctx: Context, request: Request): Promise<
     return new Response('session markdown export is unavailable: missing session-query service', { status: 500 })
   }
   const sessionId = brandString<SessionId>(sessionIdValue)
+  const rejection = await authorizeSessions(ctx, request, principal, [sessionId])
+  if (rejection !== undefined) return rejection
   try {
     request.signal.throwIfAborted()
     const snapshot = await sessionQuery.readSession(sessionId)
@@ -215,21 +222,7 @@ async function sessionLogExportResponse(
       for (const id of attachmentIds) requirePrincipalAccess(access, { kind: 'attachment', id })
     },
   }
-  const authorize = async (sessionIds: readonly SessionId[]): Promise<Response | undefined> => {
-    try {
-      const access = await resolvePrincipalAccess(ctx, principal, { sessionIds }, request.signal)
-      for (const id of sessionIds) requirePrincipalAccess(access, { kind: 'session', id })
-      return undefined
-    } catch (error: unknown) {
-      if (!(error instanceof PrincipalAccessDeniedError)) throw error
-      const status = error.reason === 'principal-required'
-        ? 401
-        : error.reason === 'provider-required'
-          ? 503
-          : 404
-      return new Response(status === 404 ? 'session not found' : error.message, { status })
-    }
-  }
+  const authorize = (sessionIds: readonly SessionId[]) => authorizeSessions(ctx, request, principal, sessionIds)
   const rootRejection = await authorize([sessionId])
   if (rootRejection !== undefined) return rootRejection
   let lineage: SessionLineageTrace
@@ -279,6 +272,31 @@ async function sessionLogExportResponse(
     },
   )
   return response
+}
+
+/** Authorize exact Session ids before either export reads their content or metadata. */
+async function authorizeSessions(
+  ctx: Context,
+  request: Request,
+  principal: AuthenticatedPrincipal | undefined,
+  sessionIds: readonly SessionId[],
+): Promise<Response | undefined> {
+  try {
+    const access = await resolvePrincipalAccess(ctx, principal, { sessionIds }, request.signal)
+    for (const id of sessionIds) requirePrincipalAccess(access, { kind: 'session', id })
+    return undefined
+  } catch (error: unknown) {
+    if (!(error instanceof PrincipalAccessDeniedError)) throw error
+    const status = error.reason === 'principal-required'
+      ? 401
+      : error.reason === 'provider-required'
+        ? 503
+        : 404
+    return new Response(status === 404 ? 'session not found' : error.message, {
+      status,
+      headers: { 'cache-control': 'private, no-store' },
+    })
+  }
 }
 
 /** Flatten one authorized descendant forest in stable lineage order. */

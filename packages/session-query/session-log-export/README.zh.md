@@ -108,6 +108,8 @@ Header 的更多操作入口使用公共紧凑 Button，点击区域为 28px 正
 
 Host 路由是由该功能拥有的精确 Fetch 路由贡献。Connection 应用 Host/Origin 与浏览器会话检查并桥接流式 `Response`；本包拥有查询校验、活动会话 flush、基于句柄的日志读取与附件读取、ZIP 生成和 HTTP 状态语义。
 
+两条导出路由在读取正文或持久化元数据前，都使用捕获的传输 principal 对确切 Session 鉴权。Session 被拒绝时返回 404，缺少 principal 时返回 401，缺少部署授权提供方时返回 503。ZIP 附件字节还需要独立账号授权；Session 历史本身不能授予访问权。本地匿名组合保留既有行为。
+
 ### Markdown 复制流程
 
 Header 向 Markdown 复制控制器请求被点击的 Session。点击期间，控制器在加载文档相对的 `api/session.markdown?sessionId=<id>` 路由的同时请求延迟的 `ClipboardItem` 写入；其他宿主在准备完成后回退到共享剪贴板助手。Host 路由通过 `ctx.sessionQuery.readSession` 读取完整的 live-preferred 逻辑日志，并把事件交给纯格式化器。它另外通过 `ctx.get('sessionPersistence')?.stat` 获取选中已物化产物的路径，并把可选路径传给格式化器；元数据读取失败属于经过清理的准备失败。该读取是分离的导出观察：不创建 Agent、不保留 Session，也不写入 Session 数据。Session 不存在时返回 404，其他读取失败返回经过清理的 500。

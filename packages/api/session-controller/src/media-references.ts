@@ -1,7 +1,7 @@
 /**
- * Authenticated GET/HEAD /api/file reads bounded file responses through
- * the composed filesystem provider. Paths and MIME types do not restrict access;
- * the connection service authenticates requests before this handler. A request
+ * Local anonymous GET/HEAD /api/file reads bounded file responses through
+ * the composed filesystem provider. Account deployments deny this raw-path
+ * route because Session and attachment grants do not authorize arbitrary paths. A request
  * without the current `v` version is redirected, uncached, to the versioned URL,
  * whose response is cacheable indefinitely.
  * @module @deepseek-ai/dsh-api-session-controller/media-references
@@ -11,6 +11,7 @@ import { isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-attachment'
+import type {} from '@deepseek-ai/dsh-principal-access'
 import { FsError, type FileSystem } from '@deepseek-ai/dsh-fs'
 import mime from 'mime-types'
 
@@ -67,8 +68,8 @@ async function serveFile(request: Request, fs: FileSystem, maxBytes: number): Pr
 }
 
 /**
- * File-display contribution. The connection service supplies authentication;
- * `ctx.fs` supplies the execution world's paths, reads, and access policy.
+ * Local file-display contribution. Account compositions fail closed before
+ * filesystem access; anonymous compositions use the provider's access policy.
  */
 export const SessionMediaReferences = {
   inject: ['connection', 'fs', 'attachments'],
@@ -78,7 +79,16 @@ export const SessionMediaReferences = {
       path: '/api/file',
       methods: ['GET', 'HEAD'],
       requestBody: 'buffered',
-      fetch: request => serveFile(request, ctx.fs, maxBytes),
+      fetch: (request, principal) => {
+        if (principal !== undefined || ctx.get('requestPrincipal') !== undefined
+          || ctx.get('principalAccess') !== undefined) {
+          return Promise.resolve(new Response(request.method === 'HEAD' ? null : 'raw file access is unavailable', {
+            status: 403,
+            headers: NO_STORE,
+          }))
+        }
+        return serveFile(request, ctx.fs, maxBytes)
+      },
     }), 'session-controller: /api/file')
   },
 }

@@ -34,7 +34,7 @@ Workspace mutations require readability of every existing Workspace, Session and
 
 ### Session-log export
 
-The exact `/api/session.export` Fetch route receives the transport principal and authorizes the root Session before tracing its lineage. When descendants are requested, it authorizes the complete descendant set before flushing or reading any raw artifact or attachment. Resource denial returns the same not-found response as an absent Session; a principal without a provider returns service unavailable, and a provider-backed request without a principal returns unauthorized. The all-or-nothing check prevents partial archives.
+The exact `/api/session.export` Fetch route receives the transport principal and authorizes the root Session before tracing its lineage. When descendants are requested, it authorizes the complete descendant set before flushing or reading any raw artifact or attachment. Resource denial returns the same not-found response as an absent Session; a principal without a provider returns service unavailable, and a provider-backed request without a principal returns unauthorized. The all-or-nothing Session check prevents exporting an unauthorized descendant. The Markdown route authorizes its exact Session before reading either its transcript or persistence metadata. The raw `/api/file` route has no account-aware path authority and denies all account compositions before filesystem access; local-anonymous file display remains available.
 
 ### Forwarded Remote events
 
