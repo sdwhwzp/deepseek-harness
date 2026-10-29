@@ -12,7 +12,8 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import { parseArgs } from 'node:util'
 import * as yaml from 'js-yaml'
 import {
@@ -34,6 +35,19 @@ const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
 
 const REQUIRED_DEPENDENCY_SECTIONS = ['dependencies', 'peerDependencies'] as const
 const OPTIONAL_DEPENDENCY_SECTION = 'optionalDependencies'
+
+/**
+ * Pack the installed startup plugin from the pinned source for the verified local package set.
+ * @param output - Build output directory replaced with the plugin archive.
+ */
+export function prepareBootAnimationArchive(output: string): void {
+  const require = createRequire(join(REPOSITORY_ROOT, 'packages/bundle/web-app/package.json'))
+  const directory = dirname(require.resolve('dsh-boot-animation/package.json'))
+  rmSync(output, { recursive: true, force: true })
+  mkdirSync(output, { recursive: true })
+  capture(process.execPath, [join(APP_ROOT, 'node_modules/pnpm/bin/pnpm.mjs'),
+    '--dir', directory, 'pack', '--pack-destination', output])
+}
 
 /** Packed package information needed to form the local Desktop closure. */
 export interface PackedDesktopPackage {
@@ -192,6 +206,9 @@ function main(): void {
     allowPositionals: false,
   })
   const inputs = (values.from ?? defaultInputs).map(path => resolve(REPOSITORY_ROOT, path))
+  const bundled = join(buildPaths.root, 'packed', 'bundled')
+  prepareBootAnimationArchive(bundled)
+  inputs.push(bundled)
   const output = values.out === undefined ? buildPaths.packageSet : resolve(REPOSITORY_ROOT, values.out)
   prepareDesktopPackageSet(inputs, output, desktopTargetPlatform(resolveDesktopBuildTarget()))
   console.log(`desktop package set: prepared ${output}`)
