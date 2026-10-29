@@ -73,7 +73,7 @@ describe('SessionMediaReferences /api/file', () => {
     { principal: { source: 'fixture', id: 'bob', username: 'same', role: 'admin' } },
     { service: 'requestPrincipal' as const },
     { service: 'principalAccess' as const },
-  ])('denies account raw paths before any filesystem access: %j', async (auth) => {
+  ] as const)('denies account raw paths before any filesystem access: %j', async (auth) => {
     const route = await mount(DEFAULT_LIMIT, auth)
     const path = join(root, 'private-object.png')
     await writeFile(path, PNG_BYTES)
