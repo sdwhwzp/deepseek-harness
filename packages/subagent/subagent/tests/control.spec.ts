@@ -85,6 +85,29 @@ function emptyIdFailure(method: string, field: string) {
 }
 
 describe('subagent prompt Remote', () => {
+  it('rejects a caller-supplied stored image before storage or child delivery', async () => {
+    const { ctx, subagents } = await bench({ [PARENT]: { status: 'idle' } })
+    const delivery = promptDelivery(subagents)
+    const admitPromptContent = vi.fn()
+    ctx.provide('attachments', { admitPromptContent } as never)
+    try {
+      for (const image of [
+        { type: 'image', attachment: IMAGE_REF, encodedBytes: 2 },
+        { type: 'image', attachment: IMAGE_REF, mediaType: 'image/png', data: 'aGk=' },
+        { type: 'file', attachment: IMAGE_REF },
+      ]) {
+        await expect(subagents.prompt({
+          ...promptRequest(), content: [image] as never,
+        }, signal)).rejects.toMatchObject({
+          code: 'subagent/attachment-invalid', details: { reason: 'UNTRUSTED_ATTACHMENT_REFERENCE' },
+        })
+      }
+      expect(admitPromptContent).not.toHaveBeenCalled()
+      expect(delivery).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
   it('rejects empty parent and child ids before delivery', async () => {
     const { subagents } = await bench({ [PARENT]: { status: 'idle' } })
     const delivery = promptDelivery(subagents)

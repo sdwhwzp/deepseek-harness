@@ -6668,9 +6668,6 @@ importers:
 
   packages/client/ui-trajectory:
     dependencies:
-      '@deepseek-ai/dsh-principal-access':
-        specifier: workspace:*
-        version: link:../../identity/principal-access
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:*
         version: link:../../typert/protocol
@@ -6729,6 +6726,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-principal-access':
+        specifier: workspace:*
+        version: link:../../identity/principal-access
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../core/session
@@ -12605,6 +12605,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:*
+        version: link:../../attachment/attachment
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm

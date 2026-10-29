@@ -39,6 +39,12 @@ kind: "package-reference"
 
 提供方实现 `PrincipalAccessService.resolve`，根据部署自有成员关系数据验证 `(source, id)`，并省略被拒绝的 id。Consumer 在一元调用或 stream 打开时捕获请求 principal，并在该操作期间保留该值。精确读取先授权再加载内容；实时 feed 对 opening baseline 和之后每个按资源寻址的 frame 分别授权。
 
+附件读取还会把 `attachmentIds` 传给 `resolve`，并要求对应的 `readableAttachmentIds` 授权。省略该结果字段就拒绝所有附件，包括只支持 Session/Workspace 的旧提供方。Session 可读或其历史中出现某个引用，都不是附件授权。提供方按验证过的 `(source, id)` 与附件 id 记录授权；显示信息不改变归属。
+
+接收上传提示词前，Session Controller 与浏览器 subagent 提示词会调用 `recordPrincipalAttachments`，进而调用 `PrincipalAccessService.recordAttachments(principal, { sessionId, attachmentIds }, signal)`。这些 id 只来自已验证的内联字节，或针对接收 Session 精确解析的上传回执；浏览器 subagent 上传使用已授权的父 Session。提供方必须重新验证账户与 Session 归属，并持久、幂等地记录所有授权。不同账户独立上传相同内容时，可各自获得同一内容寻址对象的授权。失败会阻止 inbox 投递；已存储的不可变字节可能成为无引用对象。旧提供方的默认方法以 `attachment-provider-required` 拒绝。完全本地匿名的组合不需要提供方。
+
+升级共享账户部署前，应依据可信归属证据回填现有附件授权。不能因为任意请求引用出现在可读 Session 中，就在读取时自动授权：旧客户端可能注入过引用。归属不明时持续拒绝，直到操作员解决。仅暂存、尚未被提示词接收的上传不会通过这个核心钩子获得授权；浏览器上传预览使用本地字节。回滚快照必须同时包含归属数据、Session 与附件存储。
+
 <a id="further-exploration"></a>
 ## 进一步探索
 
@@ -70,7 +76,7 @@ kind: "package-reference"
 以下限制说明部署集成仍须负责的内容。它们是当前约束，而不是任务清单。
 
 - Harness 不附带账户数据库或具体提供方。
-- 本 Service Definition 只授权读取；变更授权仍由拥有该操作的能力负责。
+- 本 Service Definition 解析读取权限并记录可信上传归属；其他变更授权仍由拥有该操作的能力负责。
 - 该 seam 没有通用撤销事件。部署特定的即时 stream 终止需要未来的提供方观测 API。
 
 <a id="dev-note"></a>

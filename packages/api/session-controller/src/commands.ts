@@ -18,6 +18,12 @@ import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
+import {
+  PrincipalAccessDeniedError,
+  recordPrincipalAttachments,
+  requirePrincipalAccess,
+  resolvePrincipalAccess,
+} from '@deepseek-ai/dsh-principal-access'
 import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
@@ -328,6 +334,10 @@ export class SessionCommandController {
           }
         }
         const content = await this.ctx.attachments.admitPromptContent(admission.content)
+        await recordPrincipalAttachments(this.ctx, principal, {
+          sessionId: agent.id,
+          attachmentIds: [...new Set(content.flatMap(part => part.type === 'text' ? [] : [part.attachment.attachmentId]))],
+        })
         const message: UserMessage = createUserMessage({
           content,
           source,
@@ -345,6 +355,7 @@ export class SessionCommandController {
         else agent.followup(message)
         binding.commit()
       } catch (error) {
+        if (error instanceof PrincipalAccessDeniedError) throw error
         if (remoteErrorOf(error) !== undefined) throw error
         if (error instanceof AttachmentError) {
           throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
@@ -366,9 +377,14 @@ export class SessionCommandController {
   /**
    * Read one durable image using the supplied reference without consulting Session history.
    * @param request - image reference and gateway permission scope; Session existence is not checked.
+   * @param principal - captured transport-verified account, when authenticated.
    * @returns the durable attachment reference and base64-encoded bytes.
    */
-  async attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue> {
+  async attachment(request: SessionAttachmentRequest, principal?: AuthenticatedPrincipal): Promise<SessionAttachmentValue> {
+    const access = await resolvePrincipalAccess(this.ctx, principal, {
+      attachmentIds: [request.attachment.attachmentId],
+    })
+    requirePrincipalAccess(access, { kind: 'attachment', id: request.attachment.attachmentId })
     try {
       const stored = await this.ctx.attachments.readImage(request.attachment)
       return {
@@ -530,7 +546,24 @@ function resolvePromptFileReceipts(
 ): { readonly content: AttachmentAdmissionPart[]; readonly receiptIds: readonly FileUploadReceiptId[] } {
   const receiptIds = new Set<FileUploadReceiptId>()
   const resolved = content.map((part): AttachmentAdmissionPart => {
-    if (part.type !== 'file') return part
+    // Remote JSON is untrusted even when its declared TypeScript union contains
+    // encoded images only. Never pass a caller's durable reference to admission.
+    if ('attachment' in part) {
+      throw new RemoteError('session/attachment-invalid', 'Prompt attachments require uploaded bytes or a Session upload receipt.', {
+        reason: 'UNTRUSTED_ATTACHMENT_REFERENCE',
+      })
+    }
+    if (part.type === 'text') return { type: 'text', text: part.text }
+    if (part.type === 'image') {
+      return {
+        type: 'image', data: part.data, mediaType: part.mediaType,
+        ...(part.name === undefined ? {} : { name: part.name }),
+      }
+    }
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- Remote callers can submit untyped JSON.
+    if (part.type !== 'file') {
+      throw new RemoteError('session/attachment-invalid', 'Unsupported prompt attachment.', { reason: 'INVALID_PROMPT_PART' })
+    }
     const attachment = staged(part.receiptId)
     if (attachment === undefined) {
       throw new RemoteError(

@@ -383,6 +383,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AgentHandle: 'core.md',
   PrincipalAccessResult: 'core.md',
   PrincipalAccessSubjects: 'core.md',
+  PrincipalAttachmentGrant: 'core.md',
   ModelSelection: 'core.md',
   AllowedModelRoute: 'subagent.md',
   SubagentModelSelectionSettings: 'subagent.md',

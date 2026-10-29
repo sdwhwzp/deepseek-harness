@@ -2382,8 +2382,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'resolve( _principal: AuthenticatedPrincipal, _subjects: PrincipalAccessSubjects, _signal?: AbortSignal, ): Promise<PrincipalAccessResult>',
         description: 'Resolve the readable subset of one batched request.',
-        parameters: [{ name: '_principal', description: 'Host-verified message-scoped identity.' }, { name: '_subjects', description: 'candidate Session and Workspace ids.' }, { name: '_signal', description: 'optional caller cancellation.' }],
+        parameters: [{ name: '_principal', description: 'Host-verified message-scoped identity.' }, { name: '_subjects', description: 'candidate Session, Workspace, and attachment ids.' }, { name: '_signal', description: 'optional caller cancellation.' }],
         returns: 'requested ids the deployment authorizes for this principal.',
+      },
+      {
+        signature: 'recordAttachments( _principal: AuthenticatedPrincipal, _grant: PrincipalAttachmentGrant, _signal?: AbortSignal, ): Promise<void>',
+        description: 'Durably and idempotently grant trusted uploads to the current account. Providers revalidate the principal and Session ownership before recording; a shared content id may independently belong to multiple uploading accounts.',
+        parameters: [{ name: '_principal', description: 'captured, transport-verified account identity.' }, { name: '_grant', description: 'validated uploads and the Session receiving them.' }, { name: '_signal', description: 'optional caller cancellation.' }],
+        returns: 'completion after every grant is durable; failure prevents prompt delivery.',
       },
     ],
   },
@@ -7555,11 +7561,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PrincipalAccessResult',
-    declaration: 'export interface PrincipalAccessResult {\n    readonly readableSessionIds: ReadonlySet<SessionId>;\n    readonly readableWorkspaceIds: ReadonlySet<WorkspaceId>;\n}',
+    declaration: 'export interface PrincipalAccessResult {\n    readonly readableSessionIds: ReadonlySet<SessionId>;\n    readonly readableWorkspaceIds: ReadonlySet<WorkspaceId>;\n    readonly readableAttachmentIds?: ReadonlySet<AttachmentId>;\n}',
   },
   {
     name: 'PrincipalAccessSubjects',
-    declaration: 'export interface PrincipalAccessSubjects {\n    readonly sessionIds?: readonly SessionId[];\n    readonly workspaceIds?: readonly WorkspaceId[];\n}',
+    declaration: 'export interface PrincipalAccessSubjects {\n    readonly sessionIds?: readonly SessionId[];\n    readonly workspaceIds?: readonly WorkspaceId[];\n    readonly attachmentIds?: readonly AttachmentId[];\n}',
+  },
+  {
+    name: 'PrincipalAttachmentGrant',
+    declaration: 'export interface PrincipalAttachmentGrant {\n    readonly sessionId: SessionId;\n    readonly attachmentIds: readonly AttachmentId[];\n}',
   },
   {
     name: 'PrincipalMap',

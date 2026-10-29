@@ -38,7 +38,7 @@ import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { AuthenticatedPrincipal, ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-api-gateway/types'
-import { resolvePrincipalAccess } from '@deepseek-ai/dsh-principal-access'
+import { recordPrincipalAttachments, resolvePrincipalAccess } from '@deepseek-ai/dsh-principal-access'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
@@ -486,6 +486,13 @@ export class SubagentRuntime extends TypertRemoteService {
       ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
       ...(principal === undefined ? {} : { principal }),
     }
+    if (request.content.some(part => 'attachment' in part
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- Remote JSON can violate the declared prompt union.
+      || (part.type !== 'text' && part.type !== 'image'))) {
+      throw new RemoteError('subagent/attachment-invalid', 'Prompt images require uploaded bytes.', {
+        reason: 'UNTRUSTED_ATTACHMENT_REFERENCE',
+      })
+    }
     try {
       // Admission precedes delivery: image parts become durable references
       // here, so the child inbox only ever accepts Host-persisted attachments.
@@ -496,6 +503,10 @@ export class SubagentRuntime extends TypertRemoteService {
         const attachments = this.ctx.get('attachments')
         if (attachments === undefined) throw new Error('subagent image prompt requires an attachment store')
         content = await attachments.admitPromptContent(request.content)
+        await recordPrincipalAttachments(this.ctx, accountPrincipal, {
+          sessionId: parentSessionId,
+          attachmentIds: [...new Set(content.flatMap(part => part.type === 'image' ? [part.attachment.attachmentId] : []))],
+        }, signal)
       }
       return {
         messageId: await this[deliverSubagentPrompt](

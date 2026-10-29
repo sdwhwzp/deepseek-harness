@@ -24,7 +24,7 @@
 import { Zip, ZipDeflate } from 'fflate'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  AttachmentStore, FileAttachmentRef, ImageAttachmentRef,
+  AttachmentId, AttachmentStore, FileAttachmentRef, ImageAttachmentRef,
 } from '@deepseek-ai/dsh-attachment'
 import type { SessionLineageNode, SessionQueryEngine } from '@deepseek-ai/dsh-session-query'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
@@ -53,6 +53,8 @@ export interface SessionLogExportReady {
   readonly sessionPersistence: SessionPersistence
   readonly attachments: AttachmentStore
   readonly sessions: SessionStore | undefined
+  /** Captured HTTP-account authority, checked before any referenced object is read. */
+  readonly authorizeAttachments?: (ids: readonly AttachmentId[], signal?: AbortSignal) => Promise<void>
 }
 
 /**
@@ -390,6 +392,7 @@ export async function* sessionLogZipEntries(
     signal?.throwIfAborted()
     yield* collect(descendants)
   }
+  await deps.authorizeAttachments?.([...media.values(), ...files.values()].map(ref => ref.attachmentId), signal)
   for (const ref of media.values()) {
     signal?.throwIfAborted()
     const stored = await deps.attachments.readImage(ref, signal)

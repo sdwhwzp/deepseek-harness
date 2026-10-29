@@ -210,6 +210,10 @@ async function sessionLogExportResponse(
     sessionPersistence: deps.sessionPersistence,
     attachments: deps.attachments,
     sessions: deps.sessions,
+    authorizeAttachments: async (attachmentIds, signal) => {
+      const access = await resolvePrincipalAccess(ctx, principal, { attachmentIds }, signal)
+      for (const id of attachmentIds) requirePrincipalAccess(access, { kind: 'attachment', id })
+    },
   }
   const authorize = async (sessionIds: readonly SessionId[]): Promise<Response | undefined> => {
     try {

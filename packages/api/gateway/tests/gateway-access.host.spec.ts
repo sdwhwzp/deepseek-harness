@@ -29,6 +29,9 @@ import TypertGatewayService, { type TypertRemoteEventDispatch } from '@deepseek-
 import { callResources, eventResources } from '../src/access.ts'
 import { provideBrowserCredentials } from './browser-credentials.ts'
 import { ownerPeer, peerFor } from './peer.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { PrincipalAccessSubjects } from '@deepseek-ai/dsh-principal-access'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
 
 interface AccessAgent {
   readonly id: string
@@ -689,6 +692,34 @@ function eventSource(ctx: Context): (dispatch: TypertRemoteEventDispatch) => voi
 }
 
 describe('Gateway forwarded events for non-owner Peers', () => {
+  it('requires independent account attachment grants for attachment-scoped events', async () => {
+    const { ctx } = await setup({ connection: true })
+    const principal: AuthenticatedPrincipal = { source: 'fixture', id: 'alice', username: 'Alice', role: 'user' }
+    ctx.provide('requestPrincipal', { authenticate: () => principal })
+    ctx.provide('principalAccess', {
+      resolve: async (_principal: AuthenticatedPrincipal, subjects: PrincipalAccessSubjects) => ({
+        readableSessionIds: new Set(subjects.sessionIds ?? []),
+        readableWorkspaceIds: new Set(subjects.workspaceIds ?? []),
+        readableAttachmentIds: new Set((subjects.attachmentIds ?? []).filter(id => id === 'owned')),
+      }),
+    } as never)
+    const admission = await ctx.connection.admitRequest({ method: 'GET', url: '/api/$events', headers: { host: 'localhost' } })
+    if ('rejection' in admission) throw new Error('fixture account was refused')
+    const push = eventSource(ctx)
+    const abort = new AbortController()
+    const events = (await ctx.typertGateway.wireStream.open(
+      '$events', { args: {} }, (async function* () {})(), admission.peer, abort.signal,
+    ))[Symbol.asyncIterator]()
+    try {
+      await expect(events.next()).resolves.toMatchObject({ value: { type: 'ready' } })
+      push({ event: 'fixture/notice', args: ['foreign'], readSubjects: { attachmentIds: [brandString('foreign')] } })
+      push({ event: 'fixture/notice', args: ['owned'], readSubjects: { attachmentIds: [brandString('owned')] } })
+      await expect(events.next()).resolves.toMatchObject({ value: { type: 'emit', args: ['owned'] } })
+    } finally {
+      abort.abort()
+      await events.return?.()
+    }
+  })
   it('denies event streams and results for passive owner and guest Peers', async () => {
     const { ctx } = await setup({ connection: true })
     const passive = [

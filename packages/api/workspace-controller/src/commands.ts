@@ -22,6 +22,7 @@ import {
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { workspaceView } from './feed.ts'
 import { principalWorkspaceView } from './principal-feed.ts'
+
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
@@ -39,6 +40,8 @@ import type {
   WorkspaceUnpinSessionRequest,
   WorkspaceValue,
 } from './types.ts'
+
+type WorkspaceAccessSubject = Extract<PrincipalAccessSubject, { readonly kind: 'session' | 'workspace' }>
 
 /** Implements authorized Workspace mutations against the authoritative registry. */
 export class WorkspaceCommands {
@@ -273,7 +276,7 @@ export class WorkspaceCommands {
   private authorizeWorkspace(
     workspace: Workspace,
     principal: AuthenticatedPrincipal | undefined,
-    denied: (subject: PrincipalAccessSubject) => RemoteError = hiddenResource,
+    denied: (subject: WorkspaceAccessSubject) => RemoteError = hiddenResource,
   ): Promise<PrincipalAccessResult> {
     return this.authorize(
       principal,
@@ -286,8 +289,8 @@ export class WorkspaceCommands {
   private async authorize(
     principal: AuthenticatedPrincipal | undefined,
     subjects: PrincipalAccessSubjects,
-    exactSubjects: readonly PrincipalAccessSubject[],
-    denied: (subject: PrincipalAccessSubject) => RemoteError,
+    exactSubjects: readonly WorkspaceAccessSubject[],
+    denied: (subject: WorkspaceAccessSubject) => RemoteError,
   ): Promise<PrincipalAccessResult> {
     try {
       const access = await resolvePrincipalAccess(this.ctx, principal, subjects)
@@ -383,7 +386,7 @@ function isSubjectDenied(error: unknown): error is PrincipalAccessDeniedError {
   return error instanceof PrincipalAccessDeniedError && error.reason === 'subject-denied'
 }
 
-function hiddenResource(subject: PrincipalAccessSubject): RemoteError {
+function hiddenResource(subject: WorkspaceAccessSubject): RemoteError {
   return subject.kind === 'workspace' ? workspaceNotFound(subject.id) : sessionNotFound(subject.id)
 }
 

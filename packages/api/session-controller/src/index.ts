@@ -542,8 +542,9 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('attachment')
   async attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue> {
-    await requireReadableSession(this.ctx, request.sessionId, this.currentPrincipal())
-    return this.commands.attachment(request)
+    const principal = this.currentPrincipal()
+    await requireReadableSession(this.ctx, request.sessionId, principal)
+    return this.commands.attachment(request, principal)
   }
 
   /**

@@ -24,6 +24,8 @@ Session Controller 在一元调用或 stream 打开时捕获一次 API Gateway p
 
 `session.follow` 会在观测日志前以及每个 frame 发布前授权，因此撤权会阻止下一条 frame 发布。显式请求的[有界 Assistant 批次](../bug-fix/2026-09-13-bounded-assistant-follow-batches.zh.md)是一次发布帧，接受一次新的检查。`session.control` 过滤 opening baseline 中的全部三张 map，并在 yield 此后每个按 Session 寻址的 frame 前解析权限。因此授权同时覆盖初始状态与实时事件；只过滤 baseline 会泄露此后的全局 queue、job 或 projection 更新。
 
+附件归属是独立授权。Session 附件读取与 ZIP 导出对象读取都必须先获得提供方返回的 `readableAttachmentIds`，再访问附件存储；省略该字段会拒绝所有对象。浏览器 Session 与 subagent 提示词拒绝 wire 提供的持久引用，只接收上传字节或精确 Session 回执，并在 inbox 投递前调用 `recordAttachments`。该方法重新验证账户与 Session 归属，持久、幂等地记录授权；浏览器 subagent 提示词把上传绑定到已授权父 Session。提供方失败会阻止投递，已存储的不可变字节可能成为无引用对象。旧数据归属不明时默认拒绝：可读历史日志中的引用不足以证明归属，因为旧提示词准入可能接受过注入引用。部署必须依据可信归属证据回填，或要求重新上传字节，并把授权数据纳入整体快照。ZIP 导出可能在附件授权被拒绝前已发送可读日志条目；此时响应流失败，但不会读取任何被拒绝附件的字节。
+
 ### Workspace 读取
 
 Workspace Controller 在 `workspace.follow` 打开时捕获 Gateway principal。其 baseline 按 Workspace 访问权限过滤 Workspace 行，按 Session 访问权限过滤每行的 Session 成员以及已归档 Session id。此后的 upsert 与 archived snapshot 会再次解析权限；若一个已可见的 Workspace 在 upsert 时不再获准，该 upsert 会变为 `remove`，而 order 与 removal frame 只会指向该 stream generation 已披露的 Workspace。

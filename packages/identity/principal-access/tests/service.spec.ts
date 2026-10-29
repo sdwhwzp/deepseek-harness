@@ -1,12 +1,14 @@
 import { Context } from '@deepseek-ai/cordis'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
   PrincipalAccessDeniedError,
   PrincipalAccessService,
   requirePrincipalAccess,
+  recordPrincipalAttachments,
   resolvePrincipalAccess,
   type PrincipalAccessResult,
   type PrincipalAccessSubjects,
@@ -39,6 +41,48 @@ class StubPrincipalAccess extends PrincipalAccessService {
 }
 
 describe('principal access seam', () => {
+  it('does not become anonymous when the provider unloads during upload authorization', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    const fiber = ctx.plugin(StubPrincipalAccess)
+    await fiber
+    const provider = ctx.principalAccess as StubPrincipalAccess
+    const sessionId = SessionId('owned')
+    provider.implementation.mockImplementationOnce(async () => {
+      await fiber.dispose()
+      return { readableSessionIds: new Set([sessionId]), readableWorkspaceIds: new Set() }
+    })
+    await expect(recordPrincipalAttachments(ctx, principal, {
+      sessionId, attachmentIds: [AttachmentId('image')],
+    })).rejects.toThrow()
+    expect(ctx.get('principalAccess')).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+  it('denies attachments for older providers that return only Session and Workspace grants', async () => {
+    const ctx = new Context()
+    const provider = new StubPrincipalAccess(ctx)
+    const attachment = { kind: 'attachment', id: AttachmentId('existing') } as const
+    const access = await resolvePrincipalAccess(ctx, principal, { attachmentIds: [attachment.id] })
+    expect(() => { requirePrincipalAccess(access, attachment) })
+      .toThrow(new PrincipalAccessDeniedError('subject-denied', attachment))
+    provider.implementation.mockResolvedValue({
+      readableSessionIds: new Set([SessionId('session-1')]), readableWorkspaceIds: new Set(),
+    })
+    await expect(recordPrincipalAttachments(ctx, principal, {
+      sessionId: SessionId('session-1'), attachmentIds: [attachment.id],
+    })).rejects.toMatchObject({ reason: 'attachment-provider-required' })
+    await ctx.fiber.dispose()
+  })
+
+  it('requires ownership recording for authenticated uploads and preserves anonymous compatibility', async () => {
+    const grant = { sessionId: SessionId('session-1'), attachmentIds: [AttachmentId('image')] }
+    const ctx = new Context()
+    await expect(recordPrincipalAttachments(ctx, principal, grant)).rejects.toMatchObject({ reason: 'provider-required' })
+    await expect(recordPrincipalAttachments(ctx, undefined, grant)).resolves.toBeUndefined()
+    const access = await resolvePrincipalAccess(ctx, undefined, { attachmentIds: grant.attachmentIds })
+    expect(() => { requirePrincipalAccess(access, { kind: 'attachment', id: grant.attachmentIds[0]! }) }).not.toThrow()
+    await ctx.fiber.dispose()
+  })
   it('preserves local anonymous legacy access when no provider is mounted', async () => {
     const ctx = new Context()
     const sessionId = SessionId('session-1')

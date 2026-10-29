@@ -8,10 +8,12 @@
 
 import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session'
 import { randomBytes } from 'node:crypto'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { unzipSync, strFromU8 } from 'fflate'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
+import type { PrincipalAccessSubjects } from '@deepseek-ai/dsh-principal-access'
 import type { SessionEvent, SessionHeader, SessionId, ToolResultMessage, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionLineageNode } from '@deepseek-ai/dsh-session-query'
 import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
@@ -106,6 +108,7 @@ async function buildApi(
   logs: Record<string, StoredLog>,
   descendants: SessionLineageNode[] = [],
   services: {
+    auth?: { readonly principal: AuthenticatedPrincipal; readonly attachments: ReadonlySet<string> }
     query?: boolean
     persistence?: boolean | 'throw'
     attachments?: boolean | ((ref: ImageAttachmentRef, signal?: AbortSignal) => Promise<ReturnType<typeof storedImage>>)
@@ -126,6 +129,18 @@ async function buildApi(
   } = {},
 ) {
   const ctx = new Context()
+  onTestFinished(() => ctx.fiber.dispose())
+  if (services.auth !== undefined) {
+    const auth = services.auth
+    ctx.provide('requestPrincipal', { authenticate: () => auth.principal })
+    ctx.provide('principalAccess', {
+      resolve: async (_principal: AuthenticatedPrincipal, subjects: PrincipalAccessSubjects) => ({
+        readableSessionIds: new Set(subjects.sessionIds ?? []),
+        readableWorkspaceIds: new Set(),
+        readableAttachmentIds: new Set((subjects.attachmentIds ?? []).filter(id => auth.attachments.has(id))),
+      }),
+    } as never)
+  }
   ctx.provide('commands', { register: () => () => {} } as never)
   const query = services.query ?? true
   const persistence = services.persistence ?? true
@@ -179,8 +194,13 @@ async function buildApi(
   })
   await fiber.await()
   const handler = connection.createSharedFetchHandler('/api')
+  const admission = services.auth === undefined ? undefined : await connection.admitRequest({
+    method: 'GET', url: SessionLogExport.SESSION_LOG_EXPORT_PATH, headers: { host: 'localhost' },
+  })
+  if (admission !== undefined && 'rejection' in admission) throw new Error('fixture account was refused')
+  const peer = admission?.peer ?? connection.browserPeer
   return {
-    fetch: { fetch: (request: Request) => handler.fetch(request, connection.browserPeer) },
+    fetch: { fetch: (request: Request) => handler.fetch(request, peer) },
     downloads: {
       sessionLog: (
         request: { sessionId: SessionId; includeDescendants: boolean },
@@ -189,7 +209,7 @@ async function buildApi(
         const url = new URL(`http://host${SessionLogExport.SESSION_LOG_EXPORT_PATH}`)
         url.searchParams.set('sessionId', request.sessionId)
         url.searchParams.set('includeDescendants', String(request.includeDescendants))
-        return handler.fetch(new Request(url, { signal }), connection.browserPeer)
+        return handler.fetch(new Request(url, { signal }), peer)
       },
     },
   }
@@ -202,6 +222,41 @@ function toFetchHandler(api: Awaited<ReturnType<typeof buildApi>>): { fetch(requ
 async function responseBytes(response: Response): Promise<Uint8Array> {
   return new Uint8Array(await response.arrayBuffer())
 }
+
+describe('account attachment grants on ZIP exports', () => {
+  it.each(['image', 'file'] as const)('refuses a foreign %s referenced by an otherwise readable log before any object read', async (kind) => {
+    const readImage = vi.fn(async (ref: ImageAttachmentRef) => storedImage(String(ref.attachmentId)))
+    const readFileStream = vi.fn(async function* () { yield Uint8Array.of(1) })
+    const api = await buildApi({
+      'session-root': log('session-root', undefined, [kind === 'image' ? imageEvent('foreign') : fileEvent('foreign')]),
+    }, [], {
+      auth: { principal: { source: 'fixture', id: 'bob', username: 'bob', role: 'user' }, attachments: new Set() },
+      attachments: readImage, readFileStream,
+    })
+    const response = await api.downloads.sessionLog({
+      sessionId: sid('session-root'), includeDescendants: false,
+    }, new AbortController().signal)
+    await expect(responseBytes(response)).rejects.toMatchObject({ code: 'PRINCIPAL_ACCESS_DENIED' })
+    expect(readImage).not.toHaveBeenCalled()
+    expect(readFileStream).not.toHaveBeenCalled()
+  })
+
+  it('exports preexisting images when the account provider supplies an independent grant', async () => {
+    const readImage = vi.fn(async (ref: ImageAttachmentRef) => storedImage(String(ref.attachmentId)))
+    const api = await buildApi({ 'session-root': log('session-root', undefined, [imageEvent('owned')]) }, [], {
+      auth: {
+        principal: { source: 'fixture', id: 'alice', username: 'alice', role: 'user' },
+        attachments: new Set(['owned']),
+      },
+      attachments: readImage,
+    })
+    const response = await api.downloads.sessionLog({
+      sessionId: sid('session-root'), includeDescendants: false,
+    }, new AbortController().signal)
+    expect(unzipSync(await responseBytes(response))['media/owned.png']).toEqual(Uint8Array.of(1, 2, 3, 4))
+    expect(readImage).toHaveBeenCalledTimes(1)
+  })
+})
 
 /** Minimal ready services for the direct streamSessionLogZip chunking tests. */
 function directReady(): SessionLogExport.SessionLogExportReady {

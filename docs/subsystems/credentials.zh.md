@@ -377,14 +377,25 @@ Deployment authorization Service Definition for principal-scoped resource reads.
 /**
  * Resolve the readable subset of one batched request.
  * @param _principal - Host-verified message-scoped identity.
- * @param _subjects - candidate Session and Workspace ids.
+ * @param _subjects - candidate Session, Workspace, and attachment ids.
  * @param _signal - optional caller cancellation.
  * @returns requested ids the deployment authorizes for this principal.
  */
 resolve( _principal: AuthenticatedPrincipal, _subjects: PrincipalAccessSubjects, _signal?: AbortSignal, ): Promise<PrincipalAccessResult>
+
+/**
+ * Durably and idempotently grant trusted uploads to the current account.
+ * Providers revalidate the principal and Session ownership before recording;
+ * a shared content id may independently belong to multiple uploading accounts.
+ * @param _principal - captured, transport-verified account identity.
+ * @param _grant - validated uploads and the Session receiving them.
+ * @param _signal - optional caller cancellation.
+ * @returns completion after every grant is durable; failure prevents prompt delivery.
+ */
+recordAttachments( _principal: AuthenticatedPrincipal, _grant: PrincipalAttachmentGrant, _signal?: AbortSignal, ): Promise<void>
 ```
 
-Types: [AuthenticatedPrincipal](core.zh.md) · [PrincipalAccessResult](core.zh.md) · [PrincipalAccessSubjects](core.zh.md)
+Types: [AuthenticatedPrincipal](core.zh.md) · [PrincipalAccessResult](core.zh.md) · [PrincipalAccessSubjects](core.zh.md) · [PrincipalAttachmentGrant](core.zh.md)
 
 Source: [`packages/identity/principal-access/src/index.ts`](../../packages/identity/principal-access/src/index.ts)
 

@@ -722,6 +722,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       const access = await resolvePrincipalAccess(this.ctx, client.accountPrincipal, subjects, signal)
       return (subjects.sessionIds ?? []).every(id => access.readableSessionIds.has(id))
         && (subjects.workspaceIds ?? []).every(id => access.readableWorkspaceIds.has(id))
+        && (subjects.attachmentIds ?? []).every(id => access.readableAttachmentIds?.has(id) === true)
     } catch (error: unknown) {
       if (error instanceof PrincipalAccessDeniedError) return false
       throw error
