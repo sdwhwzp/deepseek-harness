@@ -10,7 +10,7 @@
  * index render (structured injection rows, then raw taps). Non-index assets
  * stay public; every file other than the index carries a weak ETag with
  * `cache-control: no-cache` and answers a matching `If-None-Match` with 304,
- * while the index carries no cache headers. The dist location is workspace
+ * while the index carries `cache-control: no-store`. The dist location is workspace
  * knowledge of the composing application, so `distIndex` is typically
  * supplied through a `!!js` expression, never hardcoded by a deployment.
  * @module @deepseek-ai/dsh-host-frontend-static
@@ -107,7 +107,9 @@ async function serveStatic(
       const refusal = authorizeIndex()
       if (refusal !== undefined) return refusal
       body = renderIndex(await readFile(distIndex, 'utf8'))
-      headers = { 'content-type': HTML_MIME }
+      // The index names the current immutable module graph, and a later release
+      // removes the assets of a graph it replaces.
+      headers = { 'content-type': HTML_MIME, 'cache-control': 'no-store' }
     } else {
       body = await readFile(target)
       // Weak: gzip changes the transferred bytes.
