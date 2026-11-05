@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * In-process module arrival: dynamic `/client` imports resolve through the
  * repository path aliases, provided rows replace them, the bootstrap row is the
@@ -12,8 +13,9 @@ import type { WebBootGraph } from '@deepseek-ai/dsh-client-modules/client'
 import * as uiRenderer from '@deepseek-ai/dsh-client-ui-renderer/client'
 import * as typertRegistry from '@deepseek-ai/dsh-typert-registry/client'
 import { describe, expect, it, onTestFinished } from 'vitest'
+import * as React from 'react'
 import { ClientRoster } from '../src/assembly/index.ts'
-import { MODULES_PACKAGE, createInProcessModules, loadPluginModules } from '../src/assembly/modules.ts'
+import { MODULES_PACKAGE, captureClientBundle, createInProcessModules, loadPluginModules } from '../src/assembly/modules.ts'
 
 const RENDERER = '@deepseek-ai/dsh-client-ui-renderer'
 const TYPERT = '@deepseek-ai/dsh-typert-registry'
@@ -57,6 +59,40 @@ describe('loadPluginModules', () => {
 })
 
 describe('createInProcessModules', () => {
+  it('materializes installed browser factories with the shared React instance and caches their exports', async () => {
+    const registration = captureClientBundle('external-plugin', `window.__ModuleLoader__.load({
+      id: 'external-plugin',
+      factory: require => ({ apply() {}, react: require('react'), document })
+    })`)
+    const system = createInProcessModules(graph(['external-plugin']), new Map([['external-plugin', registration]]))
+    await system.prefetch('external-plugin')
+    expect(system.loadCache.has('external-plugin')).toBe(false)
+    const namespace = await system.import('external-plugin', '', {})
+    expect(typeof (namespace as { apply: unknown }).apply).toBe('function')
+    expect(namespace).toHaveProperty('react', React)
+    expect(namespace).toHaveProperty('document', document)
+    expect(await system.import('external-plugin', '', {})).toBe(namespace)
+  })
+
+  it('loads the shipped boot-animation registration without replacing the page loader', async () => {
+    const loader: unknown = Reflect.get(window, '__ModuleLoader__')
+    const roster = ClientRoster.of([row('dsh-boot-animation')])
+    const modules = await loadPluginModules({ roster })
+    const system = createInProcessModules(graph(['dsh-boot-animation']), modules)
+    const namespace = await system.import('dsh-boot-animation', '', {})
+    expect(typeof (namespace as { apply: unknown }).apply).toBe('function')
+    expect(Reflect.get(window, '__ModuleLoader__')).toBe(loader)
+  })
+
+  it.each([
+    'export const apply = () => {}',
+    'window.__ModuleLoader__.load({id: "other", factory: () => ({})})',
+    'window.__ModuleLoader__.load({id: "external-plugin", factory: null})',
+    'window.__ModuleLoader__.load({id: "external-plugin", chunk: "chunk.js", factory: () => ({})})',
+  ])('rejects an incompatible installed registration: %s', (source) => {
+    expect(() => captureClientBundle('external-plugin', source)).toThrow('client-test-runtime:')
+  })
+
   it('serves import() and prefetch() from registered factories and never loads a bundle', async () => {
     const roster = ClientRoster.of([row(MODULES_PACKAGE, true), row(TYPERT, true), row(RENDERER)])
     const modules = await loadPluginModules({ roster })

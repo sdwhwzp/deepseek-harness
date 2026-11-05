@@ -97,7 +97,8 @@ describe.skipIf(webSnapshotMode() === 'record')('historical preset restoration t
           values: { title: fullRow?.projections?.values.title },
         },
       })
-      expect(await scaffold.ctx.subagents.listChildren(id)).toEqual([
+      using observed = await scaffold.ctx.sessionQuery.observeSession(id)
+      expect(observed.projections?.values.subagentCatalog).toEqual([
         { id: brokenId, createdAt: childFixture[0]?.['createdAt'], mode: 'unknown' },
         { id: childId, createdAt: childFixture[0]?.['createdAt'], mode: 'one-shot', label: 'historical child' },
         { id: legacyId, createdAt: childFixture[0]?.['createdAt'], mode: 'unknown' },

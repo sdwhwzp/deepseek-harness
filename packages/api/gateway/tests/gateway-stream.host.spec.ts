@@ -56,6 +56,7 @@ type AgentWireId = TypertContextWire<TypertContextMap['agent']>
 const agentId = (value: string): AgentWireId => value as AgentWireId
 
 class FeedService extends TypertRemoteService {
+  static inject = ['typertGateway']
   readonly signals: AbortSignal[] = []
   readonly peeked: unknown[] = []
   readonly peers: PeerScope[] = []

@@ -8,7 +8,7 @@ import type { ConversationNodeDefinition, ConversationViewDefinition } from '@de
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { SessionListState, SessionLiveEventEntry } from '@deepseek-ai/dsh-api-session-controller/client'
 import { SessionSeq, type SessionEvent, type SessionId } from '@deepseek-ai/dsh-session/types'
-import { allowAllAccess, chatSnapshot, conversationSnapshot, makeTranslate, sessionSnapshot, workspaceSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, chatSnapshot, contextMenuHook, conversationSnapshot, makeTranslate, sessionSnapshot, workspaceSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import { WorkflowRunPanel, type WorkflowRunPanelProps } from '../src/client/WorkflowRunPanel.tsx'
 import { zh } from '../src/client/locales.ts'
 import { workflowRunDefinition, type WorkflowRunChatData } from '../src/client/workflow-definition.ts'
@@ -71,6 +71,7 @@ function props(node: ChatConversationViewNode, sessions: SessionListState): Work
   const attention = new Map<SessionId, never>()
   return {
     ...allowAllAccess,
+    useContextMenu: contextMenuHook(),
     node: node as WorkflowRunPanelProps['node'], sessionId: PARENT_ID,
     usePanelInfo: selector => selector({ activePanelId: null }),
     useSessions: s => s(sessions), useResource,
@@ -96,7 +97,7 @@ function props(node: ChatConversationViewNode, sessions: SessionListState): Work
     useDisclosure: () => { throw new Error('unused') },
     useGroupAction: () => { throw new Error('unused group action') },
     openFile: () => {}, inspectCall: () => {}, forkAt: () => {},
-    loadImage: () => Promise.reject(new Error('not used')), fileMentions: () => undefined,
+    loadImage: () => Promise.reject(new Error('not used')),
     openSession: vi.fn(), t: makeTranslate(zh),
   }
 }

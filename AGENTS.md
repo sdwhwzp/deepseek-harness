@@ -37,6 +37,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   compaction/           context compaction
   context/              request context
   subagent/             delegated agents
+  team/                 shared task coordination
   jobs/                 background jobs
   bundle/               profile bundles
   workflow/             workflow execution
@@ -128,7 +129,7 @@ Real-API tests/demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and 
 
 ## Personal fork synchronization
 
-For Harness and integrated plugin forks, follow the [synchronization procedure](docs/cookbook/synchronizing-personal-forks.md): preserve work, fetch both remotes, merge into the working branch, retain account isolation and persistence compatibility, validate, publish every branch, refetch and resolve remaining source changes before completion.
+Harness and integrated plugin forks follow the [synchronization procedure](docs/cookbook/synchronizing-personal-forks.md): preserve work; fetch both remotes; merge into the working branch; retain account isolation and persistence compatibility; validate; publish every branch; refetch and integrate remaining source changes.
 
 ## Conventions
 
@@ -160,6 +161,7 @@ For Harness and integrated plugin forks, follow the [synchronization procedure](
 - **Create Agent Notes only for durable decision rationale;** mechanical/local edits are exempt, including local UI changes ([scope](.agents/notes/README.md#when-to-write-one)). Archived notes are frozen: never edit or treat them as current authority ([archive policy](.agents/notes/README.md#archiving-and-deletion)).
 - **Official plugin artwork:** use [dsh-official-plugin-artwork](.agents/skills/dsh-official-plugin-artwork/SKILL.md) for official and official experimental plugin icons; obtain designer approval before landing new glyphs.
 - **Client UI copy is locale-owned.** Route product text through typed dictionaries and `t` or localized primitive props; `verify-client-ui-i18n` rejects hardcoded copy ([decision](.agents/notes/implemented/architecture/2026-08-23-locale-owned-client-ui-copy.md)). English copy, including plugin titles, uses sentence case ([rule](.agents/skills/dsh-prose-standard/SKILL.md#required-coverage-by-prose-location)).
+- **UI changes:** use [dsh-client-ui-ux](.agents/skills/dsh-client-ui-ux/SKILL.md) as the design and review entry point; load its references only as needed.
 - **Testing policy** — [docs/testing.md](docs/testing.md). Every non-trivial model- or product-user-visible change updates a keyless recorded-session snapshot; [snapshot ownership](snapshots/AGENTS.md) reserves the top-level tree for session-driven cases and keeps other expected output owner-local. Fixtures replay on macOS/Linux; fix fixtures, not normalizers.
 - **Design each tool's UI presentation up front.** Host presenters stay pure; Web cards derive from raw events and persisted result metadata ([cookbook](docs/cookbook/adding-a-tool.md)).
 - **Plan unit, e2e, and snapshot coverage** for capability seams, lifecycle paths, and transcript output; include missing snapshot-harness support in the same change.
@@ -176,16 +178,16 @@ Read [docs/defensive-patterns/README.md](docs/defensive-patterns/README.md) befo
 
 ## Type safety and documentation
 
-Everything compiles under `strict: true` with `noImplicitAny`; every remaining `any` explains why narrowing is infeasible. Every module and export has concise JSDoc for its non-obvious contract; function-like exports include `@param`/`@returns`, as enforced by `verify-export-jsdoc`. Heritage-declared members, plugin-protocol slots, and constructors keep their docs at the declaring Service Definition, protocol, or class.
+Compile with `strict: true` and `noImplicitAny`; explain every unavoidable `any`. Document non-obvious module and export contracts in concise JSDoc; exported functions need `@param`/`@returns` (`verify-export-jsdoc`). Document inherited members, plugin-protocol slots, and constructors at their declaring Service Definition, protocol, or class.
 
-Comments and docs state complete contracts and context, not reasoning transcripts. Use direct, concrete terms. Do not use metaphors. Before writing `contract`, `boundary`, or `shape`, ask whether a more exact term names the subject: write `response fields`, `JSON validation`, or `ESM exports` instead of `response shape`, `validation boundary`, or `module shape`. Keep `contract` for preconditions, postconditions, invariants, compatibility promises, and other obligations that callers, callees, implementers, providers, producers, or consumers rely on. Keep a literal process, wire, security, transaction, or lifecycle boundary. Do not narrate control flow or tests, preserve review history, or restate code. Keep behavior, failure, timing, ownership, and safe-use facts; link the rationale. Use [dsh-prose-standard](.agents/skills/dsh-prose-standard/SKILL.md) for decisions. Wire mechanically checkable invariants into an executed top-level gate and prove each changed acceptance path rejects an invalid case. Use narrow, justified exceptions instead of disabling a rule globally.
+Comments and docs state complete contracts and context, never reasoning transcripts, metaphors, control-flow or test narration, review history, or code restatements. Prefer exact terms: `response fields`, `JSON validation`, `ESM exports`. Reserve `contract` for participant obligations, including preconditions, postconditions, invariants, and compatibility promises; reserve `boundary` for literal process, wire, security, transaction, or lifecycle boundaries. Preserve behavior, failure, timing, ownership, and safe-use facts; link rationale. Follow [dsh-prose-standard](.agents/skills/dsh-prose-standard/SKILL.md). Enforce mechanically checkable invariants in executed top-level gates; verify an invalid case for every changed acceptance path. Exceptions must be narrow and justified, never global rule disablement.
 
-Docs accompany every code change: update affected README and JSDoc contracts together. Routine bilingual work follows [docs/AGENTS.md](docs/AGENTS.md); only explicit user invocation may run `dsh-translate-docs`. Current-state prose, one physical line per paragraph, one home per fact, and word budgets live there.
+Every code change updates affected README and JSDoc contracts together. Follow [docs/AGENTS.md](docs/AGENTS.md) for routine bilingual work, current-state prose, paragraph lines, fact ownership, and budgets. Run `dsh-translate-docs` only on explicit user invocation.
 
 ## Editing these instructions
 
-`CLAUDE.md` symlinks `AGENTS.md` at root and `packages/`; edit the real file. Keep each rule self-contained while linking high-level docs. Condense when clarity survives; raise a `verify-doc-budgets` ceiling when the required content genuinely needs more space.
+Root and `packages/CLAUDE.md` symlink `AGENTS.md`; edit the target. Keep rules self-contained with high-level links. Condense without losing clarity; raise `verify-doc-budgets` ceilings only when required content needs more space.
 
 ## Vendoring policy
 
-`vendor/` packages are pinned source copies (manifest with upstream SHAs in [vendor/README.md](vendor/README.md)). Update via the sync procedure there; re-apply or retire the logged local modifications; rerun `pnpm run test && pnpm run build`.
+`vendor/` contains pinned source copies. Follow its [manifest and sync procedure](vendor/README.md), reapply or retire recorded local modifications, then run `pnpm run test && pnpm run build`.

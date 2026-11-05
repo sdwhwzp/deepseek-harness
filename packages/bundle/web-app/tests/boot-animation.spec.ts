@@ -38,13 +38,14 @@ it.each([true, false])('serves bundled startup videos with animation enabled: %s
 
   const peer = { principal: { kind: 'owner' } } as Parameters<WebServer['renderIndex']>[1]
   const html = ctx.webServer.renderIndex('<head><script type="module" src="/shell.js"></script></head><body></body>', peer)
-  expect(html.includes('__DSH_BOOT_ANIM_CFG__')).toBe(enabled)
-  if (enabled) expect(html.indexOf('__DSH_BOOT_ANIM_CFG__')).toBeLessThan(html.indexOf('src="/shell.js"'))
+  expect(html.includes('__DSH_BOOT_ANIM_CFG__')).toBe(true)
+  expect(html.includes('globalThis.__DSH_BOOT_ANIM__ = namespace')).toBe(enabled)
+  expect(html.indexOf('__DSH_BOOT_ANIM_CFG__')).toBeLessThan(html.indexOf('src="/shell.js"'))
 
   const origin = ctx.webServer.getOrigin()
   const manifest = await fetch(new URL('/plugins/dsh-boot-animation/clips.json', origin))
   expect(manifest.status).toBe(200)
-  const { clips } = await manifest.json() as { clips: { src: string; bytes: number; enabled: boolean }[] }
+  const { items: clips } = await manifest.json() as { items: { src: string; bytes: number; enabled: boolean }[] }
   expect(clips.length).toBeGreaterThan(0)
   const clip = clips[0]!
   const response = await fetch(new URL(clip.src, origin), { headers: { range: 'bytes=0-31' } })

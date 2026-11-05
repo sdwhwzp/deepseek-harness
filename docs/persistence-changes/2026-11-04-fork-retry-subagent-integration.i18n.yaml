@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-11-04-fork-retry-subagent-integration.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-11-04-fork-retry-subagent-integration.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-11-04-fork-retry-subagent-integration:
+  en: 61d0700d07fbcb76
+  zh: 1af2074238ca0e1d
+/2026-11-04-fork-retry-subagent-integration/summary:
+  en: faa3c265dac1f736
+  zh: 438906d791246009
+/2026-11-04-fork-retry-subagent-integration/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-11-04-fork-retry-subagent-integration/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-11-04-fork-retry-subagent-integration/compatibility:
+  en: ee796e22b2c88296
+  zh: 9d33404536e5dcbd
+/2026-11-04-fork-retry-subagent-integration/verification:
+  en: 1d014417fa854def
+  zh: 0d46a5a6c8e1f590
+/2026-11-04-fork-retry-subagent-integration/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

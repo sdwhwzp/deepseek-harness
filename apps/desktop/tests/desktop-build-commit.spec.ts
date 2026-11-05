@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -58,10 +59,18 @@ describe('desktop build commit', () => {
       .toThrow(/must be 0 or 1/u)
   })
 
-  it('reads the checkout this repository is in', () => {
-    const packaged = readDesktopBuildCommit(join(import.meta.dirname, '..', '..', '..'))
+  it('reads a checkout commit and detects subsequent untracked files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-build-commit-'))
+    directories.push(directory)
+    const git = (args: string[]) => execFileSync('git', args, { cwd: directory, encoding: 'utf8' }).trim()
+    git(['init', '--quiet'])
+    git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', `core.hooksPath=${directory}`,
+      'commit', '--allow-empty', '--no-gpg-sign', '-m', 'Fixture'])
+    const packaged = readDesktopBuildCommit(directory)
     expect(packaged.commit).toMatch(/^[0-9a-f]{40}$/u)
-    expect(typeof packaged.dirty).toBe('boolean')
+    expect(packaged).toEqual({ commit: git(['rev-parse', 'HEAD']), dirty: false })
+    await writeFile(join(directory, 'untracked.txt'), 'local modification')
+    expect(readDesktopBuildCommit(directory)).toEqual({ commit: packaged.commit, dirty: true })
   })
 })
 
@@ -103,9 +112,8 @@ describe('desktop toolchain preflight', () => {
     goVersion.mockRejectedValueOnce(new Error('compiler unavailable'))
     expect(await probeDesktopToolchain('darwin', { DSH_DESKTOP_GO_BINARY: '/custom/go' }))
       .toEqual([{ tool: 'go', detail: 'compiler unavailable' }])
-    expect(goVersion).toHaveBeenCalledWith('/custom/go', expect.objectContaining({
-      env: expect.objectContaining({ GOTOOLCHAIN: 'local' }),
-    }))
+    expect(goVersion.mock.lastCall?.[0]).toBe('/custom/go')
+    expect(goVersion.mock.lastCall?.[1]?.env).toMatchObject({ GOTOOLCHAIN: 'local' })
   })
 
   it('writes nothing into the working directory while probing', async () => {

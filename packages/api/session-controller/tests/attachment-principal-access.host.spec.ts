@@ -147,7 +147,8 @@ describe('account-owned attachment admission and reads', () => {
     const foreign: ImageAttachmentRef = {
       attachmentId: AttachmentId('foreign'), mediaType: 'image/png', bytes: 2, width: 1, height: 1,
     }
-    await expect(prompt(bob, [{ ...part, attachment: foreign }] as unknown as SessionPromptRequest['content']))
+    const content: unknown = [{ ...part, attachment: foreign }]
+    await expect(prompt(bob, content as SessionPromptRequest['content']))
       .rejects.toMatchObject({ code: 'session/attachment-invalid', details: { reason: 'UNTRUSTED_ATTACHMENT_REFERENCE' } })
     expect(saveImages).not.toHaveBeenCalled()
     expect(access?.records).not.toHaveBeenCalled()

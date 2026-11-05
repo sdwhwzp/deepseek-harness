@@ -309,7 +309,7 @@ describe.skipIf(!requiredArtifacts)('Remote built LIB chain', () => {
           await client.plugin({ inject: plugin.inject, apply: plugin.apply })
         }
         client.typert.contexts.registerClient('agent', {
-          identity: candidate => candidate.builtAgentId,
+          identity: candidate => 'builtAgentId' in candidate ? candidate.builtAgentId : undefined,
         })
 
         const invalidResult = await client.remote.goals.create(rootAgent.id, { objective: 1 })

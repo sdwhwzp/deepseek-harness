@@ -26,7 +26,8 @@
     "src/media-references.ts",
     "src/archived-session-gate.ts",
     "src/skill-catalog.ts",
-    "src/principal-access.ts"
+    "src/principal-access.ts",
+    "src/continuation.ts"
   ],
   "references": [
     {
@@ -129,10 +130,10 @@
       "path": "../../session/working-directory"
     },
     {
-      "path": "../gateway/tsconfig.host.json"
+      "path": "../../identity/principal-access"
     },
     {
-      "path": "../../identity/principal-access"
+      "path": "../../util/brand"
     }
   ]
 }

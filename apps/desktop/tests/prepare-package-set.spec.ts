@@ -18,16 +18,16 @@ it('installs the pinned startup plugin through a local archive with exotic subde
   onTestFinished(() => { rmSync(directory, { recursive: true, force: true }) })
   const archives = join(directory, 'archives')
   prepareBootAnimationArchive(archives)
-  expect(readdirSync(archives)).toEqual(['dsh-boot-animation-0.2.0.tgz'])
-  const archive = join(archives, 'dsh-boot-animation-0.2.0.tgz')
+  expect(readdirSync(archives)).toEqual(['dsh-boot-animation-0.3.0.tgz'])
+  const archive = join(archives, 'dsh-boot-animation-0.3.0.tgz')
   const files = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).split('\n')
   expect(files).toContain('package/entry.js')
-  expect(files.filter(name => name.endsWith('.mp4'))).toHaveLength(4)
+  expect(files.filter(name => name.endsWith('.mp4'))).toHaveLength(12)
   const wrapper = join(directory, 'wrapper')
   mkdirSync(join(wrapper, 'package'), { recursive: true })
-  const source: { dependencies: Record<string, string> } = JSON.parse(
+  const source = JSON.parse(
     readFileSync(resolve(import.meta.dirname, '../../../packages/bundle/web-app/package.json'), 'utf8'),
-  )
+  ) as { dependencies: Record<string, string> }
   writeFileSync(join(wrapper, 'package/package.json'), JSON.stringify({ name: 'desktop-boot-wrapper', version: '1.0.0',
     dependencies: { 'dsh-boot-animation': source.dependencies['dsh-boot-animation'] } }))
   const wrapperArchive = join(directory, 'wrapper.tgz')
@@ -49,7 +49,8 @@ it('installs the pinned startup plugin through a local archive with exotic subde
   expect(installed.status, installed.stdout + installed.stderr).toBe(0)
   expect(readFileSync(join(project, 'pnpm-lock.yaml'), 'utf8')).toContain('dsh-boot-animation@file:')
   const require = createRequire(realpathSync(join(project, 'node_modules/desktop-boot-wrapper/package.json')))
-  expect(JSON.parse(readFileSync(require.resolve('dsh-boot-animation/package.json'), 'utf8')).version).toBe('0.2.0')
+  const installedPackage = JSON.parse(readFileSync(require.resolve('dsh-boot-animation/package.json'), 'utf8')) as { version: string }
+  expect(installedPackage.version).toBe('0.3.0')
 }, 20_000)
 
 function packed(name: string, manifest: Record<string, unknown> = {}): PackedDesktopPackage {

@@ -184,7 +184,7 @@ export async function apply(ctx: Context): Promise<void> {
     // proves this goal view is still current.
     const subagents = ctx.get('subagents')
     if (subagents !== undefined) {
-      await Promise.race([subagents.waitForChildren(agent), unloading.promise])
+      await Promise.race([subagents.waitForTreeWork(agent), unloading.promise])
       if (!readyAfterCheckpoint(state)) return
     }
     if (goal.roundsStarted >= goal.maxGoalRounds) {
@@ -370,6 +370,13 @@ export async function apply(ctx: Context): Promise<void> {
             return
           }
           if (event.data.reason.kind !== 'aborted') return
+          const abortReason = event.data.reason.reason
+          // Agent disposal aborts the round without a pause decision, so continuation
+          // is only disarmed and the durable phase stays active, as on driver unload.
+          if (abortReason.kind === 'disposed') {
+            disarm(state)
+            return
+          }
           if (state.attempt?.phase === 'claimed' || state.attempt?.phase === 'admitted') {
             state.attempt.cancelled = true
           }
