@@ -99,15 +99,17 @@ export type RpcMessage = ClientRequest | ServerResponse
 export interface ConnectionTrustRequest {
   /** Request headers supplied by either the Fetch or node:http representation. */
   readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>
-}
-
-/** Request facts available to deployment authentication on HTTP and upgrade carriers. */
-export interface ConnectionPrincipalRequest extends ConnectionTrustRequest {
-  /** Carrier method, when the active representation exposes it. */
+  /** Cancellation of a Fetch request. */
+  readonly signal?: AbortSignal | undefined
+  /** Current disconnection state of a Node carrier. */
+  readonly socket?: { readonly destroyed: boolean } | undefined
+  /** Method and target supplied by the HTTP carrier. */
   readonly method?: string | undefined
-  /** Carrier URL, when the active representation exposes it. */
   readonly url?: string | undefined
 }
+
+/** Carrier facts supplied to the deployment account verifier. */
+export type ConnectionPrincipalRequest = ConnectionTrustRequest
 
 /** Optional Host authentication provider invoked on transport-owned request facts. */
 export interface RequestPrincipalProvider {
@@ -129,38 +131,27 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /** HTTP status returned before dispatch, or undefined when the request may proceed. */
-export type ConnectionRequestRejection = 401 | 403 | undefined
+export type ConnectionRequestRejection = 401 | 403 | 503 | undefined
 
 /** Result of the Host/Origin and transport-authentication checks for one request. */
 export type ConnectionRequestAuthorization =
   | { readonly accepted: true; readonly principal?: AuthenticatedPrincipal }
-  | { readonly accepted: false; readonly status: 401 | 403 }
+  | { readonly accepted: false; readonly status: 401 | 403 | 503 }
 
-/** Root/index request facts used by the browser-token exchange. */
-export interface ConnectionIndexRequest extends ConnectionTrustRequest {
-  readonly method?: string | undefined
-  readonly url?: string | undefined
-}
-
-/** Root/index response operations owned by the browser-token exchange. */
-export interface ConnectionIndexResponse {
-  writeHead(status: number, headers?: Readonly<Record<string, string>>): unknown
-  end(body?: string): unknown
+/** A credential verifier returning the existing Peer this request may represent. */
+export interface AuthenticationProvider {
+  /**
+   * Verify one request using this implementation's credentials.
+   * @param request - current request headers and cancellation facts.
+   * @returns a provider-owned Peer, or undefined to try the next provider.
+   */
+  authenticate(request: ConnectionTrustRequest): PeerScope | undefined
 }
 
 /** Outcome of admitting one request: the Peer it speaks for, or the status refusing it. */
 export type PeerAdmission =
   | { readonly peer: PeerScope; readonly principal?: AuthenticatedPrincipal }
-  | { readonly rejection: 401 | 403 }
-
-/** Socket admission claims API ownership until its carrier calls release, including failed upgrades. */
-export type ConnectionAdmission =
-  | {
-    readonly peer: PeerScope
-    /** Remove and dispose an API Peer; browser releases leave the shared browser Peer intact. */
-    readonly release: () => Promise<void>
-  }
-  | { readonly rejection: 401 | 403 | 409 }
+  | { readonly rejection: 401 | 403 | 503 }
 
 /**
  * Handler invoked after Connection has decoded the transport envelope.
@@ -241,7 +232,7 @@ export interface HostConnectionHandle {
   readonly rpc: HostConnectionRpc
   /** Exact Fetch routes for streaming or browser-native responses. */
   readonly fetch: HostConnectionFetch
-  /** The owner Peer every authenticated browser connection shares. */
+  /** Connection-owned Peer for trusted in-process callers, not network authentication. */
   readonly browserPeer: PeerScope
 
   /**
@@ -282,7 +273,7 @@ export interface HostConnectionHandle {
   requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
 
   /**
-   * Admit an HTTP request against its signed browser or API credential and live Peer.
+   * Apply Host/Origin checks and admit the first live Peer returned by a registered credential verifier.
    * @param request - request headers from the HTTP or upgrade request.
    * @returns the credential's Peer, or the rejection status.
    */
@@ -291,16 +282,10 @@ export interface HostConnectionHandle {
   /**
    * Authenticate a carrier request and select its account-specific Peer.
    * @param request - trusted carrier request facts.
+   * @param carrier - Peer already authenticated by the WebServer, whose permissions and lifetime bound the account Peer.
    * @returns the admitted Peer and principal, or a rejection status.
    */
-  admitRequest(request: ConnectionPrincipalRequest): Promise<PeerAdmission>
-
-  /**
-   * Admit an account socket or claim its native API Peer connection.
-   * @param request - carrier-owned upgrade request.
-   * @returns the isolated Peer and release, or a rejection status.
-   */
-  admitConnectionRequest(request: ConnectionPrincipalRequest): Promise<ConnectionAdmission>
+  admitRequest(request: ConnectionPrincipalRequest, carrier?: PeerScope): Promise<PeerAdmission>
 
   /**
    * Read the verified identity bound to a Connection-owned Peer.
@@ -311,36 +296,12 @@ export interface HostConnectionHandle {
 
   /**
    * Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.
-   * @param options - fixed principal and optional interaction participation (default `answer`).
+   * @param options - fixed principal and interaction participation (default answer).
    * @returns a new Peer distinct from every other Peer.
    */
   createPeer(options: { readonly principal: Principal; readonly interactions?: 'answer' | 'none' }): PeerScope
 
-  /**
-   * Claim a physical socket for an API Peer; browser sockets share their owner Peer.
-   * @param request - authenticated upgrade request headers.
-   * @returns the Peer and idempotent release, or 409 for duplicate API ownership.
-   * The carrier releases on socket termination or failed upgrade; release removes
-   * API admission synchronously without cancelling independent HTTP calls.
-   */
-  admitConnection(request: ConnectionTrustRequest): ConnectionAdmission
 
-  /**
-   * Authenticate one frontend index request, owning a token redirect or 401.
-   * The cookie this mints is `Secure` when the mounted Web carrier serves TLS,
-   * which only that listener's protocol decides.
-   * @param request - root or configured-index HTTP request.
-   * @param response - response owned when the result is false.
-   * @returns true only when the frontend may serve index.html.
-   */
-  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
-
-  /**
-   * Add the fresh process token to an ordinary Web application URL.
-   * @param baseUrl - clean application URL whose authority and mount are preserved.
-   * @returns tokenized URL for initial login; a mount proxy strips its prefix before {@link authorizeIndex}.
-   */
-  authenticatedUrl(baseUrl: string): string
 }
 
 /** Transport-independent Fetch handler used by HTTP and worker carriers. */

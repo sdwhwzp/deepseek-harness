@@ -123,14 +123,12 @@ function lookupResources(
   const receiver = descriptor.invocation
   if (receiver.kind === 'context') {
     const kind = typert.contexts.getHost(receiver.context)?.resource
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- domain packages merge resource kinds into TypertResourceMap.
     if (kind !== undefined) add(kind, args[receiver.wire])
   }
   for (const parameter of descriptor.parameters) {
     if (parameter.lookup === undefined) continue
     const kind = typert.lookups.get(parameter.lookup)?.resource
     const id = args[parameter.wire]
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- domain packages merge resource kinds into TypertResourceMap.
     if (kind !== undefined && id !== undefined) add(kind, id)
   }
   return ids

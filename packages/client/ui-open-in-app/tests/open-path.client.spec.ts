@@ -1,12 +1,14 @@
 /** Path controller behavior: the once-per-page desktop read and the open/reveal outcomes over the Session Remote. */
 
-import { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { describe, expect, it, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionOpenWorkspacePathRequest } from '@deepseek-ai/dsh-api-session-controller/types'
 import { OpenInAppPathController, type OpenInAppPathRemote } from '../src/client/open-path.ts'
 
 type SessionRemote = OpenInAppPathRemote['session']
+const owner = brandString<SessionId>('owner')
 
 function remoteOf(over: Partial<SessionRemote> = {}): OpenInAppPathRemote {
   return {
@@ -52,11 +54,11 @@ describe('OpenInAppPathController gestures', () => {
     const openWorkspacePath = vi.fn(async (_request: SessionOpenWorkspacePathRequest, _signal?: AbortSignal) =>
       ({ ok: true as const, value: { opened: true as const } }))
     const controller = new OpenInAppPathController(remoteOf({ openWorkspacePath }))
-    expect(await controller.openPath(SessionId('owner'), '/w/clip.mp4', 'open')).toEqual({ kind: 'opened' })
-    expect(await controller.openPath(SessionId('owner'), '/w/clip.mp4', 'reveal')).toEqual({ kind: 'revealed' })
+    expect(await controller.openPath(owner, '/w/clip.mp4', 'open')).toEqual({ kind: 'opened' })
+    expect(await controller.openPath(owner, '/w/clip.mp4', 'reveal')).toEqual({ kind: 'revealed' })
     expect(openWorkspacePath.mock.calls.map(call => call[0])).toEqual([
-      { sessionId: SessionId('owner'), path: '/w/clip.mp4' },
-      { sessionId: SessionId('owner'), path: '/w/clip.mp4', action: 'reveal' },
+      { sessionId: owner, path: '/w/clip.mp4' },
+      { sessionId: owner, path: '/w/clip.mp4', action: 'reveal' },
     ])
   })
 
@@ -64,11 +66,11 @@ describe('OpenInAppPathController gestures', () => {
     const refused = new OpenInAppPathController(remoteOf({
       openWorkspacePath: async () => ({ ok: false, error: new RemoteError('gateway/internal', 'boom', {}) }),
     }))
-    expect(await refused.openPath(SessionId('owner'), '/w/clip.mp4', 'open')).toEqual({ kind: 'failed', failure: 'openError' })
-    expect(await refused.openPath(SessionId('owner'), '/w/clip.mp4', 'reveal')).toEqual({ kind: 'failed', failure: 'revealError' })
+    expect(await refused.openPath(owner, '/w/clip.mp4', 'open')).toEqual({ kind: 'failed', failure: 'openError' })
+    expect(await refused.openPath(owner, '/w/clip.mp4', 'reveal')).toEqual({ kind: 'failed', failure: 'revealError' })
 
     const rejecting = new OpenInAppPathController(remoteOf({ openWorkspacePath: () => Promise.reject(new Error('down')) }))
-    expect(await rejecting.openPath(SessionId('owner'), '/w/clip.mp4', 'open')).toEqual({ kind: 'failed', failure: 'openError' })
+    expect(await rejecting.openPath(owner, '/w/clip.mp4', 'open')).toEqual({ kind: 'failed', failure: 'openError' })
   })
 })
 
@@ -79,19 +81,108 @@ it('queries current handlers and carries an explicit application without changin
   const open = vi.fn(async () => ({ ok: true as const, value: { opened: true } }))
   const controller = new OpenInAppPathController(remoteOf({ workspacePathApplications: query, openWorkspacePath: open }))
   const signal = new AbortController().signal
-  expect(await controller.applications(SessionId('owner'), '/file.mp3', signal)).toEqual(applications)
-  expect(query).toHaveBeenCalledWith({ sessionId: SessionId('owner'), path: '/file.mp3' }, signal)
-  await controller.openPath(SessionId('owner'), '/file.mp3', 'open', '/Applications/Music.app')
-  expect(open).toHaveBeenLastCalledWith({ sessionId: SessionId('owner'), path: '/file.mp3', application: '/Applications/Music.app' })
-  await controller.openPath(SessionId('owner'), '/file.mp3', 'open')
-  expect(open).toHaveBeenLastCalledWith({ sessionId: SessionId('owner'), path: '/file.mp3' })
+  expect(await controller.applications(owner, '/file.mp3', signal)).toEqual(applications)
+  expect(query).toHaveBeenCalledWith({ sessionId: owner, path: '/file.mp3' }, signal)
+  await controller.openPath(owner, '/file.mp3', 'open', '/Applications/Music.app')
+  expect(open).toHaveBeenLastCalledWith({ sessionId: owner, path: '/file.mp3', application: '/Applications/Music.app' })
+  await controller.openPath(owner, '/file.mp3', 'open')
+  expect(open).toHaveBeenLastCalledWith({ sessionId: owner, path: '/file.mp3' })
 })
 
 
 it('distinguishes failed association queries from an empty application list', async () => {
   const remote = remoteOf({ workspacePathApplications: async () => ({ ok: false, error: new RemoteError('gateway/internal', 'unavailable', {}) }) })
   const controller = new OpenInAppPathController(remote)
-  expect(await controller.applications(SessionId('owner'), '/file.mp3', new AbortController().signal)).toBeNull()
+  expect(await controller.applications(owner, '/file.mp3', new AbortController().signal)).toBeNull()
   const rejecting = new OpenInAppPathController(remoteOf({ workspacePathApplications: async () => { throw new Error('disconnected') } }))
-  expect(await rejecting.applications(SessionId('owner'), '/file.mp3', new AbortController().signal)).toBeNull()
+  expect(await rejecting.applications(owner, '/file.mp3', new AbortController().signal)).toBeNull()
+})
+
+describe('OpenInAppPathController association answers', () => {
+  type Answer = Awaited<ReturnType<SessionRemote['workspacePathApplications']>>
+  const app = (name: string, icon: string | null = null) => ({ id: `/Applications/${name}.app`, name, default: true, icon })
+  const answered = (...apps: ReturnType<typeof app>[]): Answer => ({ ok: true, value: apps })
+  /** A Remote whose association queries settle when the test answers them, and reject once cancelled. */
+  function deferredRemote() {
+    const queries: { path: string; signal: AbortSignal | undefined; answer: (result: Answer) => void }[] = []
+    const workspacePathApplications = vi.fn((request: { path: string }, signal?: AbortSignal) => new Promise<Answer>((answer, reject) => {
+      queries.push({ path: request.path, signal, answer })
+      signal?.addEventListener('abort', () => { reject(new Error('cancelled')) }, { once: true })
+    }))
+    return { queries, controller: new OpenInAppPathController(remoteOf({ workspacePathApplications })) }
+  }
+
+  it('shares an answer across files with the same final extension and keeps extensionless names apart', async () => {
+    const answers: Record<string, Answer> = {
+      '/w/notes.txt': answered(app('TextEdit')), '/w/Makefile': answered(app('Xcode')), '/w/.env': answered(app('Zed')),
+    }
+    const controller = new OpenInAppPathController(remoteOf({ workspacePathApplications: async ({ path }) => answers[path]! }))
+    const signal = new AbortController().signal
+    expect(controller.cachedApplications(owner, '/w/notes.txt')).toBeUndefined()
+    for (const path of Object.keys(answers)) await controller.applications(owner, path, signal)
+    expect(controller.cachedApplications(owner, '/elsewhere/todo.txt')).toEqual([app('TextEdit')])
+    expect(controller.cachedApplications(brandString<SessionId>('other'), '/w/notes.txt')).toBeUndefined()
+    expect(controller.cachedApplications(owner, 'C:\\work\\archive.tar.txt')).toEqual([app('TextEdit')])
+    expect(controller.cachedApplications(owner, '/w/NOTES.TXT')).toBeUndefined()
+    expect(controller.cachedApplications(owner, '/w/Makefile')).toEqual([app('Xcode')])
+    expect(controller.cachedApplications(owner, '/other/Makefile')).toBeUndefined()
+    expect(controller.cachedApplications(owner, '/w/.env')).toEqual([app('Zed')])
+    expect(controller.cachedApplications(owner, '/w/draft.')).toBeUndefined()
+  })
+
+  it('publishes changed answers only, and an earlier query never replaces a later answer', async () => {
+    const { queries, controller } = deferredRemote()
+    const signal = new AbortController().signal
+    const earlier = controller.applications(owner, '/w/a.txt', signal)
+    const later = controller.applications(owner, '/w/b.txt', signal)
+    queries[1]!.answer(answered(app('Sublime Text', 'data:image/png;base64,c3Vi')))
+    expect(await later).toEqual([app('Sublime Text', 'data:image/png;base64,c3Vi')])
+    const published = controller.associations.getSnapshot()
+    queries[0]!.answer(answered(app('TextEdit')))
+    expect(await earlier).toEqual([app('TextEdit')])
+    expect(controller.associations.getSnapshot()).toBe(published)
+    expect(controller.cachedApplications(owner, '/w/a.txt')).toEqual([app('Sublime Text', 'data:image/png;base64,c3Vi')])
+    const unchanged = controller.applications(owner, '/w/c.txt', signal)
+    queries[2]!.answer(answered(app('Sublime Text', 'data:image/png;base64,c3Vi')))
+    await unchanged
+    expect(controller.associations.getSnapshot()).toBe(published)
+    const changed = controller.applications(owner, '/w/c.txt', signal)
+    queries[3]!.answer(answered(app('Sublime Text', 'data:image/png;base64,bmV3'), app('TextEdit')))
+    await changed
+    expect(controller.associations.getSnapshot()).not.toBe(published)
+    expect(controller.cachedApplications(owner, '/w/a.txt')).toEqual([app('Sublime Text', 'data:image/png;base64,bmV3'), app('TextEdit')])
+    const other = controller.applications(owner, '/w/d.md', signal)
+    queries[4]!.answer(answered(app('Sublime Text', 'data:image/png;base64,bmV3')))
+    await other
+    expect(controller.cachedApplications(owner, '/w/e.md')).toEqual([app('Sublime Text', 'data:image/png;base64,bmV3')])
+    expect(controller.cachedApplications(owner, '/w/e.txt')).toHaveLength(2)
+  })
+
+  it('keeps the recorded answer through refused and rejected queries', async () => {
+    const workspacePathApplications = vi.fn<SessionRemote['workspacePathApplications']>()
+      .mockResolvedValueOnce(answered(app('Preview')))
+      .mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'boom', {}) })
+      .mockRejectedValueOnce(new Error('down'))
+    const controller = new OpenInAppPathController(remoteOf({ workspacePathApplications }))
+    const signal = new AbortController().signal
+    await controller.applications(owner, '/w/a.png', signal)
+    expect(await controller.applications(owner, '/w/a.png', signal)).toBeNull()
+    expect(await controller.applications(owner, '/w/a.png', signal)).toBeNull()
+    expect(controller.cachedApplications(owner, '/w/b.png')).toEqual([app('Preview')])
+  })
+
+  it('runs one background refresh at a time, cancelling the older for the newer file, and disposal cancels it', async () => {
+    const { queries, controller } = deferredRemote()
+    void controller.refreshApplications(owner, '/w/a.txt')
+    void controller.refreshApplications(owner, '/w/b.txt')
+    expect(queries.map(query => [query.path, query.signal?.aborted])).toEqual([['/w/a.txt', true], ['/w/b.txt', false]])
+    queries[1]!.answer(answered(app('TextEdit')))
+    await vi.waitFor(() => { expect(controller.cachedApplications(owner, '/w/c.txt')).toEqual([app('TextEdit')]) })
+    void controller.refreshApplications(owner, '/w/d.md')
+    controller.dispose()
+    expect(queries[2]).toMatchObject({ path: '/w/d.md', signal: { aborted: true } })
+    void controller.refreshApplications(owner, '/w/e.json')
+    expect(queries).toHaveLength(3)
+    expect(controller.cachedApplications(owner, '/w/a.txt')).toEqual([app('TextEdit')])
+  })
 })

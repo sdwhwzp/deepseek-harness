@@ -150,6 +150,7 @@ const SECTION_ORDERS = {
   TOOL_GREP: 1500,
   TOOL_JOBS: 1600,
   TOOL_PTY: 1700,
+  TOOL_PTY_PANEL: 1710,
   TOOL_WEB_SEARCH: 2000,
   TOOL_WEB_FETCH: 2100,
   TOOL_LSP: 2200,
@@ -182,6 +183,7 @@ const CONTEXT_ORDERS = {
   // Process-specific paths and endpoints stay out of the cached system prompt.
   HARNESS_SOURCE: 200,
   WEB_SURFACE: 210,
+  PLUGIN_CLIS: 220,
 } as const
 
 /** Name of a centrally allocated runtime-context position. */

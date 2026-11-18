@@ -3,12 +3,13 @@ import { Context } from '@deepseek-ai/cordis'
 import { agentEvents, type Agent, type InboxState } from '@deepseek-ai/dsh-agent'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, type SessionId } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { inboxProjectionDefinition, ReactLoopInbox } from '../src/inbox.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -27,7 +28,7 @@ function unsupportedInbox(): Agent['inbox'] {
 }
 
 function stubAgent(rawId: string, overrides: Partial<Agent> = {}): Agent {
-  const id = SessionId(rawId)
+  const id = brandString<SessionId>(rawId)
   const session = overrides.session ?? Session.create(id)
   const ctx = overrides.ctx ?? new Context()
   return {
@@ -61,7 +62,7 @@ async function inboxAgent(rawId: string): Promise<{
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   const projection = await ctx.sessionProjections.register(inboxProjectionDefinition)
-  const session = ctx.sessions.create(SessionId(rawId))
+  const session = ctx.sessions.create(brandString<SessionId>(rawId))
   const agent = stubAgent(rawId, { ctx, session })
   const inbox = new ReactLoopInbox(() => projection.stateOf(session), session, agentEvents(ctx, agent))
   Object.assign(agent, { inbox })
@@ -75,7 +76,7 @@ async function reconstructPersistedInbox(
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(SessionStore)
-  const session = ctx.sessions.create(SessionId(rawId))
+  const session = ctx.sessions.create(brandString<SessionId>(rawId))
   populate(session)
   await ctx.plugin(SessionProjectionRegistry)
   const projection = await ctx.sessionProjections.register(inboxProjectionDefinition)
@@ -97,7 +98,7 @@ describe('ReactLoopInbox', () => {
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionProjectionRegistry)
     const projection = await ctx.sessionProjections.register(inboxProjectionDefinition)
-    const session = ctx.sessions.create(SessionId('inbox-projection'))
+    const session = ctx.sessions.create(brandString<SessionId>('inbox-projection'))
     const pending = createUserMessage({
       content: [{ type: 'text', text: 'pending' }],
       source: { kind: 'user' },
@@ -158,7 +159,7 @@ describe('ReactLoopInbox', () => {
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionProjectionRegistry)
     const projection = await ctx.sessionProjections.register(inboxProjectionDefinition)
-    const parent = ctx.sessions.create(SessionId('inbox-fork-parent'))
+    const parent = ctx.sessions.create(brandString<SessionId>('inbox-fork-parent'))
     const parentAgent = stubAgent('inbox-fork-parent', { ctx, session: parent })
     const parentInbox = new ReactLoopInbox(() => projection.stateOf(parent), parent, agentEvents(ctx, parentAgent))
     const inherited = createUserMessage({
@@ -166,7 +167,7 @@ describe('ReactLoopInbox', () => {
       source: { kind: 'user' },
     })
     parentInbox.append('next-turn', inherited)
-    const child = ctx.sessions.fork(parent, undefined, SessionId('inbox-fork-child'))
+    const child = ctx.sessions.fork(parent, undefined, brandString<SessionId>('inbox-fork-child'))
     const childAgent = stubAgent('inbox-fork-child', { ctx, session: child })
     const childInbox = new ReactLoopInbox(() => projection.stateOf(child), child, agentEvents(ctx, childAgent))
 

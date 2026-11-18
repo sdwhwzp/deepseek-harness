@@ -12,7 +12,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
@@ -26,6 +26,7 @@ import { CreatePluginMenuItem, type CreatePluginMenuItemInjected } from '../src/
 import { AgentPresetSectionController } from '../src/client/section-store.ts'
 import { apply as hostApply } from '../src/index.ts'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
@@ -258,7 +259,7 @@ function sessionsDouble(ctx: Context, state: {
       if (state.byId[id] === undefined) return undefined
       let binding = bindings.get(id)
       if (binding === undefined) {
-        binding = { sessionId: SessionId(id), ctx }
+        binding = { sessionId: brandString<SessionId>(id), ctx }
         bindings.set(id, binding)
       }
       return binding
@@ -571,8 +572,8 @@ describe('ui-agent-preset apply', () => {
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
     const injectSeat = slots.entries('conversation.hero.agentPreset')[0]!
       .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected
-    const first = injectSeat(SessionId('s1'))
-    const same = injectSeat(SessionId('s1'))
+    const first = injectSeat(brandString<SessionId>('s1'))
+    const same = injectSeat(brandString<SessionId>('s1'))
     expect(same.hooks.agentPresetSeat).toBe(first.hooks.agentPresetSeat)
 
     await first.load()
@@ -609,7 +610,7 @@ describe('ui-agent-preset apply', () => {
       const feature = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
       await feature.await()
       const seat = (slots.entries('conversation.hero.agentPreset')[0]!
-        .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected)(SessionId('s1'))
+        .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected)(brandString<SessionId>('s1'))
       await seat.load()
       expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('')
 
@@ -679,7 +680,7 @@ describe('ui-agent-preset apply', () => {
     const section = (slots.entries('settings.section')[0]!
       .inject as unknown as () => AgentPresetSectionInjected)()
     const seat = (slots.entries('conversation.hero.agentPreset')[0]!
-      .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected)(SessionId('s1'))
+      .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected)(brandString<SessionId>('s1'))
     await Promise.all([section.load(), seat.load()])
 
     await section.makeDefault('minimal')
@@ -745,7 +746,7 @@ describe('ui-agent-preset apply', () => {
       id: 's1', blank: true, projectionValues: { agentPreset: 'standard' },
     }
     sessions.notify()
-    await ctx.serial('conversation/prepare-send', SessionId('s1'))
+    await ctx.serial('conversation/prepare-send', brandString<SessionId>('s1'))
 
     // Submission commits the stage even before the bound picker loads.
     await vi.waitFor(() => { expect(calls).toContain('select:minimal') })
@@ -764,7 +765,7 @@ describe('ui-agent-preset apply', () => {
     ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
     const chip = (slots.entries('conversation.hero.agentPreset')[0]!
-      .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected)(SessionId('s1'))
+      .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected)(brandString<SessionId>('s1'))
 
     await chip.load()
     await chip.select('minimal')
@@ -790,7 +791,7 @@ describe('ui-agent-preset apply', () => {
     ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
     const chip = (slots.entries('conversation.hero.agentPreset')[0]!
-      .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected)(SessionId('s1'))
+      .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected)(brandString<SessionId>('s1'))
 
     await chip.load()
     await chip.select('minimal')
@@ -826,7 +827,7 @@ describe('ui-agent-preset apply', () => {
       await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
       const injectSeat = slots.entries('conversation.hero.agentPreset')[0]!
         .inject as (sessionId?: SessionId) => AgentPresetSeatInjected & Record<string, unknown>
-      const chip = injectSeat(source === 'unbound' ? undefined : SessionId('s1'))
+      const chip = injectSeat(source === 'unbound' ? undefined : brandString<SessionId>('s1'))
       await chip.load()
       await chip.select(preset)
       await setDeveloperTools(false)
@@ -836,7 +837,7 @@ describe('ui-agent-preset apply', () => {
       expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
 
       state.current = 's1'
-      const bound = injectSeat(SessionId('s1'))
+      const bound = injectSeat(brandString<SessionId>('s1'))
       sessions.notify()
       await bound.load()
       expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
@@ -863,7 +864,7 @@ describe('ui-agent-preset apply', () => {
       b.ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
       await b.ctx.plugin({ inject: [...inject], apply }).await()
       const chip = (b.slots.entries('conversation.hero.agentPreset')[0]!
-        .inject as (sessionId: SessionId) => AgentPresetSeatInjected & Record<string, unknown>)(SessionId('s1'))
+        .inject as (sessionId: SessionId) => AgentPresetSeatInjected & Record<string, unknown>)(brandString<SessionId>('s1'))
       await chip.load()
       const selecting = chip.select('minimal')
       expect(chip.hooks.agentPresetSeat.getSnapshot().busy).toBe(true)
@@ -986,7 +987,7 @@ describe('ui-agent-preset apply', () => {
       }) as never)
       b.ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
       await b.ctx.plugin({ inject: [...inject], apply }).await()
-      const chip = (b.slots.entries('conversation.hero.agentPreset')[0]!.inject as (id: SessionId) => AgentPresetSeatInjected & Record<string, unknown>)(SessionId('blank'))
+      const chip = (b.slots.entries('conversation.hero.agentPreset')[0]!.inject as (id: SessionId) => AgentPresetSeatInjected & Record<string, unknown>)(brandString<SessionId>('blank'))
       await chip.load()
       expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe(preset)
       await b.setDeveloperTools(false)
@@ -1101,7 +1102,7 @@ describe('ui-agent-preset apply', () => {
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
     const injectSeat = slots.entries('conversation.hero.agentPreset')[0]!
       .inject as unknown as (sessionId?: SessionId) => AgentPresetSeatInjected
-    const seat = injectSeat(SessionId('s1'))
+    const seat = injectSeat(brandString<SessionId>('s1'))
 
     await seat.load()
     await section.load()
@@ -1153,7 +1154,7 @@ describe('ui-agent-preset apply', () => {
     state.current = 's1'
     state.byId['s1'] = { id: 's1', blank: true }
     sessions.notify()
-    const boundSeat = injectSeat(SessionId('s1'))
+    const boundSeat = injectSeat(brandString<SessionId>('s1'))
     const loading = boundSeat.load()
     await vi.waitFor(() => { expect(calls).toContain('select:cordis') })
     if (refused) selection.reject(new Error('Creator failed to mount'))
@@ -1227,7 +1228,7 @@ async function analyticsBench(
   await b.ctx.plugin({ inject: [...inject], apply }).await()
   const seat = (b.slots.entries('conversation.hero.agentPreset')[0]!.inject as
     (sessionId?: SessionId) => AgentPresetSeatInjected & Record<string, unknown>)(
-    bound === undefined ? undefined : SessionId('blank'))
+    bound === undefined ? undefined : brandString<SessionId>('blank'))
   await seat.load()
   return { ...b, seat, sessions, track }
 }
@@ -1351,7 +1352,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     const refusal = { ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }
     type Outcome = { ok: true; value: string } | typeof refusal
     const requests: { preset: string; outcome: ReturnType<typeof Promise.withResolvers<Outcome>> }[] = []
-    const session = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    const session = { id: brandString<SessionId>('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
     const controller = new AgentPresetSeatController({
       ...developerTools(),
       remote: { agentPresets: { select: (_id: SessionId, preset: string) => {
@@ -1386,7 +1387,7 @@ describe('AgentPresetSeatController reconciliation', () => {
       ? firstReply.promise
       : Promise.resolve({ ok: true as const, value: preset }))
     const controller = new AgentPresetSeatController({ ...developerTools(), remote: { agentPresets: { select } } } as never,
-      () => ({ id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }))
+      () => ({ id: brandString<SessionId>('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }))
     const first = controller.select('minimal')
     controller.stage('cordis', true)
     await controller.apply()
@@ -1402,7 +1403,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     const refusal = { ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }
     type Outcome = { ok: true; value: string } | typeof refusal
     const requests: { preset: string; outcome: ReturnType<typeof Promise.withResolvers<Outcome>> }[] = []
-    const session = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    const session = { id: brandString<SessionId>('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
     const controller = new AgentPresetSeatController({
       ...developerTools(),
       remote: { agentPresets: { select: (_id: SessionId, preset: string) => {
@@ -1429,20 +1430,20 @@ describe('AgentPresetSeatController reconciliation', () => {
   it('does not apply a waiting Settings choice to a replacement binding', async () => {
     const reply = Promise.withResolvers<{ ok: true; value: string }>()
     const select = vi.fn(() => reply.promise)
-    let current = { id: SessionId('first'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    let current = { id: brandString<SessionId>('first'), blank: true, projectionValues: { agentPreset: 'standard' } }
     const controller = new AgentPresetSeatController({ ...developerTools(), remote: { agentPresets: { select } } } as never, () => current)
     const first = controller.select('minimal')
     const settings = controller.syncBlankSession(current.id, 'cordis')
-    current = { ...current, id: SessionId('replacement') }
+    current = { ...current, id: brandString<SessionId>('replacement') }
     reply.resolve({ ok: true, value: 'minimal' })
     await Promise.all([first, settings])
     await controller.apply()
-    expect(select).toHaveBeenCalledExactlyOnceWith(SessionId('first'), 'minimal')
+    expect(select).toHaveBeenCalledExactlyOnceWith(brandString<SessionId>('first'), 'minimal')
   })
 
   it('does not capture a non-blank Session', () => {
     const controller = new AgentPresetSeatController({ ...developerTools() } as never, () => ({
-      id: SessionId('started'), blank: false,
+      id: brandString<SessionId>('started'), blank: false,
     }))
 
     expect(controller.blankSessionId()).toBeUndefined()
@@ -1451,7 +1452,7 @@ describe('AgentPresetSeatController reconciliation', () => {
   it('does not retarget a different blank Session after a Settings write', async () => {
     const select = vi.fn(() => Promise.resolve({ ok: true as const, value: 'minimal' }))
     let current = {
-      id: SessionId('first'), blank: true, projectionValues: { agentPreset: 'standard' },
+      id: brandString<SessionId>('first'), blank: true, projectionValues: { agentPreset: 'standard' },
     }
     const controller = new AgentPresetSeatController({
       ...developerTools(),
@@ -1460,7 +1461,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     const captured = controller.blankSessionId()
     if (captured === undefined) throw new Error('expected a blank Session')
     current = {
-      id: SessionId('second'), blank: true, projectionValues: { agentPreset: 'standard' },
+      id: brandString<SessionId>('second'), blank: true, projectionValues: { agentPreset: 'standard' },
     }
 
     await controller.syncBlankSession(captured, 'minimal')
@@ -1483,7 +1484,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     await controller.apply()
     expect(controller.store.getSnapshot().current).toBe('standard')
 
-    state.current = { id: SessionId('uncomposed'), blank: true }
+    state.current = { id: brandString<SessionId>('uncomposed'), blank: true }
     await controller.apply()
     expect(controller.store.getSnapshot().current).toBe('')
   })
@@ -1499,7 +1500,7 @@ describe('AgentPresetSeatController reconciliation', () => {
         select,
         list: () => Promise.resolve({ ok: true, value: { presets: [{ id: 'standard', isDefault: true }] } }),
       } },
-    } as never, () => ({ id: SessionId('uncomposed'), blank: true }))
+    } as never, () => ({ id: brandString<SessionId>('uncomposed'), blank: true }))
 
     await controller.select('minimal')
 
@@ -1528,7 +1529,7 @@ describe('AgentPresetSeatController reconciliation', () => {
           }),
         },
       },
-    } as never, () => ({ id: SessionId('uncomposed'), blank: true }))
+    } as never, () => ({ id: brandString<SessionId>('uncomposed'), blank: true }))
 
     // The surface reporting this names the preset itself, so carrying the
     // roster's own "preset X failed to mount" frame would say it twice.
@@ -1551,7 +1552,7 @@ describe('AgentPresetSeatController reconciliation', () => {
 describe('AgentPresetSeatController apply outcomes', () => {
   type SessionView = { id: SessionId; blank: boolean; projectionValues?: { agentPreset?: string } }
   type SelectReply = { ok: true; value: string } | { ok: false; error: RemoteError }
-  const blankStandard: SessionView = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
+  const blankStandard: SessionView = { id: brandString<SessionId>('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
 
   function seatOver(current: () => SessionView | undefined, reply?: (preset: string) => Promise<SelectReply>) {
     const select = vi.fn((_id: SessionId, preset: string) => reply?.(preset) ?? Promise.resolve({ ok: true as const, value: preset }))
@@ -1580,7 +1581,7 @@ describe('AgentPresetSeatController apply outcomes', () => {
     let current: SessionView = session
     const { controller, select } = seatOver(() => current)
     await expect(controller.select(pick)).resolves.toEqual({ kind: 'unchanged' })
-    current = { ...blankStandard, id: SessionId('next') }
+    current = { ...blankStandard, id: brandString<SessionId>('next') }
     await expect(controller.apply()).resolves.toEqual({ kind: 'unchanged' })
     expect(select).not.toHaveBeenCalled()
   })
@@ -1588,7 +1589,7 @@ describe('AgentPresetSeatController apply outcomes', () => {
   it('is applied only when the Host commits the staged preset', async () => {
     const { controller, select } = seatOver(() => blankStandard)
     await expect(controller.select('minimal')).resolves.toEqual({ kind: 'applied' })
-    expect(select).toHaveBeenCalledExactlyOnceWith(SessionId('blank'), 'minimal')
+    expect(select).toHaveBeenCalledExactlyOnceWith(brandString<SessionId>('blank'), 'minimal')
     expect(controller.store.getSnapshot()).toMatchObject({ current: 'minimal', busy: false, error: null })
   })
 

@@ -87,7 +87,7 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 
 /**
  * Browser globals jsdom lacks that roster plugins touch at apply or mount:
- * client-hmr opens an `EventSource`; layout components observe size, media queries, and font loading.
+ * layout components observe size, media queries, and font loading.
  * Inert stand-ins, installed only where the global is absent.
  */
 const JSDOM_SHIMS: Readonly<Record<string, unknown>> = {
@@ -96,10 +96,6 @@ const JSDOM_SHIMS: Readonly<Record<string, unknown>> = {
     addListener() {},
     removeListener() {},
   }),
-  EventSource: class {
-    addEventListener(): void {}
-    close(): void {}
-  },
   ResizeObserver: class {
     observe(): void {}
     disconnect(): void {}
@@ -261,8 +257,8 @@ export class TestClient {
       release = sharedJsdomShims.acquire()
       const system = createInProcessModules(graphFromRoster(roster.rows), modules)
       const namespaces = await Promise.all([...modules.keys()].map(async id =>
-        await system.import(id, '', {}) as ClientPluginModule))
-      ctx.plugin(remoteProxiesPlugin(remoteNamespacesOf(namespaces, mock), mock) as Plugin)
+        [id, await system.import(id, '', {}) as ClientPluginModule] as const))
+      ctx.plugin(remoteProxiesPlugin(remoteNamespacesOf(new Map(namespaces), mock), mock) as Plugin)
       // The dropped remote-access row's Hooks: every action is allowed on every resource unless the spec fixes the answers.
       if (generated.includes(REMOTE_ACCESS_PACKAGE)) {
         ctx.plugin(options.access === undefined ? allowAllAccessPlugin : staticAccessPlugin(options.access))
@@ -285,7 +281,7 @@ export class TestClient {
     } catch (error) {
       try {
         await settle(() => ctx.fiber.dispose())
-      } catch {
+      } catch (_disposeAfterBootFailed) {
         // The boot failure is the error to report; a half-built tree failing to dispose adds nothing to it.
       } finally {
         restore()

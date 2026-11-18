@@ -1,0 +1,18 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_00_UiQPVqoELyzBZCY5pm1z7875", "name": "run_code", "arguments": "{\"code\":\"const first = await tools.bash({command: 'echo CODE_ONE', description: 'Print CODE_ONE'}); const second = await tools.bash({command: 'echo CODE_TWO', description: 'Print CODE_TWO'}); inspect('captured output'); inspect(first.stdout.text.trim() + '+' + second.stdout.text.trim());\",\"description\":\"Run two echo commands and join outputs\"}" } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "CODE_ONE+CODE_TWO" } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  }
+]

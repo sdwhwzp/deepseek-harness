@@ -2,9 +2,9 @@ import { Context } from '@deepseek-ai/cordis'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import type { PeerScope, Principal } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
-import type { BrowserAuth } from '../src/browser-auth.ts'
 import { HostConnectionService } from '../src/rpc-host.ts'
 import type { RequestPrincipalProvider } from '../src/rpc.ts'
+import { ConnectionAuthentication } from '../src/authentication.ts'
 
 async function mounted(provider?: RequestPrincipalProvider): Promise<{
   readonly connection: HostConnectionService
@@ -13,7 +13,7 @@ async function mounted(provider?: RequestPrincipalProvider): Promise<{
   const ctx = new Context()
   if (provider !== undefined) ctx.provide('requestPrincipal', provider)
   const fiber = ctx.plugin((pluginCtx) => {
-    new HostConnectionService(pluginCtx, [], {} as BrowserAuth)
+    new ConnectionAuthentication(pluginCtx); new HostConnectionService(pluginCtx, [])
   })
   await fiber.await()
   return {
@@ -32,6 +32,22 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 }
 
 describe('Connection exact Fetch routes', () => {
+  it('keeps an authenticated carrier’s privileges and lifetime when binding an account', async () => {
+    const identity: AuthenticatedPrincipal = { source: 'gateway', id: 'alice', username: 'Alice', role: 'user' }
+    const { connection, dispose } = await mounted({ authenticate: () => identity })
+    onTestFinished(dispose)
+    const carrier = connection.createPeer({ principal: GUEST, interactions: 'none' })
+    const request = { headers: { host: 'localhost' } }
+    const admission = await connection.admitRequest(request, carrier)
+    if ('rejection' in admission) throw new Error('expected an account Peer')
+    expect(admission.peer.principal).toEqual(GUEST)
+    expect(admission.peer.interactions).toBe('none')
+    expect(connection.principalOfPeer(admission.peer)).toEqual(identity)
+    await carrier.dispose()
+    expect(admission.peer.signal.aborted).toBe(true)
+    await expect(connection.admitRequest(request, carrier)).resolves.toEqual({ rejection: 401 })
+  })
+
   it('refuses a principal whose authentication completes after Connection disposal', async () => {
     const identity = Promise.withResolvers<AuthenticatedPrincipal>()
     const entered = Promise.withResolvers<undefined>()
@@ -231,7 +247,7 @@ describe('Connection in-process Peers', () => {
 
   it('disposes a created Peer with the plugin that read the Connection', async () => {
     const ctx = new Context()
-    const provider = ctx.plugin((pluginCtx) => { new HostConnectionService(pluginCtx, [], {} as BrowserAuth) })
+    const provider = ctx.plugin((pluginCtx) => { new ConnectionAuthentication(pluginCtx); new HostConnectionService(pluginCtx, []) })
     await provider.await()
     let created: PeerScope | undefined
     const consumer = ctx.plugin({

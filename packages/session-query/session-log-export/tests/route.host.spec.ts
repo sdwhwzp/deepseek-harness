@@ -1,6 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
-import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
+import { ConnectionAuthentication, HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm/message'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
@@ -69,7 +68,8 @@ async function mounted(
       readImage: async () => { throw new Error('fixture has no images') },
     } as never)
   }
-  const connection = new HostConnectionService(ctx, [], {} as BrowserAuth)
+  new ConnectionAuthentication(ctx)
+  const connection = new HostConnectionService(ctx, [])
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber
   return { connection, open, dispose: () => fiber.dispose() }

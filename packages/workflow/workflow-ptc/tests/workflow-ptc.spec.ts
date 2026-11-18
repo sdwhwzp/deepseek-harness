@@ -10,11 +10,12 @@ import type { SubagentCapabilities, SubagentProvider, SubagentResult, SubagentRu
 import type { WorkflowMeta, WorkflowResult, WorkflowResultInfo, WorkflowRun, WorkflowRunInfo } from '@deepseek-ai/dsh-workflow'
 import * as ptcEngineModule from '../src/index.ts'
 import PtcWorkflowEngine, { type Config } from '../src/index.ts'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 
 import { fakeParent, mountPtcRuntime } from './setup.ts'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 /** Bound observations of process startup and host callbacks on shared CI runners. */
 function waitFor(assertion: () => void, timeout = 60_000): Promise<void> {
@@ -98,7 +99,7 @@ class StubProvider implements SubagentProvider {
     }
     if (request.signal.aborted) throw new Error('child start aborted before publication')
     return {
-      id: SessionId(`stub-child-${index}`),
+      id: brandString<SessionId>(`stub-child-${index}`),
       result: terminal.promise,
       dispose: () => {
         controlled.disposeCalls += 1
@@ -480,7 +481,7 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
         capabilities: { agentOptions: true, agentPreset: false, outputSchema: true, depthLimit: true },
         inheritsParentContext: false,
         start: async () => ({
-          id: SessionId('reject-child'),
+          id: brandString<SessionId>('reject-child'),
           result: Promise.reject(new Error('backend exploded')),
           dispose: () => Promise.resolve(),
         }),
@@ -514,7 +515,7 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
         stopReason: 'completed',
       } as unknown as SubagentResult
       const start = vi.spyOn(ctx.subagents, 'startActivation').mockResolvedValue({
-        childId: SessionId('raw-invalid-child'), name: 'raw-invalid-child',
+        childId: brandString<SessionId>('raw-invalid-child'), name: 'raw-invalid-child',
         result: Promise.resolve(invalid),
         dispose: () => Promise.resolve(),
       })
@@ -540,7 +541,7 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
         capabilities: { agentOptions: true, agentPreset: false, outputSchema: true, depthLimit: true },
         inheritsParentContext: false,
         start: async () => ({
-          id: SessionId('bad-dispose-child'),
+          id: brandString<SessionId>('bad-dispose-child'),
           result: Promise.resolve({ output: [{ type: 'text', text: 'fine' }], stopReason: 'completed' }),
           cancel: () => { /* settled already */ },
           dispose: () => { throw new Error('dispose exploded') },
@@ -564,7 +565,7 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
         capabilities: { agentOptions: true, agentPreset: false, outputSchema: true, depthLimit: true },
         inheritsParentContext: false,
         start: async () => ({
-          id: SessionId('trap-child'),
+          id: brandString<SessionId>('trap-child'),
           result: Promise.resolve({ output: [{ type: 'text', text: 'fine' }], stopReason: 'completed' }),
           cancel: () => { /* settled already */ },
           // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error rejection IS the scenario under test
@@ -789,7 +790,7 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
             settle({ output: [], stopReason: 'aborted' })
           }, { once: true })
           return {
-            id: SessionId('signal-only-child'),
+            id: brandString<SessionId>('signal-only-child'),
             result,
             dispose: () => Promise.resolve(),
           }
@@ -906,7 +907,7 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
           await release.promise
           await writeFile(resource, 'owned')
           return {
-            id: SessionId('late-published-child'),
+            id: brandString<SessionId>('late-published-child'),
             result: Promise.resolve({ output: [], stopReason: 'aborted' }),
             dispose: async () => { disposals += 1; await rm(resource) },
           }
@@ -1053,7 +1054,7 @@ await new Promise(() => {})`))
       start: async (request) => {
         owners.push(request.principal)
         return {
-          id: SessionId(`owner-probe-${owners.length}`),
+          id: brandString<SessionId>(`owner-probe-${owners.length}`),
           localAgent: undefined,
           result: Promise.resolve({ output: [{ type: 'text' as const, text: 'ok' }], stopReason: 'completed' as const }),
           dispose: () => Promise.resolve(),
@@ -1092,7 +1093,7 @@ await new Promise(() => {})`))
       start: async (request) => {
         owners.push(request.principal)
         return {
-          id: SessionId('owner-absent-child'),
+          id: brandString<SessionId>('owner-absent-child'),
           localAgent: undefined,
           result: Promise.resolve({ output: [], stopReason: 'completed' as const }),
           dispose: () => Promise.resolve(),

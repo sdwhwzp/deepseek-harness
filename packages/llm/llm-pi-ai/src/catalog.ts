@@ -38,7 +38,7 @@ import type {
 const NO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
 /** Wire protocols a profile may explicitly declare for a model. */
-export type PiAiModelApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages'
+export type PiAiModelApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai'
 
 /** One request modality a pi-ai model may accept. */
 export type PiAiModality = Model<Api>['input'][number]

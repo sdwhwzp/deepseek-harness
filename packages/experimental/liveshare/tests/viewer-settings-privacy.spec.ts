@@ -69,8 +69,8 @@ async function harness(mode: 'view' | 'write' = 'view') {
   await ctx.plugin(SettingsController)
   await ctx.plugin(CommandsFixture)
   const commands = ctx.get('commandsFixture') as CommandsFixture
-  const share: ForkShareState = { shareId: 'share', sessionId: 'shared-source',
-    sessionMode: mode, allowsFork: mode !== 'view', viewerAdmitted: true, stopped: false }
+  const share: ForkShareState = { shareId: 'share',
+    sessionIds: ['shared-source'], sessionMode: mode, allowsFork: mode !== 'view', viewerAdmitted: true, stopped: false }
   ctx.remoteAccess.registerPolicy('share-viewer', createViewerAccessPolicy({
     share: shareId => shareId === share.shareId ? share : undefined,
     viewerAdmitted: () => true,
@@ -93,7 +93,7 @@ async function harness(mode: 'view' | 'write' = 'view') {
     })
   })
   const reader = createViewerReadService({
-    sharedSessionId: () => share.sessionId,
+    sharedSessionIds: () => share.sessionIds,
     viewerStillAdmitted: () => true,
     forkStateOf: () => share,
     connection: readers.connection,

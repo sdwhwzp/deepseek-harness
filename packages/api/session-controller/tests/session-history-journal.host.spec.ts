@@ -5,7 +5,8 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent, type AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionStore from '@deepseek-ai/dsh-session'
-import { LlmAttemptId, ToolCallId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { type LlmAttemptId, type ToolCallId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { HistoryController } from '../src/history/controller.ts'
@@ -54,7 +55,7 @@ async function harness(): Promise<{ ctx: Context }> {
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
-  installSessionReadTestServices(ctx)
+  await installSessionReadTestServices(ctx)
   return { ctx }
 }
 
@@ -170,7 +171,7 @@ describe('Session history raw journal', () => {
     const opening = iterator.next()
     await entered.promise
 
-    const attemptId = LlmAttemptId('buffered-opening-attempt')
+    const attemptId = brandString<LlmAttemptId>('buffered-opening-attempt')
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: { type: 'start', attemptId, revision: 1, turn: 1, step: 1 },
@@ -186,7 +187,7 @@ describe('Session history raw journal', () => {
     ctx.emit('agent/assistant-stream', {
       agent: { id: foreign.id, session: foreign, status: 'running', ctx } as Agent,
       frame: {
-        type: 'start', attemptId: LlmAttemptId('foreign-attempt'), revision: 1, turn: 1, step: 1,
+        type: 'start', attemptId: brandString<LlmAttemptId>('foreign-attempt'), revision: 1, turn: 1, step: 1,
       },
     })
     release.resolve(undefined)
@@ -209,7 +210,7 @@ describe('Session history raw journal', () => {
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
     const agent = { id: session.id, session, status: 'running', ctx } as Agent
     const { web } = await controllers(ctx)
-    const attemptId = LlmAttemptId('live-follow-attempt')
+    const attemptId = brandString<LlmAttemptId>('live-follow-attempt')
     const emit = (frame: AssistantStreamFrame): void => {
       ctx.emit('agent/assistant-stream', { agent, frame })
     }
@@ -276,7 +277,7 @@ describe('Session history raw journal', () => {
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
     const agent = { id: session.id, session, status: 'running', ctx } as Agent
     const { web } = await controllers(ctx)
-    const attemptId = LlmAttemptId(`${session.id}:1`)
+    const attemptId = brandString<LlmAttemptId>(`${session.id}:1`)
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
@@ -338,7 +339,7 @@ describe('Session history raw journal', () => {
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
     const agent = { id: session.id, session, status: 'running', ctx } as Agent
     const { web } = await controllers(ctx)
-    const attemptId = LlmAttemptId('revision-gap-attempt')
+    const attemptId = brandString<LlmAttemptId>('revision-gap-attempt')
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
@@ -378,7 +379,7 @@ describe('Session history raw journal', () => {
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
     const agent = { id: session.id, session, status: 'running', ctx } as Agent
     const { web } = await controllers(ctx)
-    const attemptId = LlmAttemptId('dense-index-attempt')
+    const attemptId = brandString<LlmAttemptId>('dense-index-attempt')
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
@@ -418,7 +419,7 @@ describe('Session history raw journal', () => {
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
     const agent = { id: session.id, session, status: 'running', ctx } as Agent
     const { web } = await controllers(ctx)
-    const attemptId = LlmAttemptId('cached-baseline-attempt')
+    const attemptId = brandString<LlmAttemptId>('cached-baseline-attempt')
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
@@ -497,7 +498,7 @@ describe('Session history raw journal', () => {
       ctx.emit('agent/assistant-stream', {
         agent: otherAgent,
         frame: {
-          type: 'start', attemptId: LlmAttemptId('other-session-attempt'),
+          type: 'start', attemptId: brandString<LlmAttemptId>('other-session-attempt'),
           revision: 1, turn: 1, step: 1,
         },
       })
@@ -535,7 +536,7 @@ describe('Session history raw journal', () => {
       const opening = iterator.next()
       await observationStarted.promise
       const frame: AssistantStreamFrame = {
-        type: 'start', attemptId: LlmAttemptId('opening-cut-attempt'),
+        type: 'start', attemptId: brandString<LlmAttemptId>('opening-cut-attempt'),
         revision: 1, turn: 1, step: 1,
       }
       ctx.emit('agent/assistant-stream', { agent, frame })
@@ -567,7 +568,7 @@ describe('Session history raw journal', () => {
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
     const agent = { id: session.id, session, status: 'running', ctx } as Agent
     const { web } = await controllers(ctx)
-    const attemptId = LlmAttemptId(`${session.id}:1`)
+    const attemptId = brandString<LlmAttemptId>(`${session.id}:1`)
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
@@ -648,7 +649,7 @@ describe('Session history raw journal', () => {
     }, abort.signal)[Symbol.asyncIterator]()
     const opening = await iterator.next()
     expect(opening.value).not.toHaveProperty('assistantStream')
-    const attemptId = LlmAttemptId('durable-only-attempt')
+    const attemptId = brandString<LlmAttemptId>('durable-only-attempt')
 
     ctx.emit('agent/assistant-stream', {
       agent,
@@ -688,12 +689,12 @@ describe('Session history raw journal', () => {
     const stream = await openFollow(web, session.id, abort.signal)
     const collected = collect(stream, 2, abort)
     const call = session.append('tool/call', {
-      turn: 1, step: 1, callId: ToolCallId('raw-call'), name: 'custom', arguments: '{malformed',
+      turn: 1, step: 1, callId: brandString<ToolCallId>('raw-call'), name: 'custom', arguments: '{malformed',
     })
     const result = session.append('tool/result', {
       turn: 1, step: 1,
       message: createToolResultMessage({
-        callId: ToolCallId('raw-call'),
+        callId: brandString<ToolCallId>('raw-call'),
         content: [{ type: 'text', text: 'raw output' }],
         isError: false,
       }),
@@ -718,7 +719,7 @@ describe('Session history raw journal', () => {
     const iterator = stream[Symbol.asyncIterator]()
 
     session.append('tool/call', {
-      turn: 1, step: 1, callId: ToolCallId('live-fast'), name: 'term', arguments: '{"cmd":"pwd"}',
+      turn: 1, step: 1, callId: brandString<ToolCallId>('live-fast'), name: 'term', arguments: '{"cmd":"pwd"}',
     })
     await expect(iterator.next()).resolves.toMatchObject({
       value: { type: 'event', event: { type: 'tool/call', data: { callId: 'live-fast' } } },
@@ -731,7 +732,7 @@ describe('Session history raw journal', () => {
       session.append('tool/result', {
         turn: 1, step: 1,
         message: createToolResultMessage({
-          callId: ToolCallId('live-fast'),
+          callId: brandString<ToolCallId>('live-fast'),
           content: [{ type: 'text', text: 'ok' }],
           isError: false,
         }),
@@ -753,12 +754,12 @@ describe('Session history raw journal', () => {
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
     const start = session.append('turn/start', { turn: 1 })
     const call = session.append('tool/call', {
-      turn: 1, step: 1, callId: ToolCallId('history-call'), name: 'custom', arguments: '{broken',
+      turn: 1, step: 1, callId: brandString<ToolCallId>('history-call'), name: 'custom', arguments: '{broken',
     })
     const result = session.append('tool/result', {
       turn: 1, step: 1,
       message: createToolResultMessage({
-        callId: ToolCallId('history-call'),
+        callId: brandString<ToolCallId>('history-call'),
         content: [{ type: 'text', text: 'failed raw output' }],
         isError: true,
       }),
@@ -963,7 +964,7 @@ describe('Session history raw journal', () => {
     const { ctx } = await harness()
     const remote = await createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
-    const callId = ToolCallId('packed-call')
+    const callId = brandString<ToolCallId>('packed-call')
     const attempt = session.append('assistant/attempt', {
       turn: 1,
       step: 1,
@@ -994,7 +995,7 @@ describe('Session history raw journal', () => {
     await expect(iterator.next()).resolves.toMatchObject({
       value: { type: 'event', event: { type: 'turn/start' } },
     })
-    session.append('tool/call', { turn: 1, step: 1, callId: ToolCallId('c-late'), name: 'term', arguments: '{"cmd":"tail"}' })
+    session.append('tool/call', { turn: 1, step: 1, callId: brandString<ToolCallId>('c-late'), name: 'term', arguments: '{"cmd":"tail"}' })
     await expect(iterator.next()).resolves.toMatchObject({
       value: { type: 'event', event: { type: 'tool/call' } },
     })
@@ -1009,7 +1010,7 @@ describe('Session history raw journal', () => {
       const result = session.append('tool/result', {
         turn: 1, step: 1,
         message: createToolResultMessage({
-          callId: ToolCallId('c-late'),
+          callId: brandString<ToolCallId>('c-late'),
           content: [{ type: 'text', text: 'ok' }],
           isError: false,
         }),

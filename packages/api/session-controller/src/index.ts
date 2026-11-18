@@ -6,7 +6,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-fs'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { errorChain, ReasoningEffortId, type MessageSource } from '@deepseek-ai/dsh-llm'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { errorChain, type ReasoningEffortId, type MessageSource } from '@deepseek-ai/dsh-llm'
 import type { AuthenticatedPrincipal } from '@deepseek-ai/dsh-llm'
 import { resolvePrincipalAccess } from '@deepseek-ai/dsh-principal-access'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
@@ -14,7 +15,7 @@ import { canOpenNativePath, nativeFileManager, nativeFileApplications, openNativ
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
-import { Remote, RemoteError, TypertRemoteService, principalOf, type TypertResourceResolveInput } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService, principalOf } from '@deepseek-ai/dsh-typert-protocol'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import {
@@ -22,6 +23,7 @@ import {
   type ApiSessionAgentResult,
 } from './agent.ts'
 import { SessionCommandController, hasPromptContent } from './commands.ts'
+import { resolveSessionResource } from './session-resource.ts'
 import { SessionControlController } from './control.ts'
 import { HistoryController } from './history/controller.ts'
 import { StateController } from './state/controller.ts'
@@ -36,7 +38,6 @@ import { ArchivedSessionGate } from './archived-session-gate.ts'
 import type {
   ModelCatalog,
   SessionWorkspacePathApplication,
-  SessionAddress,
   SessionAttachmentRequest,
   SessionAttachmentValue,
   SessionCancelRequest,
@@ -78,34 +79,6 @@ declare module '@deepseek-ai/cordis' {
     /** Host Session business API and Remote namespace owner. */
     sessionController: SessionController
   }
-}
-
-/**
- * Extract the Session resource from an ID or a history address.
- *
- * Registers as the `session` kind default, so it applies to every Remote method of
- * every namespace: a top-level `sessionId` parameter, otherwise the first object
- * parameter carrying `sessionId` or an `address`. A new request type whose first
- * object parameter has an unrelated `address` field would be read as an address.
- * @param input - validated wire arguments and their ordered parameter descriptions.
- * @returns the named Session identity, otherwise the first object's Session identity or history address.
- * @throws Error when the request object supplies both sessionId and address.
- */
-function resolveSessionResource({ args, parameters }: TypertResourceResolveInput): SessionId | undefined {
-  const sessionParameter = parameters.find(parameter => parameter.name === 'sessionId' || parameter.wire === 'sessionId')
-  if (sessionParameter !== undefined) return args[sessionParameter.wire] as SessionId | undefined
-  for (const parameter of parameters) {
-    const value = args[parameter.wire]
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
-    const request = value as { readonly sessionId?: SessionId; readonly address?: SessionAddress }
-    const address = request.address
-    if (request.sessionId !== undefined && address !== undefined) {
-      throw new Error('Session resource request must not contain both sessionId and address')
-    }
-    return request.sessionId ?? (address === undefined ? undefined
-      : address.kind === 'session' ? address.sessionId : address.childSessionId)
-  }
-  return undefined
 }
 
 /** Session Controller deployment policy. */
@@ -364,7 +337,8 @@ export class SessionController extends TypertRemoteService {
     if (model === undefined) throw new RemoteError('session/provider-models-unavailable',
       `provider "${provider}" has no available models`, { provider })
     const selection = { provider, model: model.id,
-      ...model.reasoning?.defaultEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(model.reasoning.defaultEffort) },
+      ...model.reasoning?.defaultEffort === undefined ? {}
+        : { reasoningEffort: brandString<ReasoningEffortId>(model.reasoning.defaultEffort) },
     }
     await this.ctx.agentDefaultModel.saveSelection(selection)
   }

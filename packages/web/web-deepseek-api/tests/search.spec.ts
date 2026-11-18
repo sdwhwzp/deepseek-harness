@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import DeepSeekAuth from '@deepseek-ai/dsh-deepseek-auth'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -14,14 +15,17 @@ import {
 import * as webApiPlugin from '@deepseek-ai/dsh-web-deepseek-api'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { customGuidance } from './guidance.ts'
+import { keyCandidate } from './sources.ts'
 
 /** Construct the provider over a fixed options value; production passes a live thunk. */
 const searchProvider = (options: DeepSeekSearchApiOptions): DeepSeekSearchApiProvider =>
   new DeepSeekSearchApiProvider(() => options)
 
+const BASE = 'https://api.deepseek.test/api/v1/tools'
+const auth = (key: string): DeepSeekSearchApiOptions['auth'] => ({ sources: [keyCandidate(`${BASE}/search`, key)] })
+
 const options = {
-  auth: { apiKey: 'ds-key' },
-  baseURL: 'https://api.deepseek.test/api/v1/tools',
+  auth: auth('ds-key'),
   count: 10,
   requestsPerSecond: 5,
   guidance: customGuidance('search'),
@@ -72,20 +76,22 @@ describe('mapSearchResponse', () => {
 })
 
 describe('DeepSeekSearchApiProvider availability', () => {
-  it('is unavailable without a key', () => {
-    expect(searchProvider({ ...options, auth: { apiKey: '' } }).available()).toBe(false)
+  it('is unavailable without a source, and available with a key whose presence only ready() reads', () => {
+    expect(searchProvider({ ...options, auth: { sources: [] } }).available()).toBe(false)
+    expect(searchProvider({ ...options, auth: auth('') }).available()).toBe(true)
   })
 
   it('is available with a key', () => {
     expect(searchProvider(options).available()).toBe(true)
   })
 
-  it('is available with only an account token resolver', () => {
-    expect(searchProvider({ ...options, auth: { account: { baseURL: options.baseURL, resolveToken: async () => 'account-token', rejectToken: async () => {} } } }).available()).toBe(true)
+  it('is available with only an account credential', () => {
+    const account = { kind: 'account', endpoint: `${BASE}/search`, configured: async () => true, resolve: async () => undefined } as const
+    expect(searchProvider({ ...options, auth: { sources: [account] } }).available()).toBe(true)
   })
 
-  it('is misconfigured when the base URL is unparseable', () => {
-    expect(searchProvider({ ...options, baseURL: 'not a url' }).available()).toBe(false)
+  it('is available with only a misconfigured source, which the search reports', () => {
+    expect(searchProvider({ ...options, auth: { sources: [{ kind: 'misconfigured', message: 'route settings do not resolve' }] } }).available()).toBe(true)
   })
 
   it.each([0, 1.5])('is unavailable with invalid count %j', (count) => {
@@ -212,6 +218,7 @@ describe('Search API triggering question', () => {
       await ctx.plugin(AgentRegistry)
       await ctx.plugin(WebRuntime, { searchProvider: 'deepseek-search-api' })
       ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([{ source: 'process', values: { DEEPSEEK_API_KEY: 'ds-key' } }]))
+      await ctx.plugin(DeepSeekAuth)
       await ctx.plugin(webApiPlugin, config)
       const messages = [
         userMessage('m1', { kind: 'user' }, [{ type: 'text', text: 'Earlier question' }]),
@@ -246,6 +253,7 @@ describe('Search API configuration and failures', () => {
     try {
       await ctx.plugin(WebRuntime, { searchProvider: 'deepseek-search-api' })
       ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([{ source: 'process', values: { DEEPSEEK_API_KEY: 'ds-key' } }]))
+      await ctx.plugin(DeepSeekAuth)
       await ctx.plugin(webApiPlugin, {})
       await ctx.web.search({ query: 'q' })
       expect(fetchMock.mock.calls[0]?.[0]).toBe(`${DEEPSEEK_WEB_API_BASE_URL}/search`)
@@ -260,6 +268,7 @@ describe('Search API configuration and failures', () => {
     try {
       await ctx.plugin(WebRuntime, { searchProvider: 'deepseek-search-api' })
       ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([{ source: 'process', values: { DEEPSEEK_API_KEY: 'ds-key' } }]))
+      await ctx.plugin(DeepSeekAuth)
       await ctx.plugin(webApiPlugin, { searchBaseURL: 'not a url' })
       await expect(ctx.web.search({ query: 'q' })).rejects.toMatchObject({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' })
       expect(fetchMock).not.toHaveBeenCalled()

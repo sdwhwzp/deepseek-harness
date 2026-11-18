@@ -119,7 +119,7 @@ export function createInProcessModules(
   }
   return target.create({
     boot: graph,
-    staticModules: getStaticModules(),
+    staticModules: getStaticModules((id, namespace) => ({ id, factory: () => namespace })),
     loadBundle: url => Promise.reject(new Error(`client-test-runtime: in-process modules never load bundles (${url})`)),
   })
 }
