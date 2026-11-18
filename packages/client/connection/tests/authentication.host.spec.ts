@@ -3,6 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HostConnectionService } from '../src/rpc-host.ts'
 import { ConnectionAuthentication } from '../src/authentication.ts'
+import * as connectionPlugin from '../src/index.ts'
 import { Peer } from '../src/peer.ts'
 
 const roots: Context[] = []
@@ -73,6 +74,22 @@ it('withdraws registrations with their plugin scope while retaining a separately
   await plugin.dispose()
   expect(authentication.authenticate(request)).toEqual({ rejection: 401 })
   expect(peer.signal.aborted).toBe(false)
+})
+
+it('applies registered credentials for consumers that inject only Connection', async () => {
+  const ctx = new Context()
+  roots.push(ctx)
+  await ctx.plugin(connectionPlugin).await()
+  const peer = ctx.connection.createPeer({ principal: { kind: 'owner' } })
+  const remove = ctx['connection.authentication'].register({ authenticate: () => peer })
+  const consumer = ctx.plugin({
+    inject: ['connection'],
+    apply() {},
+  })
+  await consumer.await()
+  expect(consumer.ctx.connection.requestRejection(request)).toBeUndefined()
+  await remove()
+  expect(consumer.ctx.connection.requestRejection(request)).toBe(401)
 })
 
 it('skips a provider withdrawn by an earlier verifier', async () => {

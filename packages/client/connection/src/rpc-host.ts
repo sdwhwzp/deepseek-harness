@@ -197,7 +197,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
   admit(request: ConnectionTrustRequest): PeerAdmission {
     if (!this.isTrustedRequest(request)) return { rejection: 403 }
     if (this.disposed) return { rejection: 401 }
-    return this.authentication.authenticate(request)
+    return this.owner['connection.authentication'].authenticate(request)
   }
 
   /** Create one in-process Peer owned by the Context that read this service. */

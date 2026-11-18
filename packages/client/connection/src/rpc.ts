@@ -266,7 +266,7 @@ export interface HostConnectionHandle {
 
   /**
    * Apply Connection's Host/Origin checks and browser authentication to
-   * another Web route.
+   * another Web route. The route only needs to inject `connection`.
    * @param request - request headers from the HTTP or upgrade request.
    * @returns rejection status, or undefined when the route may accept the request.
    */
